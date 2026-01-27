@@ -1,0 +1,1409 @@
+/**
+ * 游戏状态管理
+ * 使用 Zustand 进行状态管理
+ */
+
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { GameWorld, formatGameDate } from '@/core/world/GameWorld';
+import { initializeWorld, addBuilding, getBuildingSlotMethodsArray, setBuildingSlotMethod } from '@/core/world/WorldInitializer';
+import { GameLoop, createGameLoop, TickResult, PerformanceReport } from '@/core/loop/GameLoop';
+import { createBuyOrder, createSellOrder, createSellOrderWithReason, cancelOrder, getOrderBookView, OrderBookView, OrderResult } from '@/core/market/OrderBook';
+import { getMarketStats, MarketStats } from '@/core/market/MatchingEngine';
+import { getPriceTrend, PriceTrend, getPriceSummary, PriceSummary } from '@/core/economy/PriceEngine';
+import { getBuildingProductionStatus, BuildingProductionStatus, getBuildingProductionStatusWithMethods, getInventoryQualityName, getInventoryQualityPriceMultiplier } from '@/core/production/ProductionEngine';
+import { QUALITY_INFO, QualityGrade } from '@/core/economy/QualitySystem';
+import {
+  perfMonitor,
+  PerformanceSnapshot,
+  FPSData,
+  MemoryData,
+  downloadPerformanceJSON,
+  downloadPerformanceCSV,
+  ExportOptions,
+} from '@/core/performance';
+import {
+  applyForLoan,
+  prepayLoan,
+  getCompanyLoans,
+  getCreditProfile,
+  getAvailableLoanOptions,
+  Loan,
+  CreditProfile,
+  LoanType
+} from '@/core/finance/BankingSystem';
+import {
+  getMarketState,
+  getStock,
+  getHoldings,
+  buyStock,
+  sellStock,
+  initiateIPO,
+  Stock,
+  Holding,
+  StockMarketState
+} from '@/core/finance/StockMarket';
+import {
+  evaluateCompanyValue,
+  initiateAcquisition,
+  initiateAssetPurchase,
+  confirmAssetTransaction,
+  getOffersByCompany,
+  getOffersForCompany,
+  analyzeAcquisitionFeasibility,
+  AcquisitionOffer,
+  AcquisitionType
+} from '@/core/finance/AcquisitionSystem';
+import {
+  CompanyProfile,
+  ControlLevel,
+  getCompanyProfile,
+  getAllCompanyProfiles,
+  getAICompanyProfiles,
+  getPlayerHoldingProfiles,
+  getPlayerControlledProfiles,
+  calculatePlayerPortfolio,
+  calculateMarketStats as calculateCompanyMarketStats,
+} from '@/core/finance/CompanyProfile';
+import {
+  getPlayerControlLevel,
+  getPlayerControlledCompanyIds,
+  hasControlRight,
+  setControlledCompanyStrategy,
+  requestDividend,
+  initiateAssetTransfer,
+  ControlStrategy,
+  ControlRight,
+} from '@/core/finance/OwnershipControl';
+import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
+import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '@/data/buildings';
+import { RECIPES } from '@/data/recipes';
+import { GOODS_COUNT, MAX_SLOTS } from '@/core/constants';
+import {
+  getRetailStoreDetails,
+  getPlayerRetailStores,
+  getRetailMarketOverview,
+  setRetailPrice,
+  setRetailMarkup,
+  registerRetailStore,
+} from '@/core/economy/RetailSystem';
+import {
+  ProductionMethod,
+  ProductionSlotType,
+  BuildingSlotConfig,
+  SLOT_CONFIGS_BY_BUILDING,
+  METHODS_BY_ID,
+  getMethodDisplayInfo,
+  getSlotTypeName,
+  getSlotTypeIcon,
+  isMethodAvailable,
+  isMethodUnlocked,
+  calculateSwitchCost,
+  getMaxSwitchCooldown,
+  hasBuildingSpecificMethods,
+  getBuildingSpecificSlots,
+  getBuildingConfig,
+  getSlotAvailableMethods,
+  getMethodByIdNew,
+  getBuildingSlotCount,
+} from '@/core/production/ProductionMethods';
+
+/**
+ * UI状态
+ */
+interface UIState {
+  selectedGoodsId: number | null;
+  selectedBuildingId: number | null;
+  currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'settings';
+  sidebarCollapsed: boolean;
+  notifications: Notification[];
+  theme: 'light' | 'dark';
+  favoriteCompanies: number[];
+}
+
+/**
+ * 通知
+ */
+interface Notification {
+  id: number;
+  type: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  timestamp: number;
+}
+
+/**
+ * 历史数据点
+ */
+interface HistoryDataPoint {
+  tick: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  cash: number;
+  assets: number;
+}
+
+/**
+ * 游戏状态
+ */
+interface GameState {
+  // 核心（world和gameLoop通过getter函数访问，不在immer state中）
+  initialized: boolean;
+  
+  // 游戏状态
+  tick: number;
+  paused: boolean;
+  speed: 1 | 2 | 4 | 8;
+  gameDate: string;
+  
+  // 玩家数据
+  playerCash: number;
+  playerAssets: number;
+  playerBuildings: number;
+  
+  // UI状态
+  ui: UIState;
+  
+  // 最近tick结果
+  lastTickResult: TickResult | null;
+  
+  // 性能
+  performance: PerformanceReport | null;
+  
+  // 历史数据（最近100个tick）
+  financialHistory: HistoryDataPoint[];
+}
+
+/**
+ * 游戏操作
+ */
+interface GameActions {
+  // 初始化
+  initGame: () => void;
+  
+  // 游戏控制
+  startGame: () => void;
+  pauseGame: () => void;
+  resumeGame: () => void;
+  setSpeed: (speed: 1 | 2 | 4 | 8) => void;
+  manualTick: () => void;
+  
+  // 交易
+  placeBuyOrder: (goodsId: number, quantity: number, price: number) => boolean;
+  placeSellOrder: (goodsId: number, quantity: number, price: number) => boolean;
+  cancelPlayerOrder: (orderIdx: number) => boolean;
+  
+  // 建筑
+  buildBuilding: (buildingTypeId: number, recipeId: number) => number | null;
+  upgradeBuilding: (buildingId: number) => boolean;
+  toggleBuildingActive: (buildingId: number) => boolean;
+  setBuildingRecipe: (buildingId: number, recipeId: number) => boolean;
+  
+  // 贷款
+  applyLoan: (amount: number, loanType: LoanType, collateralType?: 'inventory' | 'building' | 'none') => { approved: boolean; loanId?: number; reason?: string };
+  prepayPlayerLoan: (loanId: number) => { success: boolean; penalty?: number; reason?: string };
+  getPlayerLoans: () => Loan[];
+  getPlayerCreditProfile: () => CreditProfile | null;
+  getPlayerLoanOptions: () => Array<{
+    type: LoanType;
+    name: string;
+    maxAmount: number;
+    interestRate: number;
+    termDays: number;
+    monthlyPayment: number;
+  }>;
+  
+  // UI
+  setSelectedGoods: (goodsId: number | null) => void;
+  setSelectedBuilding: (buildingId: number | null) => void;
+  setCurrentPage: (page: UIState['currentPage']) => void;
+  toggleSidebar: () => void;
+  toggleTheme: () => void;
+  setTheme: (theme: 'light' | 'dark') => void;
+  addNotification: (type: Notification['type'], message: string) => void;
+  dismissNotification: (id: number) => void;
+  
+  // 生产方式槽位
+  getBuildingSlotConfig: (buildingTypeId: number) => BuildingSlotConfig | null;
+  getBuildingCurrentMethods: (buildingId: number) => number[];
+  getAvailableMethodsForSlot: (buildingTypeId: number, slotIndex: number, buildingLevel: number) => ProductionMethod[];
+  changeBuildingSlotMethod: (buildingId: number, slotIndex: number, methodId: number) => { success: boolean; reason?: string };
+  getMethodInfo: (methodId: number) => ReturnType<typeof getMethodDisplayInfo>;
+  
+  // 数据获取
+  getWorld: () => GameWorld | null;
+  getPlayerInventory: () => { goodsId: number; name: string; quantity: number; value: number }[];
+  getOrderBook: (goodsId: number) => OrderBookView | null;
+  getMarketStats: (goodsId: number) => MarketStats | null;
+  getPriceTrend: (goodsId: number) => PriceTrend | null;
+  getPriceSummary: () => PriceSummary | null;
+  getBuildingStatus: (buildingId: number) => BuildingProductionStatus | null;
+  getBuildingStatusWithMethods: (buildingId: number) => BuildingProductionStatus | null;
+  getPlayerBuildings: () => { id: number; name: string; level: number; status: BuildingProductionStatus | null; slotMethods: number[]; isRetail?: boolean }[];
+  getAllGoods: () => GoodsDefinition[];
+  getAllBuildingTypes: () => BuildingTypeDefinition[];
+  getFinancialHistory: () => HistoryDataPoint[];
+  getInventoryQuality: (goodsId: number) => { name: string; priceMultiplier: number; color: string };
+  
+  // 零售系统
+  getPlayerRetailStores: () => number[];
+  getRetailStoreDetails: (retailId: number) => ReturnType<typeof getRetailStoreDetails> | null;
+  getRetailMarketOverview: () => ReturnType<typeof getRetailMarketOverview> | null;
+  setRetailPrice: (retailId: number, goodsId: number, price: number) => boolean;
+  setRetailMarkup: (retailId: number, goodsId: number, markup: number) => boolean;
+  
+  // 股票市场
+  getStockMarketState: () => StockMarketState | null;
+  getStockInfo: (companyId: number) => Stock | null;
+  getPlayerHoldings: () => Holding[];
+  buyStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => boolean;
+  sellStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => boolean;
+  playerIPO: (offeringShares: number, offeringPrice: number) => boolean;
+  
+  // 收购系统
+  getCompanyValuation: (companyId: number) => { bookValue: number; marketValue: number; enterpriseValue: number; fairValue: number } | null;
+  analyzeAcquisition: (targetId: number) => ReturnType<typeof analyzeAcquisitionFeasibility> | null;
+  initiateAcquisitionOffer: (targetId: number, targetSharePercent: number, offerPrice: number) => boolean;
+  initiateAssetBuy: (sellerId: number, assetType: 'building' | 'inventory', assetIds: number[], price: number) => boolean;
+  getPlayerAcquisitionOffers: () => AcquisitionOffer[];
+  
+  // ============ 统一公司数据 (新增) ============
+  getCompanyProfile: (companyId: number) => CompanyProfile | null;
+  getAllCompanyProfiles: () => CompanyProfile[];
+  getAICompanyProfiles: () => CompanyProfile[];
+  getPlayerHoldingProfiles: () => CompanyProfile[];
+  getPlayerControlledProfiles: () => CompanyProfile[];
+  getPlayerPortfolio: () => { totalValue: number; totalCost: number; totalGain: number; gainPercent: number; holdingCount: number };
+  getCompanyMarketStats: () => { rising: number; falling: number; unchanged: number; totalVolume: number; totalMarketCap: number };
+  
+  // ============ 控制权相关 (新增) ============
+  getPlayerControlLevel: (companyId: number) => ControlLevel;
+  getPlayerControlledCompanyIds: () => number[];
+  hasPlayerControlRight: (companyId: number, right: ControlRight) => boolean;
+  setControlledStrategy: (companyId: number, strategy: ControlStrategy) => boolean;
+  requestCompanyDividend: (companyId: number, amount: number) => { success: boolean; playerReceived?: number; reason?: string };
+  transferAssets: (fromId: number, toId: number, assetType: 'building' | 'inventory', assetIds: number[]) => { success: boolean; reason?: string };
+  
+  // ============ 收藏管理 (新增) ============
+  toggleFavoriteCompany: (companyId: number) => void;
+  getFavoriteCompanies: () => number[];
+  
+  // 性能监控
+  getPerformanceSnapshot: () => PerformanceSnapshot | null;
+  getPerformanceSnapshots: (count: number) => PerformanceSnapshot[];
+  getFPSData: () => FPSData;
+  getMemoryData: () => MemoryData;
+  exportPerformanceJSON: (options?: Partial<ExportOptions>) => void;
+  exportPerformanceCSV: (options?: Partial<ExportOptions>) => void;
+}
+
+let notificationId = 0;
+
+// 将world和gameLoop保存在store外部，避免被immer冻结
+let worldRef: GameWorld | null = null;
+let gameLoopRef: GameLoop | null = null;
+
+// 性能优化：限制状态更新频率
+let lastUIUpdateTick = 0;
+const UI_UPDATE_INTERVAL = 2; // 每2个tick更新一次UI状态（减少渲染）
+
+// 财务历史数据更新间隔
+const HISTORY_UPDATE_INTERVAL = 4; // 每4个tick记录一次历史数据
+
+/**
+ * 创建游戏Store
+ */
+export const useGameStore = create<GameState & GameActions>()(
+  immer((set, get) => ({
+    // 初始状态
+    initialized: false,
+    tick: 0,
+    paused: true,
+    speed: 1,
+    gameDate: '第1年 1月1日 0:00',
+    playerCash: 0,
+    playerAssets: 0,
+    playerBuildings: 0,
+    ui: {
+      selectedGoodsId: null,
+      selectedBuildingId: null,
+      currentPage: 'dashboard',
+      sidebarCollapsed: false,
+      notifications: [],
+      theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
+      favoriteCompanies: [],
+    },
+    lastTickResult: null,
+    performance: null,
+    financialHistory: [],
+    
+    // ==================== 初始化 ====================
+    initGame: () => {
+      const world = initializeWorld();
+      const gameLoop = createGameLoop(world);
+      
+      // 保存到外部引用（不被immer冻结）
+      worldRef = world;
+      gameLoopRef = gameLoop;
+      
+      // 设置tick回调（性能优化版本）
+      gameLoop.onTick((result) => {
+        const currentTick = result.tick;
+        const shouldUpdateUI = currentTick - lastUIUpdateTick >= UI_UPDATE_INTERVAL;
+        const shouldUpdateHistory = currentTick % HISTORY_UPDATE_INTERVAL === 0;
+        
+        // 始终更新tick（轻量级）
+        set((state) => {
+          state.tick = currentTick;
+          state.lastTickResult = result;
+          
+          // 仅在需要时更新其他UI状态（减少渲染开销）
+          if (shouldUpdateUI) {
+            lastUIUpdateTick = currentTick;
+            state.gameDate = formatGameDate(currentTick);
+            
+            // 更新玩家数据（从外部引用读取）
+            if (worldRef) {
+              state.playerCash = worldRef.companies.cash[0];
+              state.playerAssets = worldRef.companies.totalAssets[0];
+              
+              // 优化：使用缓存的建筑数量，仅在特定间隔更新
+              if (currentTick % 10 === 0) {
+                let buildingCount = 0;
+                for (let i = 0; i < worldRef.buildings.count; i++) {
+                  if (worldRef.buildings.owners[i] === 0) {
+                    buildingCount++;
+                  }
+                }
+                state.playerBuildings = buildingCount;
+              }
+            }
+            
+            state.performance = gameLoop.getPerformanceReport();
+          }
+          
+          // 财务历史数据更新（降低频率）
+          if (shouldUpdateHistory && worldRef) {
+            let revenue = 0;
+            let cost = 0;
+            const trades = result.matching.trades || [];
+            for (const trade of trades) {
+              if (trade.sellCompanyId === 0) {
+                revenue += trade.value;
+              }
+              if (trade.buyCompanyId === 0) {
+                cost += trade.value;
+              }
+            }
+            
+            const historyPoint: HistoryDataPoint = {
+              tick: currentTick,
+              revenue,
+              cost,
+              profit: revenue - cost,
+              cash: worldRef.companies.cash[0],
+              assets: worldRef.companies.totalAssets[0],
+            };
+            
+            state.financialHistory.push(historyPoint);
+            
+            // 保留最近100个数据点
+            if (state.financialHistory.length > 100) {
+              state.financialHistory = state.financialHistory.slice(-100);
+            }
+          }
+        });
+      });
+      
+      set((state) => {
+        state.initialized = true;
+        state.playerCash = world.companies.cash[0];
+        state.tick = world.tick;
+        state.gameDate = formatGameDate(world.tick);
+      });
+    },
+    
+    // ==================== 游戏控制 ====================
+    startGame: () => {
+      if (gameLoopRef) {
+        gameLoopRef.start();
+        set((state) => {
+          state.paused = false;
+        });
+      }
+    },
+    
+    pauseGame: () => {
+      if (gameLoopRef) {
+        gameLoopRef.pause();
+        set((state) => {
+          state.paused = true;
+        });
+      }
+    },
+    
+    resumeGame: () => {
+      if (gameLoopRef) {
+        gameLoopRef.resume();
+        set((state) => {
+          state.paused = false;
+        });
+      }
+    },
+    
+    setSpeed: (speed) => {
+      if (gameLoopRef) {
+        gameLoopRef.setSpeed(speed);
+        set((state) => {
+          state.speed = speed;
+        });
+      }
+    },
+    
+    manualTick: () => {
+      if (gameLoopRef) {
+        gameLoopRef.manualTick();
+      }
+    },
+    
+    // ==================== 交易 ====================
+    placeBuyOrder: (goodsId, quantity, price) => {
+      if (!worldRef) return false;
+      
+      const orderId = createBuyOrder(worldRef, 0, goodsId, quantity, price);
+      if (orderId !== null) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `买单已提交: ${quantity}单位 @ ¥${price.toFixed(2)}`);
+        return true;
+      } else {
+        get().addNotification('error', '买单提交失败：资金不足或订单池已满');
+        return false;
+      }
+    },
+    
+    placeSellOrder: (goodsId, quantity, price) => {
+      if (!worldRef) return false;
+      
+      const result = createSellOrderWithReason(worldRef, 0, goodsId, quantity, price);
+      if (result.success) {
+        const actualQty = result.actualQuantity ?? quantity;
+        get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ¥${price.toFixed(2)}`);
+        return true;
+      } else {
+        get().addNotification('error', `卖单提交失败：${result.reason || '未知错误'}`);
+        return false;
+      }
+    },
+    
+    cancelPlayerOrder: (orderIdx) => {
+      if (!worldRef) return false;
+      
+      const success = cancelOrder(worldRef, orderIdx);
+      if (success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('info', '订单已取消');
+      }
+      return success;
+    },
+    
+    // ==================== 建筑 ====================
+    buildBuilding: (buildingTypeId, recipeId) => {
+      if (!worldRef) return null;
+      
+      try {
+        const buildingId = addBuilding(worldRef, 0, buildingTypeId, recipeId);
+        
+        // 如果是零售建筑，需要注册到零售系统
+        // isNewlyBuilt = true 表示是玩家新建的，初始库存为0，需要进货
+        if (isRetailBuilding(buildingTypeId)) {
+          registerRetailStore(worldRef, buildingId, true);
+        }
+        
+        set((state) => {
+          state.playerBuildings++;
+          // 立即更新现金状态，确保其他UI组件能看到最新值
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', '建筑建造完成');
+        return buildingId;
+      } catch (e) {
+        get().addNotification('error', '建筑建造失败');
+        return null;
+      }
+    },
+    
+    upgradeBuilding: (buildingId) => {
+      if (!worldRef) return false;
+      
+      // 检查建筑所有权
+      if (worldRef.buildings.owners[buildingId] !== 0) {
+        get().addNotification('error', '无法升级不属于你的建筑');
+        return false;
+      }
+      
+      const currentLevel = worldRef.buildings.levels[buildingId];
+      const typeId = worldRef.buildings.types[buildingId];
+      const building = ALL_BUILDINGS.find(b => b.id === typeId);
+      
+      if (!building) {
+        get().addNotification('error', '建筑类型无效');
+        return false;
+      }
+      
+      if (currentLevel >= building.maxLevel) {
+        get().addNotification('warning', '建筑已达最高等级');
+        return false;
+      }
+      
+      const upgradeCost = building.upgradeCosts[currentLevel] || building.buildCost * 0.5;
+      const playerCash = worldRef.companies.cash[0];
+      
+      if (playerCash < upgradeCost) {
+        get().addNotification('error', `资金不足，升级需要 ¥${upgradeCost.toLocaleString()}`);
+        return false;
+      }
+      
+      // 扣费并升级
+      worldRef.companies.cash[0] -= upgradeCost;
+      worldRef.buildings.levels[buildingId] = currentLevel + 1;
+      
+      // 更新效率
+      const newEfficiency = building.efficiencyMultipliers[currentLevel] || 1;
+      worldRef.buildings.efficiencies[buildingId] = newEfficiency;
+      
+      set((state) => {
+        state.playerCash = worldRef!.companies.cash[0];
+      });
+      
+      get().addNotification('success', `${building.name} 升级到 Lv.${currentLevel + 1}`);
+      return true;
+    },
+    
+    toggleBuildingActive: (buildingId) => {
+      if (!worldRef) return false;
+      
+      // 检查建筑所有权
+      if (worldRef.buildings.owners[buildingId] !== 0) {
+        get().addNotification('error', '无法控制不属于你的建筑');
+        return false;
+      }
+      
+      const isActive = worldRef.buildings.isActive[buildingId];
+      // isActive 是 Uint8Array，用 1 和 0 表示激活状态
+      worldRef.buildings.isActive[buildingId] = isActive ? 0 : 1;
+      
+      if (isActive) {
+        get().addNotification('info', '建筑已暂停生产');
+      } else {
+        get().addNotification('success', '建筑已恢复生产');
+      }
+      
+      return true;
+    },
+    
+    setBuildingRecipe: (buildingId, recipeId) => {
+      if (!worldRef) return false;
+      
+      // 检查建筑所有权
+      if (worldRef.buildings.owners[buildingId] !== 0) {
+        get().addNotification('error', '无法修改不属于你的建筑');
+        return false;
+      }
+      
+      const typeId = worldRef.buildings.types[buildingId];
+      const building = ALL_BUILDINGS.find(b => b.id === typeId);
+      
+      if (!building) {
+        get().addNotification('error', '建筑类型无效');
+        return false;
+      }
+      
+      // 检查配方是否支持（使用 availableRecipes）
+      if (!building.availableRecipes.includes(recipeId)) {
+        get().addNotification('error', '该建筑不支持此配方');
+        return false;
+      }
+      
+      // 切换配方
+      worldRef.buildings.recipeIds[buildingId] = recipeId;
+      
+      // 清空缓冲区（切换配方后需要重新生产）
+      for (let i = 0; i < 8; i++) {
+        worldRef.buildings.inputBuffers[buildingId * 8 + i] = 0;
+        worldRef.buildings.outputBuffers[buildingId * 8 + i] = 0;
+      }
+      // 重置生产进度
+      worldRef.buildings.progress[buildingId] = 0;
+      
+      const recipe = RECIPES.find(r => r.id === recipeId);
+      get().addNotification('success', `已切换配方为「${recipe?.name || '未知配方'}」`);
+      
+      return true;
+    },
+    
+    // ==================== 贷款 ====================
+    applyLoan: (amount, loanType, collateralType = 'none') => {
+      if (!worldRef) return { approved: false, reason: '游戏未初始化' };
+      
+      const result = applyForLoan(worldRef, 0, amount, loanType, collateralType);
+      
+      if (result.approved) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `贷款申请成功！获得 ¥${amount.toLocaleString()}`);
+      } else {
+        get().addNotification('error', `贷款申请失败：${result.reason}`);
+      }
+      
+      return result;
+    },
+    
+    prepayPlayerLoan: (loanId) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      
+      const result = prepayLoan(worldRef, loanId);
+      
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `贷款已提前还清${result.penalty ? `，罚金 ¥${result.penalty.toFixed(0)}` : ''}`);
+      } else {
+        get().addNotification('error', `还款失败：${result.reason}`);
+      }
+      
+      return result;
+    },
+    
+    getPlayerLoans: () => {
+      if (!worldRef) return [];
+      return getCompanyLoans(0);
+    },
+    
+    getPlayerCreditProfile: () => {
+      if (!worldRef) return null;
+      return getCreditProfile(0);
+    },
+    
+    getPlayerLoanOptions: () => {
+      if (!worldRef) return [];
+      return getAvailableLoanOptions(worldRef, 0);
+    },
+    
+    // ==================== UI ====================
+    setSelectedGoods: (goodsId) => {
+      set((state) => {
+        state.ui.selectedGoodsId = goodsId;
+      });
+    },
+    
+    setSelectedBuilding: (buildingId) => {
+      set((state) => {
+        state.ui.selectedBuildingId = buildingId;
+      });
+    },
+    
+    setCurrentPage: (page) => {
+      set((state) => {
+        state.ui.currentPage = page;
+      });
+    },
+    
+    toggleSidebar: () => {
+      set((state) => {
+        state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed;
+      });
+    },
+    
+    toggleTheme: () => {
+      set((state) => {
+        const newTheme = state.ui.theme === 'dark' ? 'light' : 'dark';
+        state.ui.theme = newTheme;
+        localStorage.setItem('theme', newTheme);
+        // 更新 document class
+        if (newTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      });
+    },
+    
+    setTheme: (theme) => {
+      set((state) => {
+        state.ui.theme = theme;
+        localStorage.setItem('theme', theme);
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      });
+    },
+    
+    addNotification: (type, message) => {
+      const id = ++notificationId;
+      set((state) => {
+        state.ui.notifications.push({
+          id,
+          type,
+          message,
+          timestamp: Date.now(),
+        });
+        
+        // 最多保留10条
+        if (state.ui.notifications.length > 10) {
+          state.ui.notifications.shift();
+        }
+      });
+      
+      // 5秒后自动消失
+      setTimeout(() => {
+        get().dismissNotification(id);
+      }, 5000);
+    },
+    
+    dismissNotification: (id) => {
+      set((state) => {
+        state.ui.notifications = state.ui.notifications.filter(n => n.id !== id);
+      });
+    },
+    
+    // ==================== 生产方式槽位 ====================
+    getBuildingSlotConfig: (buildingTypeId) => {
+      // 先检查是否使用新系统
+      if (hasBuildingSpecificMethods(buildingTypeId)) {
+        const newConfig = getBuildingConfig(buildingTypeId);
+        if (newConfig) {
+          // 转换为旧格式以保持UI兼容
+          return {
+            buildingTypeId,
+            slots: newConfig.slots.map((slot: { id: string }, _i: number) => {
+              const methods = getSlotAvailableMethods(buildingTypeId, slot.id);
+              return {
+                slotType: 'process' as ProductionSlotType, // 占位
+                availableMethods: methods.map((m: { id: number }) => m.id),
+                defaultMethod: methods[0]?.id || 0,
+              };
+            }),
+          };
+        }
+      }
+      return SLOT_CONFIGS_BY_BUILDING.get(buildingTypeId) || null;
+    },
+    
+    getBuildingCurrentMethods: (buildingId) => {
+      if (!worldRef) return [];
+      
+      // 直接从worldRef读取，避免模块缓存问题
+      const b = worldRef.buildings;
+      const slotOffset = buildingId * MAX_SLOTS;
+      const buildingTypeId = b.types[buildingId];
+      const slotCount = getBuildingSlotCount(buildingTypeId);
+      
+      const methods: number[] = [];
+      for (let i = 0; i < slotCount; i++) {
+        methods.push(b.slotMethods[slotOffset + i]);
+      }
+      return methods;
+    },
+    
+    getAvailableMethodsForSlot: (buildingTypeId, slotIndex, buildingLevel) => {
+      // 检查是否使用新系统
+      if (hasBuildingSpecificMethods(buildingTypeId)) {
+        const newConfig = getBuildingConfig(buildingTypeId);
+        if (newConfig && slotIndex < newConfig.slots.length) {
+          const slot = newConfig.slots[slotIndex];
+          const newMethods = getSlotAvailableMethods(buildingTypeId, slot.id) as Array<{
+            id: number;
+            key: string;
+            name: string;
+            outputModifiers: Array<{ goodsId: number | 'all'; multiplier: number }>;
+            inputModifiers: Array<{ goodsId: number | 'all'; multiplier: number }>;
+            laborMultiplier: number;
+            energyMultiplier: number;
+            qualityBonus: number;
+            requiredLevel: number;
+            switchCost: number;
+            switchCooldown: number;
+          }>;
+          
+          // 转换为旧格式
+          return newMethods
+            .filter(m => m.requiredLevel <= buildingLevel)
+            .map(m => ({
+              id: m.id,
+              key: m.key,
+              name: m.name,
+              slotType: 'process' as ProductionSlotType,
+              outputMultipliers: new Map(
+                m.outputModifiers.map(mod => [
+                  typeof mod.goodsId === 'number' ? mod.goodsId : 0,
+                  mod.multiplier
+                ])
+              ),
+              inputMultipliers: new Map(
+                m.inputModifiers.map(mod => [
+                  typeof mod.goodsId === 'number' ? mod.goodsId : 0,
+                  mod.multiplier
+                ])
+              ),
+              laborMultiplier: m.laborMultiplier,
+              energyMultiplier: m.energyMultiplier,
+              qualityBonus: m.qualityBonus,
+              requiredLevel: m.requiredLevel,
+              switchCost: m.switchCost,
+              switchCooldown: m.switchCooldown,
+            })) as ProductionMethod[];
+        }
+        return [];
+      }
+      
+      // 旧系统
+      const config = SLOT_CONFIGS_BY_BUILDING.get(buildingTypeId);
+      if (!config || slotIndex >= config.slots.length) return [];
+      
+      const slot = config.slots[slotIndex];
+      const methods: ProductionMethod[] = [];
+      
+      for (const methodId of slot.availableMethods) {
+        const method = METHODS_BY_ID.get(methodId);
+        if (method && isMethodUnlocked(buildingLevel, methodId)) {
+          methods.push(method);
+        }
+      }
+      
+      return methods;
+    },
+    
+    changeBuildingSlotMethod: (buildingId, slotIndex, methodId) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      
+      const b = worldRef.buildings;
+      
+      // 检查建筑是否存在
+      if (buildingId >= b.count) {
+        return { success: false, reason: '建筑不存在' };
+      }
+      
+      // 检查是否是玩家建筑
+      if (b.owners[buildingId] !== 0) {
+        return { success: false, reason: '无法修改非玩家建筑的生产方式' };
+      }
+      
+      const buildingTypeId = b.types[buildingId];
+      const buildingLevel = b.levels[buildingId];
+      
+      // 检查是否使用新系统
+      if (hasBuildingSpecificMethods(buildingTypeId)) {
+        const newConfig = getBuildingConfig(buildingTypeId);
+        
+        if (!newConfig || slotIndex >= newConfig.slots.length) {
+          return { success: false, reason: '无效的槽位索引' };
+        }
+        
+        const slot = newConfig.slots[slotIndex] as { id: string; name: string };
+        
+        // 如果methodId为0，表示清空槽位
+        if (methodId === 0) {
+          const slotOffset = buildingId * MAX_SLOTS;
+          worldRef.buildings.slotMethods[slotOffset + slotIndex] = 0;
+          get().addNotification('info', `已清空「${slot.name}」槽位`);
+          return { success: true };
+        }
+        
+        const newMethod = getMethodByIdNew(methodId) as {
+          id: number;
+          name: string;
+          buildingTypeId: number;
+          slotId: string;
+          requiredLevel: number;
+          switchCost: number;
+        } | null;
+        
+        if (!newMethod) {
+          return { success: false, reason: '无效的生产方式ID' };
+        }
+        
+        // 检查方式是否属于该建筑
+        if (newMethod.buildingTypeId !== buildingTypeId) {
+          return { success: false, reason: '该生产方式不属于此建筑' };
+        }
+        
+        // 检查方式是否属于该槽位
+        if (newMethod.slotId !== slot.id) {
+          return { success: false, reason: '该生产方式不属于此槽位' };
+        }
+        
+        // 检查等级要求
+        if (newMethod.requiredLevel > buildingLevel) {
+          return { success: false, reason: `需要建筑等级 ${newMethod.requiredLevel}` };
+        }
+        
+        // 计算切换成本
+        const switchCost = newMethod.switchCost || 50000;
+        const playerCash = worldRef.companies.cash[0];
+        
+        if (playerCash < switchCost) {
+          return { success: false, reason: `资金不足，切换需要 ¥${switchCost.toLocaleString()}` };
+        }
+        
+        // 扣费并切换
+        worldRef.companies.cash[0] -= switchCost;
+        const slotOffset = buildingId * MAX_SLOTS;
+        worldRef.buildings.slotMethods[slotOffset + slotIndex] = methodId;
+        
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+          // 强制增加tick来触发UI刷新
+          state.tick = state.tick + 0.001;
+        });
+        
+        get().addNotification('success', `已切换到「${newMethod.name}」，花费 ¥${switchCost.toLocaleString()}`);
+        return { success: true };
+      }
+      
+      // 旧系统
+      // 检查方式是否可用
+      if (!isMethodAvailable(buildingTypeId, slotIndex, methodId)) {
+        return { success: false, reason: '该生产方式不可用于此建筑槽位' };
+      }
+      
+      // 检查等级要求
+      if (!isMethodUnlocked(buildingLevel, methodId)) {
+        const method = METHODS_BY_ID.get(methodId);
+        return { success: false, reason: `需要建筑等级 ${method?.requiredLevel || '?'}` };
+      }
+      
+      // 计算切换成本
+      const currentMethods = getBuildingSlotMethodsArray(worldRef, buildingId);
+      const newMethods = [...currentMethods];
+      newMethods[slotIndex] = methodId;
+      
+      const switchCost = calculateSwitchCost(currentMethods, newMethods);
+      const playerCash = worldRef.companies.cash[0];
+      
+      if (playerCash < switchCost) {
+        return { success: false, reason: `资金不足，切换需要 ¥${switchCost.toLocaleString()}` };
+      }
+      
+      // 扣费并切换
+      worldRef.companies.cash[0] -= switchCost;
+      const success = setBuildingSlotMethod(worldRef, buildingId, slotIndex, methodId);
+      
+      if (success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        
+        const method = METHODS_BY_ID.get(methodId);
+        get().addNotification('success', `已切换到「${method?.name || '未知方式'}」，花费 ¥${switchCost.toLocaleString()}`);
+        return { success: true };
+      } else {
+        // 恢复现金
+        worldRef.companies.cash[0] += switchCost;
+        return { success: false, reason: '切换失败' };
+      }
+    },
+    
+    getMethodInfo: (methodId) => {
+      // 先检查新系统
+      const newMethod = getMethodByIdNew(methodId) as {
+        name: string;
+        description?: string;
+        effects?: string[];
+        requiredLevel: number;
+        switchCost: number;
+        switchCooldown: number;
+      } | null;
+      if (newMethod) {
+        return {
+          name: newMethod.name,
+          description: newMethod.description || '',
+          effects: newMethod.effects || [],
+          slotType: 'process' as ProductionSlotType, // 占位
+          requiredLevel: newMethod.requiredLevel,
+          switchCost: newMethod.switchCost,
+          switchCooldown: newMethod.switchCooldown,
+        };
+      }
+      return getMethodDisplayInfo(methodId);
+    },
+    
+    // ==================== 数据获取 ====================
+    getWorld: () => worldRef,
+    
+    getPlayerInventory: () => {
+      if (!worldRef) return [];
+      
+      const inventory: { goodsId: number; name: string; quantity: number; value: number }[] = [];
+      
+      for (let i = 0; i < worldRef.goods.count; i++) {
+        const quantity = worldRef.companies.inventories[0 * GOODS_COUNT + i];
+        if (quantity > 0) {
+          inventory.push({
+            goodsId: i,
+            name: worldRef.goods.names[i],
+            quantity,
+            value: quantity * worldRef.goods.prices[i],
+          });
+        }
+      }
+      
+      return inventory.sort((a, b) => b.value - a.value);
+    },
+    
+    getOrderBook: (goodsId) => {
+      if (!worldRef) return null;
+      return getOrderBookView(worldRef, goodsId);
+    },
+    
+    getMarketStats: (goodsId) => {
+      if (!worldRef) return null;
+      return getMarketStats(worldRef, goodsId);
+    },
+    
+    getPriceTrend: (goodsId) => {
+      if (!worldRef) return null;
+      return getPriceTrend(worldRef, goodsId);
+    },
+    
+    getPriceSummary: () => {
+      if (!worldRef) return null;
+      return getPriceSummary(worldRef);
+    },
+    
+    getBuildingStatus: (buildingId) => {
+      if (!worldRef) return null;
+      return getBuildingProductionStatus(worldRef, buildingId);
+    },
+    
+    getBuildingStatusWithMethods: (buildingId) => {
+      if (!worldRef) return null;
+      return getBuildingProductionStatusWithMethods(worldRef, buildingId);
+    },
+    
+    getPlayerBuildings: () => {
+      if (!worldRef) return [];
+      
+      const buildings: { id: number; name: string; level: number; status: BuildingProductionStatus | null; slotMethods: number[]; isRetail?: boolean }[] = [];
+      
+      for (let i = 0; i < worldRef.buildings.count; i++) {
+        if (worldRef.buildings.owners[i] === 0) {
+          const typeId = worldRef.buildings.types[i];
+          const buildingType = ALL_BUILDINGS.find(b => b.id === typeId);
+          const isRetail = isRetailBuilding(typeId);
+          buildings.push({
+            id: i,
+            name: buildingType?.name ?? `建筑 ${i}`,
+            level: worldRef.buildings.levels[i],
+            status: isRetail ? null : getBuildingProductionStatusWithMethods(worldRef, i),
+            slotMethods: isRetail ? [] : getBuildingSlotMethodsArray(worldRef, i),
+            isRetail,
+          });
+        }
+      }
+      
+      return buildings;
+    },
+    
+    getAllGoods: () => ALL_GOODS,
+    
+    getAllBuildingTypes: () => ALL_BUILDINGS,
+    
+    getFinancialHistory: () => {
+      const state = get();
+      return state.financialHistory;
+    },
+    
+    getInventoryQuality: (goodsId: number) => {
+      if (!worldRef) return { name: '标准', priceMultiplier: 1.0, color: '#60a5fa' };
+      
+      const name = getInventoryQualityName(worldRef, 0, goodsId);
+      const priceMultiplier = getInventoryQualityPriceMultiplier(worldRef, 0, goodsId);
+      
+      // 根据名称获取颜色
+      const colors: Record<string, string> = {
+        '劣质': '#9ca3af',
+        '标准': '#60a5fa',
+        '良好': '#4ade80',
+        '优质': '#a78bfa',
+        '奢华': '#fbbf24',
+      };
+      
+      return {
+        name,
+        priceMultiplier,
+        color: colors[name] || '#60a5fa',
+      };
+    },
+    
+    // ==================== 零售系统 ====================
+    
+    getPlayerRetailStores: () => {
+      if (!worldRef) return [];
+      return getPlayerRetailStores(worldRef, 0);
+    },
+    
+    getRetailStoreDetails: (retailId: number) => {
+      if (!worldRef) return null;
+      return getRetailStoreDetails(worldRef, retailId);
+    },
+    
+    getRetailMarketOverview: () => {
+      if (!worldRef) return null;
+      return getRetailMarketOverview(worldRef);
+    },
+    
+    setRetailPrice: (retailId: number, goodsId: number, price: number) => {
+      if (!worldRef) return false;
+      return setRetailPrice(worldRef, retailId, goodsId, price);
+    },
+    
+    setRetailMarkup: (retailId: number, goodsId: number, markup: number) => {
+      if (!worldRef) return false;
+      return setRetailMarkup(worldRef, retailId, goodsId, markup);
+    },
+    
+    // ==================== 股票市场 ====================
+    getStockMarketState: () => {
+      return getMarketState();
+    },
+    
+    getStockInfo: (companyId: number) => {
+      return getStock(companyId);
+    },
+    
+    getPlayerHoldings: () => {
+      return getHoldings(0);
+    },
+    
+    buyStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => {
+      if (!worldRef) return false;
+      
+      const orderId = buyStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
+      if (orderId !== null) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        const stock = getStock(stockCompanyId);
+        get().addNotification('success', `买入股票 ${stock?.ticker || ''} ${quantity}股`);
+        return true;
+      } else {
+        get().addNotification('error', '买入失败：资金不足或股票不可交易');
+        return false;
+      }
+    },
+    
+    sellStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => {
+      if (!worldRef) return false;
+      
+      const orderId = sellStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
+      if (orderId !== null) {
+        const stock = getStock(stockCompanyId);
+        get().addNotification('success', `卖出股票 ${stock?.ticker || ''} ${quantity}股`);
+        return true;
+      } else {
+        get().addNotification('error', '卖出失败：持股不足或股票不可交易');
+        return false;
+      }
+    },
+    
+    playerIPO: (offeringShares: number, offeringPrice: number) => {
+      if (!worldRef) return false;
+      
+      const success = initiateIPO(worldRef, 0, offeringShares, offeringPrice);
+      if (success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `IPO成功！发行${offeringShares}股 @ ¥${offeringPrice}`);
+        return true;
+      } else {
+        get().addNotification('error', 'IPO失败：公司已上市');
+        return false;
+      }
+    },
+    
+    // ==================== 收购系统 ====================
+    getCompanyValuation: (companyId: number) => {
+      if (!worldRef) return null;
+      return evaluateCompanyValue(worldRef, companyId);
+    },
+    
+    analyzeAcquisition: (targetId: number) => {
+      if (!worldRef) return null;
+      return analyzeAcquisitionFeasibility(worldRef, 0, targetId);
+    },
+    
+    initiateAcquisitionOffer: (targetId: number, targetSharePercent: number, offerPrice: number) => {
+      if (!worldRef) return false;
+      
+      const result = initiateAcquisition(worldRef, 0, targetId, 'friendly', targetSharePercent, offerPrice);
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `收购要约已发起，目标持股 ${(targetSharePercent * 100).toFixed(0)}%`);
+        return true;
+      } else {
+        get().addNotification('error', `收购失败：${result.reason}`);
+        return false;
+      }
+    },
+    
+    initiateAssetBuy: (sellerId: number, assetType: 'building' | 'inventory', assetIds: number[], price: number) => {
+      if (!worldRef) return false;
+      
+      const result = initiateAssetPurchase(worldRef, 0, sellerId, assetType, assetIds, price);
+      if (result.success && result.transactionId) {
+        // 自动确认交易（简化流程）
+        const confirmResult = confirmAssetTransaction(worldRef, result.transactionId);
+        if (confirmResult.success) {
+          set((state) => {
+            state.playerCash = worldRef!.companies.cash[0];
+            state.playerBuildings++;
+          });
+          get().addNotification('success', `资产购买成功！`);
+          return true;
+        }
+      }
+      get().addNotification('error', `资产购买失败：${result.reason || '交易失败'}`);
+      return false;
+    },
+    
+    getPlayerAcquisitionOffers: () => {
+      return getOffersByCompany(0);
+    },
+    
+    // ==================== 统一公司数据 (新增) ====================
+    getCompanyProfile: (companyId: number) => {
+      if (!worldRef) return null;
+      return getCompanyProfile(worldRef, companyId);
+    },
+    
+    getAllCompanyProfiles: () => {
+      if (!worldRef) return [];
+      return getAllCompanyProfiles(worldRef);
+    },
+    
+    getAICompanyProfiles: () => {
+      if (!worldRef) return [];
+      return getAICompanyProfiles(worldRef);
+    },
+    
+    getPlayerHoldingProfiles: () => {
+      if (!worldRef) return [];
+      return getPlayerHoldingProfiles(worldRef);
+    },
+    
+    getPlayerControlledProfiles: () => {
+      if (!worldRef) return [];
+      return getPlayerControlledProfiles(worldRef);
+    },
+    
+    getPlayerPortfolio: () => {
+      if (!worldRef) return { totalValue: 0, totalCost: 0, totalGain: 0, gainPercent: 0, holdingCount: 0 };
+      return calculatePlayerPortfolio(worldRef);
+    },
+    
+    getCompanyMarketStats: () => {
+      if (!worldRef) return { rising: 0, falling: 0, unchanged: 0, totalVolume: 0, totalMarketCap: 0 };
+      return calculateCompanyMarketStats(worldRef);
+    },
+    
+    // ==================== 控制权相关 (新增) ====================
+    getPlayerControlLevel: (companyId: number) => {
+      return getPlayerControlLevel(companyId);
+    },
+    
+    getPlayerControlledCompanyIds: () => {
+      return getPlayerControlledCompanyIds();
+    },
+    
+    hasPlayerControlRight: (companyId: number, right: ControlRight) => {
+      return hasControlRight(0, companyId, right);
+    },
+    
+    setControlledStrategy: (companyId: number, strategy: ControlStrategy) => {
+      if (!worldRef) return false;
+      const success = setControlledCompanyStrategy(worldRef, companyId, strategy);
+      if (success) {
+        get().addNotification('success', `已更新控股公司经营策略`);
+      }
+      return success;
+    },
+    
+    requestCompanyDividend: (companyId: number, amount: number) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      const result = requestDividend(worldRef, companyId, amount);
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        get().addNotification('success', `分红成功！获得 ¥${result.playerReceived?.toLocaleString() || 0}`);
+      }
+      return result;
+    },
+    
+    transferAssets: (fromId: number, toId: number, assetType: 'building' | 'inventory', assetIds: number[]) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      const result = initiateAssetTransfer(worldRef, fromId, toId, assetType, assetIds);
+      if (result.success) {
+        set((state) => {
+          if (toId === 0) {
+            state.playerBuildings++;
+          }
+        });
+        get().addNotification('success', '资产转移成功');
+      }
+      return result;
+    },
+    
+    // ==================== 收藏管理 (新增) ====================
+    toggleFavoriteCompany: (companyId: number) => {
+      set((state) => {
+        const index = state.ui.favoriteCompanies.indexOf(companyId);
+        if (index >= 0) {
+          state.ui.favoriteCompanies.splice(index, 1);
+        } else {
+          state.ui.favoriteCompanies.push(companyId);
+        }
+      });
+    },
+    
+    getFavoriteCompanies: () => {
+      return get().ui.favoriteCompanies;
+    },
+    
+    // ==================== 性能监控 ====================
+    getPerformanceSnapshot: () => {
+      return perfMonitor.getSnapshot();
+    },
+    
+    getPerformanceSnapshots: (count: number) => {
+      return perfMonitor.getSnapshots(count);
+    },
+    
+    getFPSData: () => {
+      return perfMonitor.getFPS();
+    },
+    
+    getMemoryData: () => {
+      return perfMonitor.getMemoryStats();
+    },
+    
+    exportPerformanceJSON: (options?: Partial<ExportOptions>) => {
+      downloadPerformanceJSON(options);
+    },
+    
+    exportPerformanceCSV: (options?: Partial<ExportOptions>) => {
+      downloadPerformanceCSV(options);
+    },
+  }))
+);

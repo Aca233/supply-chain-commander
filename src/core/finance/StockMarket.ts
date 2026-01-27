@@ -1,0 +1,1038 @@
+/**
+ * 股票交易系统
+ * 实现公司股票的IPO、交易和估值
+ */
+
+import { GameWorld } from '@/core/world/GameWorld';
+import { GOODS_COUNT } from '@/core/constants';
+
+/**
+ * 股票信息
+ */
+export interface Stock {
+  companyId: number;
+  ticker: string;                  // 股票代码
+  name: string;                    // 公司名称
+  
+  // 股本结构
+  totalShares: number;             // 总股数
+  outstandingShares: number;       // 流通股数
+  treasuryShares: number;          // 库存股
+  
+  // 价格信息
+  currentPrice: number;            // 当前股价
+  openPrice: number;               // 开盘价
+  highPrice: number;               // 最高价
+  lowPrice: number;                // 最低价
+  previousClose: number;           // 昨收价
+  
+  // 交易数据
+  volume: number;                  // 日成交量
+  totalVolume: number;             // 累计成交量
+  turnoverRate: number;            // 换手率
+  
+  // 估值指标
+  marketCap: number;               // 市值
+  bookValue: number;               // 净资产
+  earningsPerShare: number;        // 每股收益
+  priceToEarnings: number;         // 市盈率
+  priceToBook: number;             // 市净率
+  dividendYield: number;           // 股息率
+  
+  // 状态
+  isListed: boolean;               // 是否上市
+  isTradable: boolean;             // 是否可交易
+  listingDate: number;             // 上市时间（tick）
+}
+
+/**
+ * 股票订单
+ */
+export interface StockOrder {
+  id: number;
+  companyId: number;               // 下单公司
+  stockCompanyId: number;          // 目标股票公司
+  type: 'buy' | 'sell';
+  orderType: 'market' | 'limit';
+  quantity: number;
+  limitPrice?: number;
+  createdTick: number;
+  status: 'pending' | 'filled' | 'partial' | 'cancelled';
+  filledQuantity: number;
+  avgPrice: number;
+}
+
+/**
+ * 持股记录
+ */
+export interface Holding {
+  ownerCompanyId: number;
+  stockCompanyId: number;
+  shares: number;
+  avgCost: number;                 // 平均成本
+  unrealizedGain: number;          // 未实现收益
+}
+
+/**
+ * 公司历史财务数据（用于计算业绩变化）
+ */
+export interface CompanyHistoryData {
+  lastCash: number;
+  lastNetWorth: number;
+  lastUpdateTick: number;
+}
+
+/**
+ * 股票市场状态
+ */
+export interface StockMarketState {
+  stocks: Map<number, Stock>;
+  orders: StockOrder[];
+  holdings: Map<string, Holding>; // key: `${ownerCompanyId}-${stockCompanyId}`
+  nextOrderId: number;
+  marketOpen: boolean;
+  lastUpdateTick: number;
+  
+  // 市场指数
+  marketIndex: number;
+  marketIndexChange: number;
+  totalMarketCap: number;
+  totalVolume: number;
+  
+  // 公司历史数据（用于计算业绩变化驱动股价）
+  companyHistory: Map<number, CompanyHistoryData>;
+}
+
+// 全局股票市场状态
+let stockMarket: StockMarketState = {
+  stocks: new Map(),
+  orders: [],
+  holdings: new Map(),
+  nextOrderId: 1,
+  marketOpen: true,
+  lastUpdateTick: 0,
+  marketIndex: 1000,
+  marketIndexChange: 0,
+  totalMarketCap: 0,
+  totalVolume: 0,
+  companyHistory: new Map(),
+};
+
+/**
+ * 初始化股票市场
+ *
+ * 修复：让AI公司互相持有股票，确保市场有流动性
+ */
+export function initializeStockMarket(world: GameWorld): void {
+  stockMarket = {
+    stocks: new Map(),
+    orders: [],
+    holdings: new Map(),
+    nextOrderId: 1,
+    marketOpen: true,
+    lastUpdateTick: world.tick,
+    marketIndex: 1000,
+    marketIndexChange: 0,
+    totalMarketCap: 0,
+    totalVolume: 0,
+    companyHistory: new Map(),
+  };
+  
+  // 第一遍：为每个AI公司创建股票
+  const aiCompanyIds: number[] = [];
+  for (let i = 1; i < world.companies.count; i++) {
+    if (world.companies.isAI[i]) {
+      aiCompanyIds.push(i);
+      const stock = createStock(world, i);
+      stockMarket.stocks.set(i, stock);
+      
+      // 初始化公司历史数据
+      const { bookValue } = calculateValuation(world, i);
+      stockMarket.companyHistory.set(i, {
+        lastCash: world.companies.cash[i],
+        lastNetWorth: bookValue,
+        lastUpdateTick: world.tick,
+      });
+    }
+  }
+  
+  // 第二遍：分配持股
+  // 设计：每家公司自持50%，其他AI公司共持30%（流通），剩余20%待IPO认购
+  for (const companyId of aiCompanyIds) {
+    const stock = stockMarket.stocks.get(companyId);
+    if (!stock) continue;
+    
+    // 1. 自持50%
+    const selfShares = Math.floor(stock.totalShares * 0.50);
+    const selfHolding: Holding = {
+      ownerCompanyId: companyId,
+      stockCompanyId: companyId,
+      shares: selfShares,
+      avgCost: stock.currentPrice,
+      unrealizedGain: 0,
+    };
+    stockMarket.holdings.set(`${companyId}-${companyId}`, selfHolding);
+    
+    // 2. 分配30%给其他AI公司（确保市场有卖方）
+    const distributedShares = Math.floor(stock.totalShares * 0.30);
+    const otherCompanies = aiCompanyIds.filter(id => id !== companyId);
+    
+    if (otherCompanies.length > 0) {
+      // 每家公司分配的股份数量（平均分配）
+      const sharesPerCompany = Math.floor(distributedShares / Math.min(otherCompanies.length, 10));
+      
+      // 只分配给最多10家公司，避免持股太分散
+      const recipients = otherCompanies.slice(0, 10);
+      
+      for (const recipientId of recipients) {
+        if (sharesPerCompany >= 100) { // 至少100股
+          const holdingKey = `${recipientId}-${companyId}`;
+          const existingHolding = stockMarket.holdings.get(holdingKey);
+          
+          if (existingHolding) {
+            existingHolding.shares += sharesPerCompany;
+          } else {
+            const holding: Holding = {
+              ownerCompanyId: recipientId,
+              stockCompanyId: companyId,
+              shares: sharesPerCompany,
+              avgCost: stock.currentPrice,
+              unrealizedGain: 0,
+            };
+            stockMarket.holdings.set(holdingKey, holding);
+          }
+        }
+      }
+    }
+    
+    // 3. 剩余20%作为可认购的流通股（stock.outstandingShares已设定为40%）
+  }
+  
+  console.log(`[StockMarket] 初始化完成: ${aiCompanyIds.length}家公司上市, ${stockMarket.holdings.size}个持股记录`);
+}
+
+/**
+ * 创建股票
+ */
+function createStock(world: GameWorld, companyId: number): Stock {
+  const name = world.companies.names[companyId] || `公司#${companyId}`;
+  const ticker = generateTicker(name);
+  
+  // 计算公司价值
+  const cash = world.companies.cash[companyId];
+  let inventoryValue = 0;
+  for (let i = 0; i < GOODS_COUNT; i++) {
+    inventoryValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
+  }
+  
+  // 统计建筑资产
+  let buildingValue = 0;
+  for (let i = 0; i < world.buildings.count; i++) {
+    if (world.buildings.owners[i] === companyId) {
+      buildingValue += 500000; // 简化估值
+    }
+  }
+  
+  const bookValue = cash + inventoryValue + buildingValue;
+  
+  // 股本设计
+  const totalShares = 1000000; // 100万股
+  const outstandingShares = totalShares * 0.4; // 40%流通
+  
+  // 初始定价
+  const initialPrice = bookValue / totalShares * 1.5; // 1.5倍市净率
+  
+  return {
+    companyId,
+    ticker,
+    name,
+    totalShares,
+    outstandingShares,
+    treasuryShares: 0,
+    currentPrice: initialPrice,
+    openPrice: initialPrice,
+    highPrice: initialPrice,
+    lowPrice: initialPrice,
+    previousClose: initialPrice,
+    volume: 0,
+    totalVolume: 0,
+    turnoverRate: 0,
+    marketCap: initialPrice * totalShares,
+    bookValue,
+    earningsPerShare: 0,
+    priceToEarnings: 15, // 默认15倍PE
+    priceToBook: 1.5,
+    dividendYield: 0.02, // 2%股息
+    isListed: true,
+    isTradable: true,
+    listingDate: world.tick,
+  };
+}
+
+/**
+ * 生成股票代码
+ */
+function generateTicker(name: string): string {
+  // 简化：取首字母
+  const letters = name.substring(0, 4).toUpperCase();
+  return letters.padEnd(4, 'X');
+}
+
+/**
+ * 计算公司估值
+ */
+export function calculateValuation(world: GameWorld, companyId: number): {
+  bookValue: number;
+  intrinsicValue: number;
+  marketValue: number;
+} {
+  const cash = world.companies.cash[companyId];
+  
+  let inventoryValue = 0;
+  for (let i = 0; i < GOODS_COUNT; i++) {
+    inventoryValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
+  }
+  
+  let buildingValue = 0;
+  for (let i = 0; i < world.buildings.count; i++) {
+    if (world.buildings.owners[i] === companyId) {
+      buildingValue += 500000;
+    }
+  }
+  
+  const bookValue = cash + inventoryValue + buildingValue;
+  
+  // 内在价值 = 账面价值 + 未来盈利折现
+  const estimatedEarnings = bookValue * 0.1; // 假设10%ROE
+  const discountRate = 0.1;
+  const intrinsicValue = bookValue + estimatedEarnings * 10; // 10年DCF简化
+  
+  // 市场价值
+  const stock = stockMarket.stocks.get(companyId);
+  const marketValue = stock ? stock.marketCap : bookValue;
+  
+  return { bookValue, intrinsicValue, marketValue };
+}
+
+/**
+ * 下单买入股票
+ *
+ * 优化：市价单直接从AI持股中购买，确保即时成交
+ */
+export function buyStock(
+  world: GameWorld,
+  buyerCompanyId: number,
+  stockCompanyId: number,
+  quantity: number,
+  orderType: 'market' | 'limit',
+  limitPrice?: number
+): number | null {
+  const stock = stockMarket.stocks.get(stockCompanyId);
+  if (!stock || !stock.isTradable) {
+    console.log(`[StockMarket] 买入失败: 股票不存在或不可交易 companyId=${stockCompanyId}`);
+    return null;
+  }
+  
+  const tradePrice = limitPrice || stock.currentPrice;
+  const estimatedCost = tradePrice * quantity;
+  
+  if (world.companies.cash[buyerCompanyId] < estimatedCost) {
+    console.log(`[StockMarket] 买入失败: 资金不足 需要=${estimatedCost} 拥有=${world.companies.cash[buyerCompanyId]}`);
+    return null; // 资金不足
+  }
+  
+  // 市价单：尝试即时成交
+  if (orderType === 'market') {
+    // 查找可用的卖方（AI公司持股）
+    let remainingQuantity = quantity;
+    let totalCost = 0;
+    let filledQuantity = 0;
+    
+    // 遍历所有持股，找到可以卖出的
+    for (const [key, holding] of stockMarket.holdings) {
+      if (holding.stockCompanyId !== stockCompanyId) continue;
+      if (holding.ownerCompanyId === buyerCompanyId) continue; // 不能自己买自己
+      if (holding.ownerCompanyId === stockCompanyId) continue; // 公司自持股不卖
+      if (holding.shares <= 0) continue;
+      
+      // 计算可以购买的数量
+      const availableShares = Math.min(holding.shares, remainingQuantity);
+      const cost = availableShares * tradePrice;
+      
+      // 执行交易
+      holding.shares -= availableShares;
+      if (holding.shares <= 0) {
+        stockMarket.holdings.delete(key);
+      }
+      
+      // 更新买方持股
+      updateHoldings(world, buyerCompanyId, stockCompanyId, availableShares, tradePrice);
+      
+      // 转移资金
+      world.companies.cash[buyerCompanyId] -= cost;
+      world.companies.cash[holding.ownerCompanyId] += cost;
+      
+      totalCost += cost;
+      filledQuantity += availableShares;
+      remainingQuantity -= availableShares;
+      
+      // 更新交易量（日成交量和累计成交量）
+      stock.volume += availableShares;
+      stock.totalVolume += availableShares;
+      
+      if (remainingQuantity <= 0) break;
+    }
+    
+    if (filledQuantity > 0) {
+      // 更新股价（基于成交价）
+      stock.currentPrice = tradePrice;
+      stock.marketCap = stock.currentPrice * stock.totalShares;
+      stock.highPrice = Math.max(stock.highPrice, tradePrice);
+      stock.lowPrice = Math.min(stock.lowPrice, tradePrice);
+      
+      console.log(`[StockMarket] 市价买入成交: ${filledQuantity}股 @ ¥${tradePrice.toFixed(2)}`);
+      
+      // 返回一个虚拟订单ID表示成功
+      return stockMarket.nextOrderId++;
+    }
+    
+    // 如果没有可用卖方，创建挂单等待
+    console.log(`[StockMarket] 市价买入: 无可用卖方，创建挂单`);
+  }
+  
+  // 限价单或市价单无法即时成交：创建挂单
+  const order: StockOrder = {
+    id: stockMarket.nextOrderId++,
+    companyId: buyerCompanyId,
+    stockCompanyId,
+    type: 'buy',
+    orderType,
+    quantity,
+    limitPrice,
+    createdTick: world.tick,
+    status: 'pending',
+    filledQuantity: 0,
+    avgPrice: 0,
+  };
+  
+  stockMarket.orders.push(order);
+  
+  // 预留资金
+  world.companies.cash[buyerCompanyId] -= estimatedCost;
+  
+  return order.id;
+}
+
+/**
+ * 下单卖出股票
+ */
+export function sellStock(
+  world: GameWorld,
+  sellerCompanyId: number,
+  stockCompanyId: number,
+  quantity: number,
+  orderType: 'market' | 'limit',
+  limitPrice?: number
+): number | null {
+  const stock = stockMarket.stocks.get(stockCompanyId);
+  if (!stock || !stock.isTradable) return null;
+  
+  // 检查持股
+  const holdingKey = `${sellerCompanyId}-${stockCompanyId}`;
+  const holding = stockMarket.holdings.get(holdingKey);
+  if (!holding || holding.shares < quantity) {
+    return null; // 持股不足
+  }
+  
+  const order: StockOrder = {
+    id: stockMarket.nextOrderId++,
+    companyId: sellerCompanyId,
+    stockCompanyId,
+    type: 'sell',
+    orderType,
+    quantity,
+    limitPrice,
+    createdTick: world.tick,
+    status: 'pending',
+    filledQuantity: 0,
+    avgPrice: 0,
+  };
+  
+  stockMarket.orders.push(order);
+  
+  return order.id;
+}
+
+/**
+ * 撮合股票交易
+ *
+ * 优化版本：
+ * 1. 使用订单索引避免重复遍历
+ * 2. 价格优先、时间优先排序
+ * 3. 利用排序特性提前终止无效匹配
+ */
+export function matchStockOrders(world: GameWorld): void {
+  const stocks = stockMarket.stocks;
+  
+  // 预构建订单索引：按股票分组的买卖订单
+  const orderIndex = new Map<number, { buyOrders: StockOrder[]; sellOrders: StockOrder[] }>();
+  
+  // 单次遍历所有订单构建索引
+  for (const order of stockMarket.orders) {
+    if (order.status !== 'pending' && order.status !== 'partial') continue;
+    
+    if (!orderIndex.has(order.stockCompanyId)) {
+      orderIndex.set(order.stockCompanyId, { buyOrders: [], sellOrders: [] });
+    }
+    
+    const index = orderIndex.get(order.stockCompanyId)!;
+    if (order.type === 'buy') {
+      index.buyOrders.push(order);
+    } else {
+      index.sellOrders.push(order);
+    }
+  }
+  
+  // 对每只有订单的股票进行撮合
+  for (const [companyId, orders] of orderIndex) {
+    const stock = stocks.get(companyId);
+    if (!stock) continue;
+    
+    // 排序：买单按价格降序（高价优先），卖单按价格升序（低价优先）
+    // 时间优先通过ID实现（先下单的ID更小）
+    orders.buyOrders.sort((a, b) => {
+      const priceA = a.orderType === 'market' ? Infinity : (a.limitPrice || 0);
+      const priceB = b.orderType === 'market' ? Infinity : (b.limitPrice || 0);
+      if (priceA !== priceB) return priceB - priceA; // 高价优先
+      return a.id - b.id; // 时间优先
+    });
+    
+    orders.sellOrders.sort((a, b) => {
+      const priceA = a.orderType === 'market' ? 0 : (a.limitPrice || Infinity);
+      const priceB = b.orderType === 'market' ? 0 : (b.limitPrice || Infinity);
+      if (priceA !== priceB) return priceA - priceB; // 低价优先
+      return a.id - b.id; // 时间优先
+    });
+    
+    let tradeVolume = 0;
+    let lastTradePrice = stock.currentPrice;
+    let buyIndex = 0;
+    let sellIndex = 0;
+    
+    // 双指针撮合（利用排序特性，O(n)复杂度）
+    while (buyIndex < orders.buyOrders.length && sellIndex < orders.sellOrders.length) {
+      const buyOrder = orders.buyOrders[buyIndex];
+      const sellOrder = orders.sellOrders[sellIndex];
+      
+      // 跳过已完成的订单
+      if (buyOrder.status === 'filled') {
+        buyIndex++;
+        continue;
+      }
+      if (sellOrder.status === 'filled') {
+        sellIndex++;
+        continue;
+      }
+      
+      // 跳过自交易
+      if (buyOrder.companyId === sellOrder.companyId) {
+        // 尝试下一个卖单
+        sellIndex++;
+        continue;
+      }
+      
+      // 获取有效价格
+      const buyPrice = buyOrder.orderType === 'market' ? Infinity : buyOrder.limitPrice!;
+      const sellPrice = sellOrder.orderType === 'market' ? 0 : sellOrder.limitPrice!;
+      
+      // 价格不匹配时，利用排序特性判断是否需要提前终止
+      if (buyPrice < sellPrice) {
+        // 当前最高买价低于最低卖价，后续不可能匹配
+        break;
+      }
+      
+      // 可以成交
+      // 成交价格确定：
+      // - 双市价单：使用当前股价
+      // - 单市价单：使用对方限价
+      // - 双限价单：使用中间价
+      let tradePrice: number;
+      if (buyOrder.orderType === 'market' && sellOrder.orderType === 'market') {
+        tradePrice = stock.currentPrice;
+      } else if (buyOrder.orderType === 'market') {
+        tradePrice = sellPrice;
+      } else if (sellOrder.orderType === 'market') {
+        tradePrice = buyPrice;
+      } else {
+        tradePrice = (buyPrice + sellPrice) / 2;
+      }
+      
+      // 成交数量
+      const buyRemaining = buyOrder.quantity - buyOrder.filledQuantity;
+      const sellRemaining = sellOrder.quantity - sellOrder.filledQuantity;
+      const tradeQuantity = Math.min(buyRemaining, sellRemaining);
+      
+      if (tradeQuantity <= 0) {
+        // 应该不会发生，但作为安全检查
+        buyIndex++;
+        continue;
+      }
+      
+      // 更新订单状态
+      buyOrder.filledQuantity += tradeQuantity;
+      sellOrder.filledQuantity += tradeQuantity;
+      
+      // 更新平均成交价
+      const prevBuyFilled = buyOrder.filledQuantity - tradeQuantity;
+      const prevSellFilled = sellOrder.filledQuantity - tradeQuantity;
+      buyOrder.avgPrice = prevBuyFilled > 0
+        ? (buyOrder.avgPrice * prevBuyFilled + tradePrice * tradeQuantity) / buyOrder.filledQuantity
+        : tradePrice;
+      sellOrder.avgPrice = prevSellFilled > 0
+        ? (sellOrder.avgPrice * prevSellFilled + tradePrice * tradeQuantity) / sellOrder.filledQuantity
+        : tradePrice;
+      
+      // 更新订单状态
+      if (buyOrder.filledQuantity >= buyOrder.quantity) {
+        buyOrder.status = 'filled';
+      } else {
+        buyOrder.status = 'partial';
+      }
+      
+      if (sellOrder.filledQuantity >= sellOrder.quantity) {
+        sellOrder.status = 'filled';
+      } else {
+        sellOrder.status = 'partial';
+      }
+      
+      // 更新持股
+      updateHoldings(world, buyOrder.companyId, companyId, tradeQuantity, tradePrice);
+      updateHoldings(world, sellOrder.companyId, companyId, -tradeQuantity, tradePrice);
+      
+      // 转移资金（卖方收款）
+      const tradeCost = tradePrice * tradeQuantity;
+      world.companies.cash[sellOrder.companyId] += tradeCost;
+      
+      // 更新交易统计
+      tradeVolume += tradeQuantity;
+      lastTradePrice = tradePrice;
+      
+      // 移动指针
+      if (buyOrder.status === 'filled') {
+        buyIndex++;
+      }
+      if (sellOrder.status === 'filled') {
+        sellIndex++;
+      }
+    }
+    
+    // 更新股票价格
+    if (tradeVolume > 0) {
+      stock.previousClose = stock.currentPrice;
+      stock.currentPrice = lastTradePrice;
+      stock.volume += tradeVolume;
+      stock.totalVolume += tradeVolume;  // 更新累计成交量
+      stock.turnoverRate = tradeVolume / stock.outstandingShares;
+      stock.marketCap = stock.currentPrice * stock.totalShares;
+      
+      // 更新最高最低价
+      stock.highPrice = Math.max(stock.highPrice, lastTradePrice);
+      stock.lowPrice = Math.min(stock.lowPrice, lastTradePrice);
+    }
+  }
+  
+  // 清理已完成订单（只保留活跃订单）
+  stockMarket.orders = stockMarket.orders.filter(o =>
+    o.status === 'pending' || o.status === 'partial'
+  );
+  
+  // 更新市场指数
+  updateMarketIndex();
+}
+
+/**
+ * 更新持股
+ */
+function updateHoldings(
+  world: GameWorld,
+  ownerCompanyId: number,
+  stockCompanyId: number,
+  sharesChange: number,
+  price: number
+): void {
+  const key = `${ownerCompanyId}-${stockCompanyId}`;
+  let holding = stockMarket.holdings.get(key);
+  
+  if (!holding) {
+    holding = {
+      ownerCompanyId,
+      stockCompanyId,
+      shares: 0,
+      avgCost: 0,
+      unrealizedGain: 0,
+    };
+    stockMarket.holdings.set(key, holding);
+  }
+  
+  if (sharesChange > 0) {
+    // 买入：更新平均成本
+    const totalCost = holding.avgCost * holding.shares + price * sharesChange;
+    holding.shares += sharesChange;
+    holding.avgCost = holding.shares > 0 ? totalCost / holding.shares : 0;
+  } else {
+    // 卖出
+    holding.shares += sharesChange;
+    if (holding.shares <= 0) {
+      stockMarket.holdings.delete(key);
+    }
+  }
+  
+  // 更新未实现收益
+  if (holding.shares > 0) {
+    const stock = stockMarket.stocks.get(stockCompanyId);
+    if (stock) {
+      holding.unrealizedGain = (stock.currentPrice - holding.avgCost) * holding.shares;
+    }
+  }
+}
+
+/**
+ * 更新市场指数
+ */
+function updateMarketIndex(): void {
+  let totalMarketCap = 0;
+  let weightedChange = 0;
+  
+  for (const [_, stock] of stockMarket.stocks) {
+    totalMarketCap += stock.marketCap;
+    const priceChange = stock.currentPrice - stock.previousClose;
+    weightedChange += priceChange * stock.totalShares;
+  }
+  
+  stockMarket.totalMarketCap = totalMarketCap;
+  
+  if (totalMarketCap > 0) {
+    const changePercent = weightedChange / totalMarketCap;
+    stockMarket.marketIndex *= (1 + changePercent);
+    stockMarket.marketIndexChange = changePercent;
+  }
+}
+
+/**
+ * 获取股票信息
+ */
+export function getStock(companyId: number): Stock | null {
+  return stockMarket.stocks.get(companyId) || null;
+}
+
+/**
+ * 获取持股信息
+ */
+export function getHoldings(ownerCompanyId: number): Holding[] {
+  const holdings: Holding[] = [];
+  
+  for (const [key, holding] of stockMarket.holdings) {
+    if (holding.ownerCompanyId === ownerCompanyId) {
+      holdings.push(holding);
+    }
+  }
+  
+  return holdings;
+}
+
+/**
+ * 获取市场状态
+ */
+export function getMarketState(): StockMarketState {
+  return stockMarket;
+}
+
+/**
+ * 玩家IPO
+ */
+export function initiateIPO(
+  world: GameWorld,
+  companyId: number,
+  offeringShares: number,
+  offeringPrice: number
+): boolean {
+  if (stockMarket.stocks.has(companyId)) {
+    return false; // 已上市
+  }
+  
+  const stock = createStock(world, companyId);
+  stock.currentPrice = offeringPrice;
+  stock.outstandingShares = offeringShares;
+  
+  stockMarket.stocks.set(companyId, stock);
+  
+  // 创建者持有剩余股份
+  const selfHolding: Holding = {
+    ownerCompanyId: companyId,
+    stockCompanyId: companyId,
+    shares: stock.totalShares - offeringShares,
+    avgCost: offeringPrice,
+    unrealizedGain: 0,
+  };
+  stockMarket.holdings.set(`${companyId}-${companyId}`, selfHolding);
+  
+  // 让AI公司认购IPO股份
+  const aiCompanyIds: number[] = [];
+  for (let i = 1; i < world.companies.count; i++) {
+    if (world.companies.isAI[i] && world.companies.cash[i] > offeringPrice * 1000) {
+      aiCompanyIds.push(i);
+    }
+  }
+  
+  let totalSubscribed = 0;
+  
+  if (aiCompanyIds.length > 0) {
+    // 将发行股份分配给有能力认购的AI公司
+    const sharesPerAI = Math.floor(offeringShares / Math.min(aiCompanyIds.length, 10));
+    
+    // 只让前10家最有钱的AI认购
+    const topAIs = aiCompanyIds
+      .sort((a, b) => world.companies.cash[b] - world.companies.cash[a])
+      .slice(0, 10);
+    
+    for (const aiId of topAIs) {
+      // 每家AI最多认购其现金的10%
+      const maxAffordable = Math.floor(world.companies.cash[aiId] * 0.1 / offeringPrice);
+      const subscribedShares = Math.min(sharesPerAI, maxAffordable);
+      
+      if (subscribedShares >= 100) { // 至少认购100股
+        const cost = subscribedShares * offeringPrice;
+        
+        // 扣除AI资金
+        world.companies.cash[aiId] -= cost;
+        
+        // 创建持股记录
+        const holdingKey = `${aiId}-${companyId}`;
+        const holding: Holding = {
+          ownerCompanyId: aiId,
+          stockCompanyId: companyId,
+          shares: subscribedShares,
+          avgCost: offeringPrice,
+          unrealizedGain: 0,
+        };
+        stockMarket.holdings.set(holdingKey, holding);
+        
+        totalSubscribed += subscribedShares;
+        
+        // IPO资金入账给发行公司
+        world.companies.cash[companyId] += cost;
+      }
+    }
+    
+    console.log(`[StockMarket] IPO完成: ${companyId}号公司发行${offeringShares}股，AI认购${totalSubscribed}股`);
+  }
+  
+  // 如果还有未认购的股份，由"机构投资者"认购（模拟，资金直接入账）
+  const remainingShares = offeringShares - totalSubscribed;
+  if (remainingShares > 0) {
+    world.companies.cash[companyId] += remainingShares * offeringPrice;
+    console.log(`[StockMarket] 机构投资者认购剩余${remainingShares}股`);
+  }
+  
+  return true;
+}
+
+/**
+ * 支付股息
+ */
+export function payDividend(world: GameWorld, companyId: number, dividendPerShare: number): boolean {
+  const stock = stockMarket.stocks.get(companyId);
+  if (!stock) return false;
+  
+  const totalDividend = dividendPerShare * stock.outstandingShares;
+  
+  if (world.companies.cash[companyId] < totalDividend) {
+    return false; // 现金不足
+  }
+  
+  // 扣除公司现金
+  world.companies.cash[companyId] -= totalDividend;
+  
+  // 向股东支付股息
+  for (const [key, holding] of stockMarket.holdings) {
+    if (holding.stockCompanyId === companyId && holding.ownerCompanyId !== companyId) {
+      const dividend = dividendPerShare * holding.shares;
+      world.companies.cash[holding.ownerCompanyId] += dividend;
+    }
+  }
+  
+  // 更新股息收益率
+  stock.dividendYield = dividendPerShare * 12 / stock.currentPrice; // 年化
+  
+  return true;
+}
+
+/**
+ * 计算基于业绩的动态股价
+ *
+ * 优化后的考虑因素：
+ * 1. 公司净资产变化（权重35%）- 反映公司整体价值
+ * 2. 现金流变化（权重30%）- 反映盈利能力
+ * 3. 市场估值回归（权重20%）- 价格向内在价值靠拢
+ * 4. 市场情绪随机波动（权重15%）- 模拟市场不确定性（降低随机性）
+ *
+ * @param world 游戏世界
+ * @param companyId 公司ID
+ * @param stock 股票信息
+ * @returns 新的股价
+ */
+function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock): number {
+  const history = stockMarket.companyHistory.get(companyId);
+  const currentCash = world.companies.cash[companyId];
+  const valuation = calculateValuation(world, companyId);
+  const currentNetWorth = valuation.bookValue;
+  
+  // 如果没有历史数据，初始化并返回当前价格
+  if (!history) {
+    stockMarket.companyHistory.set(companyId, {
+      lastCash: currentCash,
+      lastNetWorth: currentNetWorth,
+      lastUpdateTick: world.tick,
+    });
+    return stock.currentPrice;
+  }
+  
+  // 计算业绩变化率
+  // 1. 净资产变化率（公司整体价值变化）
+  let netWorthChangeRate = 0;
+  if (history.lastNetWorth > 0) {
+    netWorthChangeRate = (currentNetWorth - history.lastNetWorth) / history.lastNetWorth;
+    // 限制极端值
+    netWorthChangeRate = Math.max(-0.3, Math.min(0.3, netWorthChangeRate));
+  }
+  
+  // 2. 现金变化率（盈利能力指标）
+  let cashChangeRate = 0;
+  if (history.lastCash > 0) {
+    cashChangeRate = (currentCash - history.lastCash) / history.lastCash;
+    // 限制极端值
+    cashChangeRate = Math.max(-0.3, Math.min(0.3, cashChangeRate));
+  }
+  
+  // 3. 估值回归因子（价格向内在价值靠拢）
+  // 如果当前价格低于内在价值，有上涨压力；反之有下跌压力
+  const intrinsicPricePerShare = valuation.intrinsicValue / stock.totalShares;
+  let valuationGap = 0;
+  if (intrinsicPricePerShare > 0) {
+    // 计算当前价格与内在价值的偏离比例
+    const deviation = (intrinsicPricePerShare - stock.currentPrice) / intrinsicPricePerShare;
+    // 限制回归速度（每次最多回归5%的偏离）
+    valuationGap = Math.max(-0.05, Math.min(0.05, deviation * 0.1));
+  }
+  
+  // 4. 市场情绪随机波动（降低到±0.75%）
+  const randomVolatility = (Math.random() - 0.5) * 0.015;
+  
+  // 5. 交易量影响：有交易时价格更稳定
+  let volumeStabilizer = 1.0;
+  if (stock.volume > 100) {
+    volumeStabilizer = 0.8; // 高交易量时波动降低20%
+  } else if (stock.volume > 0) {
+    volumeStabilizer = 0.9;
+  }
+  
+  // 综合计算变化率
+  // 优化权重：净资产35% + 现金30% + 估值回归20% + 随机15%
+  let priceChangeRate =
+    netWorthChangeRate * 0.35 +
+    cashChangeRate * 0.30 +
+    valuationGap * 0.20 +
+    randomVolatility * 0.15;
+  
+  // 应用交易量稳定因子
+  priceChangeRate *= volumeStabilizer;
+  
+  // 应用涨跌停限制（由于更新更频繁，改为±3%单次限制）
+  priceChangeRate = Math.max(-0.03, Math.min(0.03, priceChangeRate));
+  
+  // 计算新价格
+  let newPrice = stock.currentPrice * (1 + priceChangeRate);
+  
+  // 价格下限保护（不低于账面价值的50%或1元）
+  const minPrice = Math.max(1, stock.bookValue / stock.totalShares * 0.5);
+  newPrice = Math.max(minPrice, newPrice);
+  
+  // 价格上限保护（不超过内在价值的3倍）
+  const maxPrice = intrinsicPricePerShare * 3;
+  if (maxPrice > 0) {
+    newPrice = Math.min(newPrice, maxPrice);
+  }
+  
+  // 更新历史数据
+  stockMarket.companyHistory.set(companyId, {
+    lastCash: currentCash,
+    lastNetWorth: currentNetWorth,
+    lastUpdateTick: world.tick,
+  });
+  
+  // 更新每股收益（EPS）
+  const ticksSinceUpdate = world.tick - history.lastUpdateTick;
+  if (ticksSinceUpdate > 0) {
+    const earningsThisPeriod = currentCash - history.lastCash;
+    // 年化每股收益
+    const annualizedEarnings = (earningsThisPeriod / ticksSinceUpdate) * (365 * 24);
+    stock.earningsPerShare = annualizedEarnings / stock.totalShares;
+    
+    // 更新市盈率
+    if (stock.earningsPerShare > 0) {
+      stock.priceToEarnings = newPrice / stock.earningsPerShare;
+    } else {
+      stock.priceToEarnings = 0; // 亏损时不显示PE
+    }
+  }
+  
+  return newPrice;
+}
+
+/**
+ * 更新股票市场（每tick调用）
+ */
+export function updateStockMarket(world: GameWorld): void {
+  // 撮合交易
+  matchStockOrders(world);
+  
+  // 判断是否是新的一天（每24个tick）
+  const isNewDay = world.tick % 24 === 0;
+  
+  // 更新所有股票
+  for (const [companyId, stock] of stockMarket.stocks) {
+    // 1. 更新估值指标
+    const valuation = calculateValuation(world, companyId);
+    stock.bookValue = valuation.bookValue;
+    
+    // 2. 新的一天：保存昨收价，重置日内数据
+    if (isNewDay) {
+      stock.previousClose = stock.currentPrice;
+      stock.openPrice = stock.currentPrice;
+      stock.highPrice = stock.currentPrice;
+      stock.lowPrice = stock.currentPrice;
+      stock.volume = 0;
+    }
+    
+    // 3. 计算基于业绩的动态价格（核心修复：即使没有交易也更新价格）
+    const newPrice = calculateDynamicPrice(world, companyId, stock);
+    
+    // 4. 更新价格
+    stock.currentPrice = newPrice;
+    
+    // 5. 更新日内最高最低价
+    stock.highPrice = Math.max(stock.highPrice, newPrice);
+    stock.lowPrice = Math.min(stock.lowPrice, newPrice);
+    
+    // 6. 更新市值和市净率
+    stock.marketCap = newPrice * stock.totalShares;
+    if (valuation.bookValue > 0) {
+      stock.priceToBook = stock.marketCap / valuation.bookValue;
+    }
+  }
+  
+  // 更新市场指数
+  updateMarketIndex();
+  
+  stockMarket.lastUpdateTick = world.tick;
+}

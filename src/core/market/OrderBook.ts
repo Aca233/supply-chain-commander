@@ -1,0 +1,843 @@
+/**
+ * 订单簿系统
+ * 管理买卖订单的创建、匹配和取消
+ *
+ * 性能优化：
+ * - 集成OrderBookIndex维护有序索引
+ * - 使用公司-商品索引避免O(n)遍历
+ * - 提前检查订单池状态避免无效计算
+ */
+
+import { GameWorld } from '../world/GameWorld';
+import { GOODS_COUNT, MAX_ORDERS, MAX_COMPANIES, ACTUAL_GOODS_COUNT } from '../constants';
+import { getOrderBookIndex } from './OrderBookIndex';
+
+/**
+ * 订单类型
+ */
+export type OrderType = 'buy' | 'sell';
+
+/**
+ * 订单接口
+ */
+export interface Order {
+  id: number;
+  companyId: number;
+  goodsId: number;
+  type: OrderType;
+  quantity: number;
+  price: number;
+  remaining: number;
+  createdTick: number;
+  expiryTick: number;
+}
+
+/**
+ * 成交记录
+ */
+export interface Trade {
+  id: number;
+  buyOrderId: number;
+  sellOrderId: number;
+  buyCompanyId: number;
+  sellCompanyId: number;
+  goodsId: number;
+  quantity: number;
+  price: number;
+  value: number;
+  tick: number;
+}
+
+// ==================== 公司-商品订单索引 ====================
+
+/**
+ * 公司商品订单索引
+ * 维护每个(公司, 商品, 类型)组合的订单列表
+ * 复杂度从O(n)降到O(k)，k为该组合的订单数
+ */
+class CompanyGoodsOrderIndex {
+  // 索引结构: Map<companyId * GOODS_COUNT * 2 + goodsId * 2 + type, Set<orderIdx>>
+  private index: Map<number, Set<number>> = new Map();
+  
+  private getKey(companyId: number, goodsId: number, orderType: number): number {
+    return companyId * GOODS_COUNT * 2 + goodsId * 2 + orderType;
+  }
+  
+  /**
+   * 添加订单到索引
+   */
+  add(orderIdx: number, companyId: number, goodsId: number, orderType: number): void {
+    const key = this.getKey(companyId, goodsId, orderType);
+    let set = this.index.get(key);
+    if (!set) {
+      set = new Set();
+      this.index.set(key, set);
+    }
+    set.add(orderIdx);
+  }
+  
+  /**
+   * 从索引移除订单
+   */
+  remove(orderIdx: number, companyId: number, goodsId: number, orderType: number): void {
+    const key = this.getKey(companyId, goodsId, orderType);
+    const set = this.index.get(key);
+    if (set) {
+      set.delete(orderIdx);
+      if (set.size === 0) {
+        this.index.delete(key);
+      }
+    }
+  }
+  
+  /**
+   * 获取某公司某商品某类型的所有订单索引
+   */
+  getOrders(companyId: number, goodsId: number, orderType: number): Set<number> | undefined {
+    const key = this.getKey(companyId, goodsId, orderType);
+    return this.index.get(key);
+  }
+  
+  /**
+   * 获取订单数量（O(1)复杂度）
+   */
+  count(companyId: number, goodsId: number, orderType: number): number {
+    const set = this.getOrders(companyId, goodsId, orderType);
+    return set ? set.size : 0;
+  }
+  
+  /**
+   * 清空索引
+   */
+  clear(): void {
+    this.index.clear();
+  }
+}
+
+// 全局公司商品订单索引
+let companyGoodsIndex: CompanyGoodsOrderIndex | null = null;
+
+/**
+ * 获取或创建公司商品订单索引
+ */
+function getCompanyGoodsIndex(): CompanyGoodsOrderIndex {
+  if (!companyGoodsIndex) {
+    companyGoodsIndex = new CompanyGoodsOrderIndex();
+  }
+  return companyGoodsIndex;
+}
+
+// ==================== 订单池管理 ====================
+
+/**
+ * 订单池管理器
+ * 使用对象池避免频繁内存分配
+ */
+class OrderPool {
+  private freeIndices: number[] = [];
+  
+  // 增量维护买卖单计数，避免每次统计都遍历
+  public buyOrderCount = 0;
+  public sellOrderCount = 0;
+  
+  constructor(maxSize: number) {
+    // 初始化所有索引为空闲
+    for (let i = maxSize - 1; i >= 0; i--) {
+      this.freeIndices.push(i);
+    }
+    this.buyOrderCount = 0;
+    this.sellOrderCount = 0;
+  }
+  
+  acquire(): number | null {
+    if (this.freeIndices.length === 0) {
+      return null;
+    }
+    return this.freeIndices.pop()!;
+  }
+  
+  release(index: number): void {
+    this.freeIndices.push(index);
+  }
+  
+  get availableCount(): number {
+    return this.freeIndices.length;
+  }
+  
+  /**
+   * 检查是否有可用槽位（用于提前退出）
+   */
+  hasAvailable(): boolean {
+    return this.freeIndices.length > 0;
+  }
+  
+  // 更新订单类型计数
+  incrementOrderCount(orderType: number): void {
+    if (orderType === 0) {
+      this.buyOrderCount++;
+    } else {
+      this.sellOrderCount++;
+    }
+  }
+  
+  decrementOrderCount(orderType: number): void {
+    if (orderType === 0) {
+      this.buyOrderCount = Math.max(0, this.buyOrderCount - 1);
+    } else {
+      this.sellOrderCount = Math.max(0, this.sellOrderCount - 1);
+    }
+  }
+}
+
+// 全局订单池
+let orderPool: OrderPool | null = null;
+let orderPoolInitialized = false;
+
+/**
+ * 初始化订单池（幂等操作，只在首次调用时初始化）
+ */
+export function initOrderPool(): void {
+  if (orderPoolInitialized) {
+    return;  // 已经初始化过，跳过
+  }
+  orderPool = new OrderPool(MAX_ORDERS);
+  companyGoodsIndex = new CompanyGoodsOrderIndex();
+  orderPoolInitialized = true;
+}
+
+/**
+ * 重置订单池（仅用于测试或重新开始游戏）
+ */
+export function resetOrderPool(): void {
+  orderPool = new OrderPool(MAX_ORDERS);
+  companyGoodsIndex = new CompanyGoodsOrderIndex();
+  orderPoolInitialized = true;
+}
+
+/**
+ * 检查订单池是否有可用空间（用于提前退出）
+ */
+export function hasOrderPoolCapacity(): boolean {
+  return orderPool?.hasAvailable() ?? false;
+}
+
+/** 每公司每商品最大订单数（放宽限制） */
+const MAX_ORDERS_PER_COMPANY_GOODS = 6;
+
+/** 价格合并容差（1%以内视为相同价格，更宽松以减少合并） */
+const PRICE_MERGE_TOLERANCE = 0.01;
+
+/** 单个订单最大数量限制（大幅提高以支持大额交易） */
+const MAX_ORDER_QUANTITY = 100000;
+
+/** 单个订单最大合并后数量（大幅提高以支持大额交易） */
+const MAX_MERGED_QUANTITY = 500000;
+
+/**
+ * 统计某公司某商品的活跃订单数（优化版：O(1)复杂度）
+ */
+function countCompanyGoodsOrders(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  orderType: number
+): number {
+  // 使用索引直接获取数量，O(1)复杂度
+  return getCompanyGoodsIndex().count(companyId, goodsId, orderType);
+}
+
+/**
+ * 查找可合并的现有订单（优化版：使用索引，O(k)复杂度）
+ * 条件：同一公司、同一商品、同一类型、价格在容差范围内（1%）
+ * 优化：买单合并到最高价，卖单合并到最低价
+ * @returns 订单索引，如果未找到返回 -1
+ */
+function findMatchingOrder(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  orderType: number,  // 0 = buy, 1 = sell
+  price: number
+): number {
+  const o = world.orders;
+  
+  // 使用索引获取该公司该商品的订单集合
+  const orderSet = getCompanyGoodsIndex().getOrders(companyId, goodsId, orderType);
+  if (!orderSet || orderSet.size === 0) {
+    return -1;  // 没有现有订单
+  }
+  
+  // 价格容差：1%以内视为相同价格
+  const priceTolerance = price * PRICE_MERGE_TOLERANCE;
+  
+  let bestIdx = -1;
+  let bestPrice = orderType === 0 ? 0 : Infinity;  // 买单找最高价，卖单找最低价
+  
+  // 只遍历该公司该商品的订单（通常只有几个）
+  for (const orderIdx of orderSet) {
+    if (!o.isActive[orderIdx]) continue;
+    
+    const existingPrice = o.prices[orderIdx];
+    
+    // 检查价格是否在容差范围内
+    if (Math.abs(existingPrice - price) <= priceTolerance) {
+      return orderIdx;
+    }
+    
+    // 记录最优价格的订单用于强制合并
+    if (orderType === 0) {  // 买单：找最高价
+      if (existingPrice > bestPrice) {
+        bestPrice = existingPrice;
+        bestIdx = orderIdx;
+      }
+    } else {  // 卖单：找最低价
+      if (existingPrice < bestPrice) {
+        bestPrice = existingPrice;
+        bestIdx = orderIdx;
+      }
+    }
+  }
+  
+  // 如果价格不在容差内，但已有该商品的订单过多，返回最优价格的订单进行合并
+  if (bestIdx >= 0 && orderSet.size >= MAX_ORDERS_PER_COMPANY_GOODS - 1) {
+    return bestIdx;
+  }
+  
+  return -1;  // 未找到
+}
+
+/**
+ * 输出订单池性能调试信息（保留接口但不输出日志）
+ */
+export function logOrderPoolPerformance(currentTick: number): void {
+  // 性能优化已完成，不再需要调试日志
+}
+
+/**
+ * 创建买单（支持订单合并）
+ * 如果存在相同公司、商品、价格的买单，将合并到现有订单
+ *
+ * 性能优化：
+ * - 提前检查订单池容量，避免无效计算
+ * - 使用公司商品索引加速合并查找
+ * - 限制单个订单最大数量，防止无限堆积
+ */
+export function createBuyOrder(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  quantity: number,
+  price: number,
+  expiryTicks: number = 24  // 默认1天过期（放宽限制）
+): number | null {
+  // 【优化】提前初始化并检查容量
+  if (!orderPool) {
+    initOrderPool();
+  }
+  
+  const o = world.orders;
+  const c = world.companies;
+  const orderIndex = getOrderBookIndex();
+  const cgIndex = getCompanyGoodsIndex();
+  
+  // 【新增】限制单个订单数量，防止无限堆积
+  const clampedQuantity = Math.min(quantity, MAX_ORDER_QUANTITY);
+  if (clampedQuantity <= 0) {
+    return null;
+  }
+  
+  // 检查公司现金是否足够
+  const totalValue = clampedQuantity * price;
+  if (c.cash[companyId] < totalValue) {
+    return null;
+  }
+  
+  // 查找可合并的现有订单（使用优化后的索引查找）
+  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 0, price);
+  
+  if (existingOrderIdx >= 0) {
+    // 【新增】检查合并后是否超过最大数量限制
+    const currentRemaining = o.remainings[existingOrderIdx];
+    if (currentRemaining >= MAX_MERGED_QUANTITY) {
+      // 已达到最大合并数量，拒绝继续合并，静默失败
+      return null;
+    }
+    
+    // 计算实际可合并的数量
+    const maxAddable = MAX_MERGED_QUANTITY - currentRemaining;
+    const actualAddQuantity = Math.min(clampedQuantity, maxAddable);
+    
+    if (actualAddQuantity <= 0) {
+      return null;
+    }
+    
+    // 找到可合并的订单，合并数量
+    const actualValue = actualAddQuantity * price;
+    c.cash[companyId] -= actualValue;  // 冻结资金
+    
+    o.quantities[existingOrderIdx] += actualAddQuantity;
+    o.remainings[existingOrderIdx] += actualAddQuantity;
+    
+    // 延长过期时间（取较晚的）
+    const newExpiry = world.tick + expiryTicks;
+    if (newExpiry > o.expiries[existingOrderIdx]) {
+      o.expiries[existingOrderIdx] = newExpiry;
+    }
+    
+    // 返回一个特殊值表示合并成功（使用负数表示合并到索引）
+    return -(existingOrderIdx + 1);
+  }
+  
+  // 【优化】提前检查池容量，避免后续无效计算
+  if (!orderPool!.hasAvailable()) {
+    // 静默失败，不输出警告（避免日志刷屏）
+    return null;
+  }
+  
+  const orderIdx = orderPool!.acquire();
+  if (orderIdx === null) {
+    return null;
+  }
+  
+  // 冻结资金（使用限制后的数量）
+  c.cash[companyId] -= clampedQuantity * price;
+  
+  // 创建订单
+  const orderId = o.nextOrderId++;
+  o.companyIds[orderIdx] = companyId;
+  o.goodsIds[orderIdx] = goodsId;
+  o.types[orderIdx] = 0;  // 0 = buy
+  o.quantities[orderIdx] = clampedQuantity;
+  o.prices[orderIdx] = price;
+  o.remainings[orderIdx] = clampedQuantity;
+  o.createdTicks[orderIdx] = world.tick;
+  o.expiries[orderIdx] = world.tick + expiryTicks;
+  o.isActive[orderIdx] = 1;
+  o.activeCount++;
+  
+  // 更新买单计数
+  orderPool!.incrementOrderCount(0);
+  
+  // 添加到订单簿索引
+  orderIndex.addOrder(orderIdx, goodsId, 0, price);
+  
+  // 【新增】添加到公司商品索引
+  cgIndex.add(orderIdx, companyId, goodsId, 0);
+  
+  return orderId;
+}
+
+/**
+ * 订单创建结果
+ */
+export interface OrderResult {
+  success: boolean;
+  orderId: number | null;
+  reason?: string;
+  actualQuantity?: number;
+}
+
+/**
+ * 创建卖单（支持订单合并）
+ * 如果存在相同公司、商品、价格的卖单，将合并到现有订单
+ *
+ * 性能优化：
+ * - 提前检查订单池容量，避免无效计算
+ * - 使用公司商品索引加速合并查找
+ * - 限制单个订单最大数量，防止无限堆积
+ */
+export function createSellOrder(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  quantity: number,
+  price: number,
+  expiryTicks: number = 48  // 默认2天过期（放宽限制）
+): number | null {
+  const result = createSellOrderWithReason(world, companyId, goodsId, quantity, price, expiryTicks);
+  return result.orderId;
+}
+
+/**
+ * 创建卖单（带详细失败原因）
+ */
+export function createSellOrderWithReason(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  quantity: number,
+  price: number,
+  expiryTicks: number = 48
+): OrderResult {
+  // 【优化】提前初始化并检查容量
+  if (!orderPool) {
+    initOrderPool();
+  }
+  
+  const o = world.orders;
+  const c = world.companies;
+  const orderIndex = getOrderBookIndex();
+  const cgIndex = getCompanyGoodsIndex();
+  
+  // 数量验证
+  if (quantity <= 0) {
+    return { success: false, orderId: null, reason: '数量必须大于0' };
+  }
+  
+  // 使用请求的数量（不再限制）
+  const clampedQuantity = quantity;
+  
+  // 检查库存是否足够
+  const inventoryIdx = companyId * GOODS_COUNT + goodsId;
+  const totalInventory = c.inventories[inventoryIdx];
+  const reserved = c.inventoryReserved[inventoryIdx];
+  const available = totalInventory - reserved;
+  
+  if (available < clampedQuantity) {
+    return {
+      success: false,
+      orderId: null,
+      reason: `库存不足：可用 ${available.toFixed(0)}，需要 ${clampedQuantity.toFixed(0)}（总库存 ${totalInventory.toFixed(0)}，已预留 ${reserved.toFixed(0)}）`
+    };
+  }
+  
+  // 查找可合并的现有订单（使用优化后的索引查找）
+  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 1, price);
+  
+  if (existingOrderIdx >= 0) {
+    // 【新增】检查合并后是否超过最大数量限制
+    const currentRemaining = o.remainings[existingOrderIdx];
+    if (currentRemaining >= MAX_MERGED_QUANTITY) {
+      return {
+        success: false,
+        orderId: null,
+        reason: `订单合并数量已达上限 ${MAX_MERGED_QUANTITY.toLocaleString()}`
+      };
+    }
+    
+    // 计算实际可合并的数量
+    const maxAddable = MAX_MERGED_QUANTITY - currentRemaining;
+    const actualAddQuantity = Math.min(clampedQuantity, maxAddable);
+    
+    if (actualAddQuantity <= 0) {
+      return {
+        success: false,
+        orderId: null,
+        reason: '无法添加更多数量到现有订单'
+      };
+    }
+    
+    // 找到可合并的订单，合并数量
+    c.inventoryReserved[inventoryIdx] += actualAddQuantity;  // 冻结库存
+    
+    o.quantities[existingOrderIdx] += actualAddQuantity;
+    o.remainings[existingOrderIdx] += actualAddQuantity;
+    
+    // 延长过期时间（取较晚的）
+    const newExpiry = world.tick + expiryTicks;
+    if (newExpiry > o.expiries[existingOrderIdx]) {
+      o.expiries[existingOrderIdx] = newExpiry;
+    }
+    
+    // 返回一个特殊值表示合并成功（使用负数表示合并到索引）
+    return {
+      success: true,
+      orderId: -(existingOrderIdx + 1),
+      actualQuantity: actualAddQuantity,
+      reason: actualAddQuantity < clampedQuantity ? `部分合并：${actualAddQuantity.toFixed(0)}/${clampedQuantity.toFixed(0)}` : undefined
+    };
+  }
+  
+  // 【优化】提前检查池容量，避免后续无效计算
+  if (!orderPool!.hasAvailable()) {
+    return {
+      success: false,
+      orderId: null,
+      reason: '订单池已满，请等待现有订单成交或过期'
+    };
+  }
+  
+  const orderIdx = orderPool!.acquire();
+  if (orderIdx === null) {
+    return {
+      success: false,
+      orderId: null,
+      reason: '无法获取订单槽位'
+    };
+  }
+  
+  // 冻结库存
+  c.inventoryReserved[inventoryIdx] += clampedQuantity;
+  
+  // 创建订单
+  const orderId = o.nextOrderId++;
+  o.companyIds[orderIdx] = companyId;
+  o.goodsIds[orderIdx] = goodsId;
+  o.types[orderIdx] = 1;  // 1 = sell
+  o.quantities[orderIdx] = clampedQuantity;
+  o.prices[orderIdx] = price;
+  o.remainings[orderIdx] = clampedQuantity;
+  o.createdTicks[orderIdx] = world.tick;
+  o.expiries[orderIdx] = world.tick + expiryTicks;
+  o.isActive[orderIdx] = 1;
+  o.activeCount++;
+  
+  // 更新卖单计数
+  orderPool!.incrementOrderCount(1);
+  
+  // 添加到订单簿索引
+  orderIndex.addOrder(orderIdx, goodsId, 1, price);
+  
+  // 【新增】添加到公司商品索引
+  cgIndex.add(orderIdx, companyId, goodsId, 1);
+  
+  return { success: true, orderId, actualQuantity: clampedQuantity };
+}
+
+/**
+ * 取消订单
+ */
+export function cancelOrder(
+  world: GameWorld,
+  orderIdx: number
+): boolean {
+  const o = world.orders;
+  const c = world.companies;
+  const orderIndex = getOrderBookIndex();
+  const cgIndex = getCompanyGoodsIndex();
+  
+  if (!o.isActive[orderIdx]) {
+    return false;
+  }
+  
+  const companyId = o.companyIds[orderIdx];
+  const goodsId = o.goodsIds[orderIdx];
+  const remaining = o.remainings[orderIdx];
+  const price = o.prices[orderIdx];
+  const type = o.types[orderIdx];
+  
+  if (type === 0) {
+    // 买单：退还冻结资金
+    c.cash[companyId] += remaining * price;
+  } else {
+    // 卖单：释放冻结库存
+    const inventoryIdx = companyId * GOODS_COUNT + goodsId;
+    c.inventoryReserved[inventoryIdx] -= remaining;
+  }
+  
+  // 从订单簿索引移除
+  orderIndex.removeOrder(orderIdx);
+  
+  // 【新增】从公司商品索引移除
+  cgIndex.remove(orderIdx, companyId, goodsId, type);
+  
+  // 标记为非激活
+  o.isActive[orderIdx] = 0;
+  o.activeCount--;
+  
+  // 更新订单类型计数
+  orderPool?.decrementOrderCount(type);
+  
+  // 释放到对象池
+  orderPool?.release(orderIdx);
+  
+  return true;
+}
+
+/**
+ * 清理过期订单
+ */
+export function cleanupExpiredOrders(world: GameWorld): number {
+  const o = world.orders;
+  let cleanedCount = 0;
+  
+  for (let i = 0; i < MAX_ORDERS; i++) {
+    if (o.isActive[i] && o.expiries[i] <= world.tick) {
+      cancelOrder(world, i);
+      cleanedCount++;
+    }
+  }
+  
+  return cleanedCount;
+}
+
+/**
+ * 获取某商品的订单簿视图
+ */
+export function getOrderBookView(
+  world: GameWorld,
+  goodsId: number
+): OrderBookView {
+  const o = world.orders;
+  
+  const buyOrders: OrderView[] = [];
+  const sellOrders: OrderView[] = [];
+  
+  for (let i = 0; i < MAX_ORDERS; i++) {
+    if (!o.isActive[i] || o.goodsIds[i] !== goodsId) continue;
+    
+    const orderView: OrderView = {
+      idx: i,
+      companyId: o.companyIds[i],
+      price: o.prices[i],
+      remaining: o.remainings[i],
+      createdTick: o.createdTicks[i],
+    };
+    
+    if (o.types[i] === 0) {
+      buyOrders.push(orderView);
+    } else {
+      sellOrders.push(orderView);
+    }
+  }
+  
+  // 买单按价格降序排列（最高价优先）
+  buyOrders.sort((a, b) => b.price - a.price);
+  
+  // 卖单按价格升序排列（最低价优先）
+  sellOrders.sort((a, b) => a.price - b.price);
+  
+  // 计算统计数据
+  const bestBid = buyOrders.length > 0 ? buyOrders[0].price : null;
+  const bestAsk = sellOrders.length > 0 ? sellOrders[0].price : null;
+  const spread = bestBid && bestAsk ? (bestAsk - bestBid) / bestBid : null;
+  const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : null;
+  
+  const totalBuyVolume = buyOrders.reduce((sum, o) => sum + o.remaining, 0);
+  const totalSellVolume = sellOrders.reduce((sum, o) => sum + o.remaining, 0);
+  
+  return {
+    goodsId,
+    buyOrders,
+    sellOrders,
+    bestBid,
+    bestAsk,
+    spread,
+    midPrice,
+    totalBuyVolume,
+    totalSellVolume,
+  };
+}
+
+/**
+ * 订单视图（简化版本用于UI显示）
+ */
+export interface OrderView {
+  idx: number;
+  companyId: number;
+  price: number;
+  remaining: number;
+  createdTick: number;
+}
+
+/**
+ * 订单簿视图
+ */
+export interface OrderBookView {
+  goodsId: number;
+  buyOrders: OrderView[];
+  sellOrders: OrderView[];
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+  midPrice: number | null;
+  totalBuyVolume: number;
+  totalSellVolume: number;
+}
+
+/**
+ * 聚合订单簿深度
+ * 将价格相近的订单合并显示
+ */
+export function aggregateOrderBook(
+  view: OrderBookView,
+  priceStep: number = 1
+): AggregatedOrderBook {
+  const aggregateSide = (orders: OrderView[]): AggregatedLevel[] => {
+    const levels: Map<number, number> = new Map();
+    
+    for (const order of orders) {
+      const levelPrice = Math.floor(order.price / priceStep) * priceStep;
+      levels.set(levelPrice, (levels.get(levelPrice) || 0) + order.remaining);
+    }
+    
+    return Array.from(levels.entries())
+      .map(([price, volume]) => ({ price, volume }))
+      .sort((a, b) => b.price - a.price);
+  };
+  
+  return {
+    goodsId: view.goodsId,
+    bids: aggregateSide(view.buyOrders),
+    asks: aggregateSide(view.sellOrders).reverse(),
+    bestBid: view.bestBid,
+    bestAsk: view.bestAsk,
+    spread: view.spread,
+  };
+}
+
+export interface AggregatedLevel {
+  price: number;
+  volume: number;
+}
+
+export interface AggregatedOrderBook {
+  goodsId: number;
+  bids: AggregatedLevel[];
+  asks: AggregatedLevel[];
+  bestBid: number | null;
+  bestAsk: number | null;
+  spread: number | null;
+}
+
+/**
+ * 订单池统计信息
+ */
+export interface OrderPoolStats {
+  maxOrders: number;
+  activeOrders: number;
+  availableSlots: number;
+  usagePercent: number;
+  buyOrders: number;
+  sellOrders: number;
+}
+
+/**
+ * 获取订单池统计信息（优化版：O(1)复杂度，使用增量维护的计数器）
+ */
+export function getOrderPoolStats(world: GameWorld): OrderPoolStats {
+  const o = world.orders;
+  
+  const activeOrders = o.activeCount;
+  const availableSlots = orderPool?.availableCount ?? (MAX_ORDERS - activeOrders);
+  const usagePercent = (activeOrders / MAX_ORDERS) * 100;
+  
+  // 使用增量维护的计数器，避免遍历所有订单
+  const buyCount = orderPool?.buyOrderCount ?? 0;
+  const sellCount = orderPool?.sellOrderCount ?? 0;
+  
+  return {
+    maxOrders: MAX_ORDERS,
+    activeOrders,
+    availableSlots,
+    usagePercent,
+    buyOrders: buyCount,
+    sellOrders: sellCount,
+  };
+}
+
+/**
+ * 检查订单池健康状态（优化版：直接计算，不调用完整统计）
+ * @returns 'healthy' | 'warning' | 'critical'
+ */
+export function getOrderPoolHealth(world: GameWorld): 'healthy' | 'warning' | 'critical' {
+  const activeOrders = world.orders.activeCount;
+  const usagePercent = (activeOrders / MAX_ORDERS) * 100;
+  
+  if (usagePercent >= 90) {
+    return 'critical';
+  } else if (usagePercent >= 70) {
+    return 'warning';
+  }
+  return 'healthy';
+}
