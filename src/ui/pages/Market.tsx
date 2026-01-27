@@ -10,6 +10,13 @@ import { findBestSubstitutes, findBestComplements } from '@/core/economy/Substit
 import { tickToDate, formatGameDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
 
+// 玩家拥有的建筑信息
+interface PlayerBuildingInfo {
+  buildingIndex: number;
+  typeId: number;
+  level: number;
+}
+
 // 商品分类配置（按类别）
 const CATEGORY_CONFIG = {
   raw: { name: '原材料', color: 'bg-amber-500' },
@@ -253,6 +260,8 @@ export const Market: React.FC = () => {
     cancelPlayerOrder,
     ui,
     setSelectedGoods: setStoreSelectedGoods,
+    setCurrentPage,
+    setSelectedBuilding,
   } = useGameStore();
   
   const world = getWorld();
@@ -522,6 +531,28 @@ export const Market: React.FC = () => {
       })
       .filter(item => item.building);
   };
+
+  // 获取玩家拥有的特定类型建筑
+  const getPlayerBuildingsOfType = useCallback((buildingTypeId: number): PlayerBuildingInfo[] => {
+    if (!world) return [];
+    const buildings: PlayerBuildingInfo[] = [];
+    for (let i = 0; i < world.buildings.count; i++) {
+      if (world.buildings.owners[i] === 0 && world.buildings.types[i] === buildingTypeId) {
+        buildings.push({
+          buildingIndex: i,
+          typeId: buildingTypeId,
+          level: world.buildings.levels[i],
+        });
+      }
+    }
+    return buildings;
+  }, [world]);
+
+  // 跳转到生产管理页面并选中指定建筑
+  const navigateToBuilding = useCallback((buildingIndex: number) => {
+    setSelectedBuilding(buildingIndex);
+    setCurrentPage('production');
+  }, [setSelectedBuilding, setCurrentPage]);
 
   // 提交订单
   const handleSubmitOrder = () => {
@@ -1051,27 +1082,62 @@ export const Market: React.FC = () => {
               
               {producerBuildings.length > 0 ? (
                 <div className="space-y-2">
-                  {producerBuildings.slice(0, 5).map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-background-secondary">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                          <BuildingIcon buildingId={item.building!.id} size={24} autoColor />
+                  {producerBuildings.slice(0, 5).map((item, idx) => {
+                    const playerBuildings = getPlayerBuildingsOfType(item.building!.id);
+                    const hasBuilding = playerBuildings.length > 0;
+                    
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-3 rounded-lg bg-background-secondary ${
+                          hasBuilding ? 'cursor-pointer hover:bg-background-secondary/80 border border-transparent hover:border-green-500/30' : ''
+                        }`}
+                        onClick={hasBuilding ? () => navigateToBuilding(playerBuildings[0].buildingIndex) : undefined}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                            <BuildingIcon buildingId={item.building!.id} size={24} autoColor />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{item.building?.name}</p>
+                              {hasBuilding && (
+                                <span className="px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">
+                                  已拥有 {playerBuildings.length}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-text-tertiary">
+                              产出 {item.output?.amount}/{item.recipe.ticksRequired}周期 · {item.recipe.name}
+                            </p>
+                            <p className="text-xs text-text-tertiary">
+                              建造成本: ¥{item.building?.buildCost.toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{item.building?.name}</p>
-                          <p className="text-xs text-text-tertiary">
-                            产出 {item.output?.amount}/{item.recipe.ticksRequired}周期 · {item.recipe.name}
-                          </p>
-                          <p className="text-xs text-text-tertiary">
-                            建造成本: ¥{item.building?.buildCost.toLocaleString()}
-                          </p>
+                        <div className="flex items-center gap-2">
+                          {hasBuilding && (
+                            <button
+                              className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-500 flex items-center gap-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToBuilding(playerBuildings[0].buildingIndex);
+                              }}
+                            >
+                              <span>查看</span>
+                              <span className="text-xs">→</span>
+                            </button>
+                          )}
+                          <button
+                            className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            建造
+                          </button>
                         </div>
                       </div>
-                      <button className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90">
-                        建造
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-text-tertiary text-center py-4">没有建筑可以生产此商品</p>
@@ -1087,27 +1153,62 @@ export const Market: React.FC = () => {
               
               {consumerBuildings.length > 0 ? (
                 <div className="space-y-2">
-                  {consumerBuildings.slice(0, 5).map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-background-secondary">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-                          <BuildingIcon buildingId={item.building!.id} size={24} autoColor />
+                  {consumerBuildings.slice(0, 5).map((item, idx) => {
+                    const playerBuildings = getPlayerBuildingsOfType(item.building!.id);
+                    const hasBuilding = playerBuildings.length > 0;
+                    
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-3 rounded-lg bg-background-secondary ${
+                          hasBuilding ? 'cursor-pointer hover:bg-background-secondary/80 border border-transparent hover:border-orange-500/30' : ''
+                        }`}
+                        onClick={hasBuilding ? () => navigateToBuilding(playerBuildings[0].buildingIndex) : undefined}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                            <BuildingIcon buildingId={item.building!.id} size={24} autoColor />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{item.building?.name}</p>
+                              {hasBuilding && (
+                                <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500/20 text-orange-400">
+                                  已拥有 {playerBuildings.length}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-text-tertiary">
+                              消耗 {item.input?.amount}/{item.recipe.ticksRequired}周期 · {item.recipe.name}
+                            </p>
+                            <p className="text-xs text-text-tertiary">
+                              建造成本: ¥{item.building?.buildCost.toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{item.building?.name}</p>
-                          <p className="text-xs text-text-tertiary">
-                            消耗 {item.input?.amount}/{item.recipe.ticksRequired}周期 · {item.recipe.name}
-                          </p>
-                          <p className="text-xs text-text-tertiary">
-                            建造成本: ¥{item.building?.buildCost.toLocaleString()}
-                          </p>
+                        <div className="flex items-center gap-2">
+                          {hasBuilding && (
+                            <button
+                              className="px-3 py-1.5 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-500 flex items-center gap-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToBuilding(playerBuildings[0].buildingIndex);
+                              }}
+                            >
+                              <span>查看</span>
+                              <span className="text-xs">→</span>
+                            </button>
+                          )}
+                          <button
+                            className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            建造
+                          </button>
                         </div>
                       </div>
-                      <button className="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90">
-                        建造
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-text-tertiary text-center py-4">没有建筑消耗此商品</p>

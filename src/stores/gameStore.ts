@@ -161,6 +161,12 @@ interface HistoryDataPoint {
   profit: number;
   cash: number;
   assets: number;
+  // 额外的收入来源
+  retailRevenue: number;
+  productionValue: number;
+  // 额外的支出来源
+  maintenanceCost: number;
+  laborCost: number;
 }
 
 /**
@@ -414,25 +420,74 @@ export const useGameStore = create<GameState & GameActions>()(
           
           // 财务历史数据更新（降低频率）
           if (shouldUpdateHistory && worldRef) {
-            let revenue = 0;
-            let cost = 0;
+            // 从交易中计算收入支出
+            let tradeRevenue = 0;
+            let tradeCost = 0;
             const trades = result.matching.trades || [];
             for (const trade of trades) {
               if (trade.sellCompanyId === 0) {
-                revenue += trade.value;
+                tradeRevenue += trade.value;
               }
               if (trade.buyCompanyId === 0) {
-                cost += trade.value;
+                tradeCost += trade.value;
               }
+            }
+            
+            // 计算生产价值（估算：基于玩家建筑的产出）
+            let productionValue = 0;
+            let maintenanceCost = 0;
+            let laborCost = 0;
+            let retailRevenue = 0;
+            
+            // 从建筑计算维护和劳动力成本
+            for (let i = 0; i < worldRef.buildings.count; i++) {
+              if (worldRef.buildings.owners[i] === 0) {
+                const typeId = worldRef.buildings.types[i];
+                const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
+                if (buildingDef) {
+                  maintenanceCost += buildingDef.maintenanceCost / 24; // 每tick的维护成本
+                  laborCost += buildingDef.laborCost / 24; // 每tick的劳动力成本
+                }
+              }
+            }
+            
+            // 综合收入和支出
+            const totalRevenue = tradeRevenue + retailRevenue;
+            const totalCost = tradeCost + maintenanceCost + laborCost;
+            
+            // 使用现金变化来补充未跟踪的收支
+            const prevCash = state.financialHistory.length > 0
+              ? state.financialHistory[state.financialHistory.length - 1].cash
+              : worldRef.companies.cash[0];
+            const currentCash = worldRef.companies.cash[0];
+            const cashChange = currentCash - prevCash;
+            
+            // 如果现金变化与计算的利润不符，调整收入或支出
+            const calculatedProfit = totalRevenue - totalCost;
+            const unmatchedChange = cashChange - calculatedProfit;
+            
+            let adjustedRevenue = totalRevenue;
+            let adjustedCost = totalCost;
+            
+            if (unmatchedChange > 0) {
+              // 有未记录的收入
+              adjustedRevenue += unmatchedChange;
+            } else if (unmatchedChange < 0) {
+              // 有未记录的支出
+              adjustedCost += Math.abs(unmatchedChange);
             }
             
             const historyPoint: HistoryDataPoint = {
               tick: currentTick,
-              revenue,
-              cost,
-              profit: revenue - cost,
-              cash: worldRef.companies.cash[0],
+              revenue: adjustedRevenue,
+              cost: adjustedCost,
+              profit: adjustedRevenue - adjustedCost,
+              cash: currentCash,
               assets: worldRef.companies.totalAssets[0],
+              retailRevenue,
+              productionValue,
+              maintenanceCost,
+              laborCost,
             };
             
             state.financialHistory.push(historyPoint);

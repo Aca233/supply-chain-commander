@@ -43,6 +43,7 @@ import { tradingFeeManager } from '../market/TradingFees';
 import { executeConsumerPurchases, MarketConsumptionSummary, CONSUMER_MARKET_CONFIG } from '../economy/ConsumerMarket';
 import { executePlayerAutoTrade } from '../ai/PlayerAutoTrader';
 import { updateRetailSystem, RetailTickResult } from '../economy/RetailSystem';
+import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 
 /**
  * 游戏循环状态
@@ -99,6 +100,9 @@ export interface TickResult {
   
   // 零售系统结果
   retailResult: RetailTickResult;
+  
+  // 服务消费结果
+  serviceConsumption: ServiceConsumptionResult;
   
   // 玩家自动交易结果
   playerAutoTrade: {
@@ -344,6 +348,11 @@ export class GameLoop {
     const retailResult = updateRetailSystem(this.world);
     endRetail();
     
+    // 10.6. 服务消费系统更新（医院、学校、银行等服务设施）
+    const endService = perfMonitor.startMeasure('service');
+    const serviceConsumption = processServiceConsumption(this.world);
+    endService();
+    
     // 11. 检查高级订单触发（止损、止盈等）
     const triggeredAdvancedOrders = this.checkAdvancedOrders(currentTick);
     
@@ -437,6 +446,11 @@ export class GameLoop {
     // 23. 更新品牌衰减（每天）
     brandManager.processDailyDecay(currentTick);
     
+    // 23.5 重置服务设施每日统计
+    if (currentTick % 24 === 0) {
+      resetDailyServiceStats();
+    }
+    
     // 24. 更新供应合同状态
     supplyContractManager.updateContractStatus(currentTick);
     
@@ -482,6 +496,7 @@ export class GameLoop {
       expiredFuturesContracts,
       consumerPurchases,
       retailResult,
+      serviceConsumption,
       playerAutoTrade,
       aiAutoOrders: {
         sellOrders: aiSellOrders,

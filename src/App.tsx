@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { Sidebar } from '@/ui/components/Layout/Sidebar';
 import { Header } from '@/ui/components/Layout/Header';
@@ -13,10 +13,13 @@ import { ToastProvider } from '@/ui/components/Toast/ToastContext';
 import { soundManager } from '@/core/sound';
 
 const App: React.FC = () => {
-  const { initGame, startGame, initialized, paused, ui, setTheme } = useGameStore();
+  const { initGame, startGame, initialized, paused, ui, setTheme, setSpeed, pauseGame, resumeGame, speed } = useGameStore();
   const currentPage = ui.currentPage;
   const sidebarCollapsed = ui.sidebarCollapsed;
   const theme = ui.theme;
+  
+  // 用于防止输入框中触发快捷键
+  const isInputFocused = useRef(false);
 
   // 初始化主题
   useEffect(() => {
@@ -38,6 +41,50 @@ const App: React.FC = () => {
       // startGame(); // 取消注释以自动开始
     }
   }, [initialized, paused, startGame]);
+
+  // 键盘快捷键控制
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 如果焦点在输入框中，不处理快捷键
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' ||
+                     target.tagName === 'TEXTAREA' ||
+                     target.isContentEditable;
+      
+      if (isInput) return;
+      
+      // 数字键 1-4 控制速度
+      if (e.key === '1') {
+        setSpeed(1);
+        soundManager.playClick();
+      } else if (e.key === '2') {
+        setSpeed(2);
+        soundManager.playClick();
+      } else if (e.key === '3') {
+        setSpeed(4);
+        soundManager.playClick();
+      } else if (e.key === '4') {
+        setSpeed(8);
+        soundManager.playClick();
+      }
+      // 空格键控制暂停/继续
+      else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault(); // 防止页面滚动
+        if (paused) {
+          resumeGame();
+        } else {
+          pauseGame();
+        }
+        soundManager.playClick();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [paused, setSpeed, pauseGame, resumeGame]);
 
   // 全局点击音效
   useEffect(() => {

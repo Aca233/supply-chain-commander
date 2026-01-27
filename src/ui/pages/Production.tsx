@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
 import { RECIPES } from '@/data/recipes';
@@ -14,7 +14,7 @@ import {
 type ViewMode = 'grid' | 'list';
 
 export const Production: React.FC = () => {
-  const { getWorld, playerBuildings, playerCash, buildBuilding, tick } = useGameStore();
+  const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding } = useGameStore();
   const world = getWorld();
   
   // 状态
@@ -22,8 +22,21 @@ export const Production: React.FC = () => {
   const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [showCatalog, setShowCatalog] = useState(true);
+  
+  // 用于跟踪是否已经处理过从 store 传入的 selectedBuildingId
+  const processedStoreSelectionRef = useRef<number | null>(null);
+  
+  // 当从 store 收到 selectedBuildingId 时，同步到本地状态
+  useEffect(() => {
+    if (ui.selectedBuildingId !== null && ui.selectedBuildingId !== processedStoreSelectionRef.current) {
+      setSelectedBuilding(ui.selectedBuildingId);
+      processedStoreSelectionRef.current = ui.selectedBuildingId;
+      // 清除 store 中的选择，避免重复触发
+      setStoreSelectedBuilding(null);
+    }
+  }, [ui.selectedBuildingId, setStoreSelectedBuilding]);
 
-  // 获取玩家的建筑列表
+  // 获取玩家的建筑列表（按建筑类型分组排序，同类型建筑排在一起）
   const playerBuildingList = useMemo(() => {
     if (!world) return [];
     const buildings: number[] = [];
@@ -33,6 +46,18 @@ export const Production: React.FC = () => {
         buildings.push(i);
       }
     }
+    
+    // 按建筑类型ID排序，同类型的建筑会排在一起
+    buildings.sort((a, b) => {
+      const typeA = world.buildings.types[a];
+      const typeB = world.buildings.types[b];
+      if (typeA !== typeB) {
+        return typeA - typeB;
+      }
+      // 同类型建筑按索引排序（先建造的在前）
+      return a - b;
+    });
+    
     return buildings;
   }, [world, tick]);
 

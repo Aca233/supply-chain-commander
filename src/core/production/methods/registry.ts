@@ -28,16 +28,33 @@ export const methodsBySlot: Map<string, BuildingProductionMethod[]> = new Map();
  * 注册建筑的生产方式配置
  */
 export function registerBuildingConfig(config: BuildingMethodConfig): void {
+  // 如果该建筑已注册，先清除旧的方式索引
+  const existingConfig = buildingConfigs.get(config.buildingTypeId);
+  if (existingConfig) {
+    // 清除旧的方式索引
+    for (const method of existingConfig.methods) {
+      methodsById.delete(method.id);
+      const slotKey = `${existingConfig.buildingTypeId}:${method.slotId}`;
+      methodsBySlot.delete(slotKey);
+    }
+  }
+  
   buildingConfigs.set(config.buildingTypeId, config);
   
   // 索引所有方式
   for (const method of config.methods) {
-    methodsById.set(method.id, method);
+    // 防止重复添加
+    if (!methodsById.has(method.id)) {
+      methodsById.set(method.id, method);
+    }
     
     // 按槽位分组
     const slotKey = `${config.buildingTypeId}:${method.slotId}`;
     const existing = methodsBySlot.get(slotKey) || [];
-    existing.push(method);
+    // 检查是否已存在该方式，避免重复
+    if (!existing.some(m => m.id === method.id)) {
+      existing.push(method);
+    }
     methodsBySlot.set(slotKey, existing);
   }
 }

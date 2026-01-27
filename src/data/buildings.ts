@@ -991,7 +991,8 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       inventoryCapacity: 1000,
       customerCapacity: 2000,
       markupRange: [0.15, 0.30],
-      allowedGoodsIds: [8, 24, 44, 45, 67, 74, 76, 113, 114, 115],
+      // 便利店：食品、日用品、烟草
+      allowedGoodsIds: [8, 24, 44, 45, 67, 74, 76, 113, 114, 115, 174],  // +174烟草制品
     },
   },
   {
@@ -1016,7 +1017,13 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       inventoryCapacity: 5000,
       customerCapacity: 8000,
       markupRange: [0.10, 0.25],
-      allowedGoodsIds: [8, 24, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 74, 76, 111, 112, 113, 114, 115, 169, 170, 171, 172, 173, 175],
+      // 超市：全品类食品、日用品、生鲜、粮油
+      allowedGoodsIds: [
+        8, 24, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 74, 76,
+        111, 112, 113, 114, 115, 169, 170, 171, 172, 173, 175,
+        58, 59, 62,      // +生鲜：蔬菜、水果、水产
+        166, 167, 168,   // +粮油：糖、食用油、面粉
+      ],
     },
   },
   {
@@ -1041,7 +1048,15 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       inventoryCapacity: 20000,
       customerCapacity: 30000,
       markupRange: [0.05, 0.20],
-      allowedGoodsIds: [8, 24, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 40, 38, 56, 74, 76, 25, 111, 112, 113, 114, 115, 147, 148, 149, 157, 158, 159, 169, 170, 171, 172, 173, 175, 212, 213, 217, 218],
+      // 大卖场：全品类一站式购物
+      allowedGoodsIds: [
+        8, 24, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 40, 38, 56, 74, 76, 25,
+        111, 112, 113, 114, 115, 147, 148, 149, 157, 158, 159,
+        169, 170, 171, 172, 173, 175, 212, 213, 217, 218,
+        58, 59, 62,      // +生鲜：蔬菜、水果、水产
+        166, 167, 168,   // +粮油：糖、食用油、面粉
+        174,             // +烟草制品
+      ],
     },
   },
   {
@@ -2094,7 +2109,8 @@ const MISC_BUILDINGS: BuildingTypeDefinition[] = [
       inventoryCapacity: 3000,
       customerCapacity: 1500,
       markupRange: [0.20, 0.45],
-      allowedGoodsIds: [169, 170, 171, 172, 173],
+      // 烟酒专卖店：酒类+烟草
+      allowedGoodsIds: [169, 170, 171, 172, 173, 174],  // +174烟草制品
     },
   },
   // 新增体育用品店

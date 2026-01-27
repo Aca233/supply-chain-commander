@@ -2,7 +2,7 @@
  * 市场份额饼图组件
  */
 
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 
@@ -77,10 +77,66 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
   const chartRef = useRef<ReactECharts>(null);
   const hasAnimatedRef = useRef(false);
   const isFirstRenderRef = useRef(true);
+  const isUnmountedRef = useRef(false);
+  // 保存当前数据的引用，用于 tooltip 访问
+  const dataRef = useRef<MarketShareData[]>(data);
+  
+  // 更新数据引用
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  
+  // 安全的 tooltip formatter
+  const safeTooltipFormatter = useCallback((params: any) => {
+    // 检查组件是否已卸载或参数无效
+    if (isUnmountedRef.current || !params || params.value === undefined || params.value === null) {
+      return '';
+    }
+    try {
+      const currentData = dataRef.current;
+      const total = currentData.reduce((sum, d) => sum + (d.value || 0), 0);
+      if (total === 0) return '';
+      const percent = ((params.value / total) * 100).toFixed(1);
+      return `<div class="font-medium">${params.name || ''}</div>
+              <div>份额: ${percent}%</div>
+              <div>数值: ${(params.value || 0).toLocaleString()}</div>`;
+    } catch {
+      return '';
+    }
+  }, []);
+  
+  // 安全的 label formatter
+  const safeLabelFormatter = useCallback((params: any) => {
+    if (isUnmountedRef.current || !params || params.value === undefined || params.value === null) {
+      return '';
+    }
+    try {
+      const currentData = dataRef.current;
+      const total = currentData.reduce((sum, d) => sum + (d.value || 0), 0);
+      if (total === 0) return '';
+      const percent = ((params.value / total) * 100).toFixed(1);
+      return `${params.name || ''}\n${percent}%`;
+    } catch {
+      return '';
+    }
+  }, []);
+  
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      isUnmountedRef.current = true;
+      // 销毁 chart 实例，防止悬停时访问已卸载的数据
+      const chart = chartRef.current?.getEchartsInstance();
+      if (chart && !chart.isDisposed()) {
+        chart.dispose();
+      }
+    };
+  }, []);
   
   // 初始option（首次渲染用）
   const initialOption: EChartsOption = useMemo(() => {
-    const total = data.reduce((sum, d) => sum + d.value, 0);
+    const safeData = data || [];
+    const total = safeData.reduce((sum, d) => sum + (d.value || 0), 0);
     
     return {
       animation: true, // 首次允许动画
@@ -102,15 +158,10 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
         backgroundColor: 'rgba(15, 23, 42, 0.9)',
         borderColor: '#334155',
         textStyle: { color: '#e2e8f0' },
-        formatter: (params: any) => {
-          const percent = ((params.value / total) * 100).toFixed(1);
-          return `<div class="font-medium">${params.name}</div>
-                  <div>份额: ${percent}%</div>
-                  <div>数值: ${params.value.toLocaleString()}</div>`;
-        },
+        formatter: safeTooltipFormatter,
       },
       legend: {
-        show: showLegend && data.length <= 10, // 只在10个以内显示图例
+        show: showLegend && safeData.length <= 10, // 只在10个以内显示图例
         orient: 'horizontal',
         bottom: 5,
         left: 'center',
@@ -145,10 +196,7 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
               fontSize: 14,
               fontWeight: 'bold',
               color: '#e2e8f0',
-              formatter: (params: any) => {
-                const percent = ((params.value / total) * 100).toFixed(1);
-                return `${params.name}\n${percent}%`;
-              },
+              formatter: safeLabelFormatter,
             },
             itemStyle: {
               shadowBlur: 10,
@@ -156,16 +204,16 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
               shadowColor: 'rgba(0, 0, 0, 0.5)',
             },
           },
-          data: data.map((d, i) => ({
-            name: d.name,
-            value: d.value,
+          data: safeData.map((d, i) => ({
+            name: d.name || '',
+            value: d.value || 0,
             itemStyle: { color: d.color || COLORS[i % COLORS.length] },
           })),
         },
       ],
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 只在首次渲染时创建
+  }, [safeTooltipFormatter, safeLabelFormatter]); // 只在首次渲染时创建
   
   // 数据更新时直接调用setOption（禁用动画）
   useEffect(() => {
@@ -178,10 +226,13 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
       return;
     }
     
+    // 检查组件是否已卸载
+    if (isUnmountedRef.current) return;
+    
     // 后续更新：直接使用chart实例setOption，只更新数据部分
     const chart = chartRef.current?.getEchartsInstance();
-    if (chart && hasAnimatedRef.current) {
-      const total = data.reduce((sum, d) => sum + d.value, 0);
+    if (chart && !chart.isDisposed() && hasAnimatedRef.current) {
+      const safeData = data || [];
       
       // 只更新数据，不替换整个series配置
       chart.setOption({
@@ -191,34 +242,26 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
           animation: false,
           animationDuration: 0,
           animationDurationUpdate: 0,
-          data: data.map((d, i) => ({
-            name: d.name,
-            value: d.value,
+          data: safeData.map((d, i) => ({
+            name: d.name || '',
+            value: d.value || 0,
             itemStyle: { color: d.color || COLORS[i % COLORS.length] },
           })),
           emphasis: {
             label: {
-              formatter: (params: any) => {
-                const percent = ((params.value / total) * 100).toFixed(1);
-                return `${params.name}\n${percent}%`;
-              },
+              formatter: safeLabelFormatter,
             },
           },
         }],
         tooltip: {
-          formatter: (params: any) => {
-            const percent = ((params.value / total) * 100).toFixed(1);
-            return `<div class="font-medium">${params.name}</div>
-                    <div>份额: ${percent}%</div>
-                    <div>数值: ${params.value.toLocaleString()}</div>`;
-          },
+          formatter: safeTooltipFormatter,
         },
       }, {
         notMerge: false, // 合并而不是替换
         lazyUpdate: true,
       });
     }
-  }, [data]);
+  }, [data, safeTooltipFormatter, safeLabelFormatter]);
   
   return (
     <ReactECharts

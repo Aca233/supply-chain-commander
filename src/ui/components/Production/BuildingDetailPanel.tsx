@@ -18,7 +18,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
   buildingIndex,
   onClose,
 }) => {
-  const { getWorld, playerCash, upgradeBuilding, toggleBuildingActive, setBuildingRecipe, tick } = useGameStore();
+  const { getWorld, playerCash, upgradeBuilding, toggleBuildingActive, setBuildingRecipe, tick, setSelectedGoods, setCurrentPage } = useGameStore();
   const world = getWorld();
   const [showRecipeModal, setShowRecipeModal] = useState(false);
 
@@ -266,15 +266,26 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             </h4>
             <div className="space-y-3">
               {buildingData.inputs.map((input) => (
-                <div key={input.goodsId}>
+                <div
+                  key={input.goodsId}
+                  className="p-2 -mx-2 rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => {
+                    setSelectedGoods(input.goodsId);
+                    setCurrentPage('market');
+                  }}
+                  title="点击查看市场交易"
+                >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                       <GoodsIcon goodsId={input.goodsId} size={14} />
                       <span className="text-xs text-text-primary">{input.name}</span>
                     </div>
-                    <span className="text-xs text-text-tertiary tabular-nums">
-                      {input.current.toFixed(0)} / {input.required.toFixed(0)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-text-tertiary tabular-nums">
+                        {input.current.toFixed(0)} / {input.required.toFixed(0)}
+                      </span>
+                      <span className="text-xs text-text-tertiary">→</span>
+                    </div>
                   </div>
                   <ResourceBar value={input.percentage} size="sm" />
                   <div className="text-[10px] text-text-tertiary mt-1">
@@ -294,7 +305,15 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             </h4>
             <div className="space-y-3">
               {buildingData.outputs.map((output) => (
-                <div key={output.goodsId} className="flex items-center justify-between">
+                <div
+                  key={output.goodsId}
+                  className="flex items-center justify-between p-2 -m-2 rounded-lg cursor-pointer hover:bg-white/5 transition-colors"
+                  onClick={() => {
+                    setSelectedGoods(output.goodsId);
+                    setCurrentPage('market');
+                  }}
+                  title="点击查看市场交易"
+                >
                   <div className="flex items-center gap-2">
                     <GoodsIcon goodsId={output.goodsId} size={16} />
                     <div>
@@ -304,9 +323,12 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
                       </div>
                     </div>
                   </div>
-                  <span className="text-sm text-green-400 font-medium tabular-nums">
-                    +{output.dailyAmount.toFixed(0)}/日
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-green-400 font-medium tabular-nums">
+                      +{output.dailyAmount.toFixed(0)}/日
+                    </span>
+                    <span className="text-xs text-text-tertiary">→</span>
+                  </div>
                 </div>
               ))}
             </div>

@@ -32,6 +32,7 @@ export interface SerializedWorld {
     levels: number[];
     efficiencies: number[];
     recipeIds: number[];
+    isActive: number[];  // 新增：保存建筑激活状态
   };
   companies: {
     count: number;
@@ -47,7 +48,8 @@ export interface GameSettings {
   soundEnabled: boolean;
   musicEnabled: boolean;
   autoSave: boolean;
-  autoSaveInterval: number;
+  autoSaveInterval: number;  // 自动保存间隔（毫秒）
+  maxAutoSaves: number;      // 最大自动存档数量
   language: string;
 }
 
@@ -79,6 +81,7 @@ export class SaveManager {
         levels: Array.from(world.buildings.levels),
         efficiencies: Array.from(world.buildings.efficiencies),
         recipeIds: Array.from(world.buildings.recipeIds),
+        isActive: Array.from(world.buildings.isActive),  // 保存建筑激活状态
       },
       companies: {
         count: world.companies.count,
@@ -103,6 +106,9 @@ export class SaveManager {
   }
   
   deserializeWorld(data: SerializedWorld, world: GameWorld): void {
+    // 恢复游戏tick（修复日期重置问题）
+    world.tick = data.currentTick;
+    
     world.goods.count = data.goods.count;
     world.goods.prices.set(data.goods.prices);
     world.goods.supplies.set(data.goods.supplies);
@@ -114,6 +120,16 @@ export class SaveManager {
     world.buildings.levels.set(data.buildings.levels);
     world.buildings.efficiencies.set(data.buildings.efficiencies);
     world.buildings.recipeIds.set(data.buildings.recipeIds);
+    
+    // 恢复建筑激活状态（修复建筑暂停问题）
+    if (data.buildings.isActive) {
+      world.buildings.isActive.set(data.buildings.isActive);
+    } else {
+      // 兼容旧存档：如果没有isActive数据，默认所有建筑激活
+      for (let i = 0; i < data.buildings.count; i++) {
+        world.buildings.isActive[i] = 1;
+      }
+    }
     
     world.companies.count = data.companies.count;
     world.companies.cash.set(data.companies.cash);
@@ -247,7 +263,20 @@ export class SaveManager {
   loadSettings(): GameSettings {
     try {
       const json = localStorage.getItem(SETTINGS_KEY);
-      if (json) return JSON.parse(json);
+      if (json) {
+        const saved = JSON.parse(json);
+        // 合并默认值，确保新字段有默认值
+        return {
+          gameSpeed: 1,
+          soundEnabled: true,
+          musicEnabled: true,
+          autoSave: true,
+          autoSaveInterval: 60000,
+          maxAutoSaves: 5,
+          language: 'zh-CN',
+          ...saved,
+        };
+      }
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -257,6 +286,7 @@ export class SaveManager {
       musicEnabled: true,
       autoSave: true,
       autoSaveInterval: 60000,
+      maxAutoSaves: 5,
       language: 'zh-CN',
     };
   }

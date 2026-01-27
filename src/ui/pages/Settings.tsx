@@ -3,16 +3,17 @@
  * 游戏设置、存档管理、性能监控和系统信息
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager';
 import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
+import { formatGameDate } from '@/core/world/GameWorld';
 
 // 懒加载性能监控面板（避免影响初始加载）
 const PerformanceDashboard = lazy(() => import('@/ui/components/Performance/PerformanceDashboard'));
 
 export const Settings: React.FC = () => {
-  const { getWorld, ui, toggleTheme } = useGameStore();
+  const { getWorld, ui, toggleTheme, tick } = useGameStore();
   const world = getWorld();
   const theme = ui.theme;
   const [saves, setSaves] = useState<SaveMetadata[]>([]);
@@ -20,12 +21,61 @@ export const Settings: React.FC = () => {
   const [storageUsage, setStorageUsage] = useState({ used: 0, total: 0, percent: 0 });
   const [saveName, setSaveName] = useState('');
   const [activeTab, setActiveTab] = useState<'game' | 'save' | 'performance' | 'about'>('game');
+  const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   // 加载存档列表
   useEffect(() => {
     setSaves(saveManager.listSaves());
     setStorageUsage(saveManager.getStorageUsage());
   }, []);
+  
+  // 自动保存功能
+  useEffect(() => {
+    // 清除之前的定时器
+    if (autoSaveTimerRef.current) {
+      clearInterval(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    
+    // 如果启用了自动保存，设置定时器
+    if (settings.autoSave && world) {
+      autoSaveTimerRef.current = setInterval(() => {
+        const currentWorld = getWorld();
+        if (currentWorld) {
+          const existingSaves = saveManager.listSaves();
+          const maxAutoSaves = settings.maxAutoSaves || 5;
+          
+          // 获取所有自动存档（按时间排序，最新的在前）
+          const autoSaves = existingSaves
+            .filter(s => s.name.startsWith('自动存档'))
+            .sort((a, b) => b.timestamp - a.timestamp);
+          
+          // 如果自动存档数量达到上限，删除最旧的
+          while (autoSaves.length >= maxAutoSaves) {
+            const oldestSave = autoSaves.pop();
+            if (oldestSave) {
+              saveManager.deleteSave(oldestSave.id);
+            }
+          }
+          
+          // 创建新的自动存档（带编号）
+          const saveIndex = (autoSaves.length > 0
+            ? parseInt(autoSaves[0].name.replace('自动存档 #', '') || '0') + 1
+            : 1);
+          saveManager.save(currentWorld, currentWorld.tick, Date.now(), `自动存档 #${saveIndex}`);
+          setSaves(saveManager.listSaves());
+          setStorageUsage(saveManager.getStorageUsage());
+          console.log(`[自动存档] 已保存 #${saveIndex}`);
+        }
+      }, settings.autoSaveInterval || 60000); // 默认1分钟
+    }
+    
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+      }
+    };
+  }, [settings.autoSave, settings.autoSaveInterval, world, getWorld]);
   
   // 保存设置
   const handleSettingChange = (key: keyof GameSettings, value: any) => {
@@ -38,7 +88,7 @@ export const Settings: React.FC = () => {
   const handleSave = () => {
     if (!world) return;
     const name = saveName.trim() || undefined;
-    saveManager.save(world, 0, 0, name);
+    saveManager.save(world, world.tick, Date.now(), name);
     setSaves(saveManager.listSaves());
     setSaveName('');
     setStorageUsage(saveManager.getStorageUsage());
@@ -125,7 +175,7 @@ export const Settings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-white">自动存档</div>
-                  <div className="text-sm text-slate-400">每分钟自动保存游戏进度</div>
+                  <div className="text-sm text-slate-400">定期自动保存游戏进度</div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -137,6 +187,46 @@ export const Settings: React.FC = () => {
                   <div className="w-11 h-6 bg-slate-600 peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
+              
+              {settings.autoSave && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-white">自动存档间隔</div>
+                      <div className="text-sm text-slate-400">每隔多长时间自动保存一次</div>
+                    </div>
+                    <select
+                      value={settings.autoSaveInterval || 60000}
+                      onChange={e => handleSettingChange('autoSaveInterval', Number(e.target.value))}
+                      className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600"
+                    >
+                      <option value={30000}>30秒</option>
+                      <option value={60000}>1分钟</option>
+                      <option value={120000}>2分钟</option>
+                      <option value={300000}>5分钟</option>
+                      <option value={600000}>10分钟</option>
+                    </select>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-white">最大自动存档数</div>
+                      <div className="text-sm text-slate-400">超过此数量后删除最旧的存档</div>
+                    </div>
+                    <select
+                      value={settings.maxAutoSaves || 5}
+                      onChange={e => handleSettingChange('maxAutoSaves', Number(e.target.value))}
+                      className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600"
+                    >
+                      <option value={1}>1个</option>
+                      <option value={3}>3个</option>
+                      <option value={5}>5个</option>
+                      <option value={10}>10个</option>
+                      <option value={20}>20个</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           
@@ -224,7 +314,13 @@ export const Settings: React.FC = () => {
                 保存游戏
               </button>
               <button
-                onClick={() => world && saveManager.quickSave(world, 0, 0)}
+                onClick={() => {
+                  if (world) {
+                    saveManager.quickSave(world, world.tick, Date.now());
+                    setSaves(saveManager.listSaves());
+                    setStorageUsage(saveManager.getStorageUsage());
+                  }
+                }}
                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 快速存档
@@ -246,7 +342,7 @@ export const Settings: React.FC = () => {
                   <tr>
                     <th className="text-left p-3 text-slate-300">存档名称</th>
                     <th className="text-right p-3 text-slate-300">保存时间</th>
-                    <th className="text-right p-3 text-slate-300">游戏进度</th>
+                    <th className="text-right p-3 text-slate-300">游戏时间</th>
                     <th className="text-right p-3 text-slate-300">现金</th>
                     <th className="text-center p-3 text-slate-300">操作</th>
                   </tr>
@@ -262,7 +358,7 @@ export const Settings: React.FC = () => {
                         {formatDate(save.timestamp)}
                       </td>
                       <td className="p-3 text-right text-slate-300">
-                        Tick {save.playTime}
+                        {formatGameDate(save.playTime)}
                       </td>
                       <td className="p-3 text-right text-green-400">
                         ¥{(save.playerCash / 1000000).toFixed(2)}M

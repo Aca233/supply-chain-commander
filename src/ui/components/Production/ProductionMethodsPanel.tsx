@@ -307,13 +307,27 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
       setDropdownPos(null);
     } else {
       setActiveSlot(slotIndex);
-      // 计算下拉菜单位置
+      // 计算下拉菜单位置，智能判断上下方向
       const button = event.currentTarget;
       const rect = button.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.bottom + 4,
-        left: rect.left,
-      });
+      const viewportHeight = window.innerHeight;
+      const menuHeight = 350; // 预估菜单最大高度
+      
+      // 如果下方空间不足，则显示在上方
+      const spaceBelow = viewportHeight - rect.bottom;
+      const showAbove = spaceBelow < menuHeight && rect.top > menuHeight;
+      
+      if (showAbove) {
+        setDropdownPos({
+          top: rect.top - menuHeight - 4,
+          left: rect.left,
+        });
+      } else {
+        setDropdownPos({
+          top: rect.bottom + 4,
+          left: rect.left,
+        });
+      }
     }
   };
 
@@ -332,13 +346,18 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
     const slot = slotConfig.slots[activeSlot];
     const currentMethodId = currentMethods[activeSlot] || 0;
     
+    // 计算实际可用高度
+    const viewportHeight = window.innerHeight;
+    const maxHeight = Math.min(300, viewportHeight - dropdownPos.top - 20);
+    
     return createPortal(
       <div
-        className="fixed z-[9999] min-w-[220px] max-h-[300px] overflow-y-auto
+        className="fixed z-[9999] min-w-[220px] overflow-y-auto
                    bg-slate-800/98 backdrop-blur-sm border border-slate-600 rounded-lg shadow-2xl"
         style={{
-          top: dropdownPos.top,
+          top: Math.max(10, dropdownPos.top),
           left: dropdownPos.left,
+          maxHeight: `${maxHeight}px`,
         }}
       >
         <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800">
@@ -411,13 +430,18 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
     const currentMethodId = currentMethods[activeSlot] || 0;
     const availableMethods = getSlotAvailableMethods(buildingTypeId, slot.id);
     
+    // 计算实际可用高度
+    const viewportHeight = window.innerHeight;
+    const maxHeight = Math.min(350, viewportHeight - dropdownPos.top - 20);
+    
     return createPortal(
       <div
-        className="fixed z-[9999] min-w-[260px] max-h-[350px] overflow-y-auto
+        className="fixed z-[9999] min-w-[260px] overflow-y-auto
                    bg-slate-800/98 backdrop-blur-sm border border-slate-600 rounded-lg shadow-2xl"
         style={{
-          top: dropdownPos.top,
+          top: Math.max(10, dropdownPos.top),
           left: dropdownPos.left,
+          maxHeight: `${maxHeight}px`,
         }}
       >
         <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800">
