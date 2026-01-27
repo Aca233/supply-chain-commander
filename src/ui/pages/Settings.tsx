@@ -6,6 +6,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager';
+import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 
 // 懒加载性能监控面板（避免影响初始加载）
 const PerformanceDashboard = lazy(() => import('@/ui/components/Performance/PerformanceDashboard'));
@@ -178,43 +179,8 @@ export const Settings: React.FC = () => {
             </div>
           </div>
           
-          {/* 音效设置 */}
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <h3 className="text-lg font-semibold text-white mb-4">音效设置</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-white">音效</div>
-                  <div className="text-sm text-slate-400">游戏操作音效</div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.soundEnabled}
-                    onChange={e => handleSettingChange('soundEnabled', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-white">背景音乐</div>
-                  <div className="text-sm text-slate-400">游戏背景音乐</div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.musicEnabled}
-                    onChange={e => handleSettingChange('musicEnabled', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-            </div>
-          </div>
+          {/* 音效设置 - 使用完整的音效设置面板 */}
+          <SoundSettingsPanel />
           
           {/* 语言设置 */}
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">

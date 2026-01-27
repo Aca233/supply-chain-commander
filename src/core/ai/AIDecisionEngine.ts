@@ -18,7 +18,7 @@ import { addBuilding } from '@/core/world/WorldInitializer';
 import { ALL_BUILDINGS } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { RECIPES, RecipeDefinition } from '@/data/recipes';
-import { GOODS_COUNT, AI_DECISION_INTERVAL, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, AI_DECISION_INTERVAL, ACTUAL_GOODS_COUNT, MAX_SUBSIDIARIES } from '@/core/constants';
 import { getOrderBookView } from '@/core/market/OrderBook';
 import { calculateOptimalQuantity, calculateCostStructure } from '@/core/economy/SupplyCurve';
 import { createBuyOrder, createSellOrder } from '@/core/market/OrderBook';
@@ -140,10 +140,29 @@ import {
   BuildingOptimization,
 } from './AIProductionOptimizer';
 
+// Phase 7: 附属建筑系统
+import {
+  SubsidiaryBuildingDef,
+  SubsidiaryCategory,
+  getAvailableSubsidiaries,
+  getSubsidiaryDef,
+  getInstalledSubsidiaries,
+  canInstallSubsidiary,
+  installSubsidiary,
+  repairSubsidiary,
+  calculateRepairCost,
+  calculateCombinedEffects,
+  getTotalSubsidiarySlots,
+  getUsedSubsidiarySlots,
+  getAvailableSubsidiarySlots,
+  calculateDailySubsidiaryMaintenance,
+  SUBSIDIARIES_BY_BUILDING_TYPE,
+} from '@/core/production/SubsidiaryBuildings';
+
 /**
  * 决策类型
  */
-export type DecisionType = 'production' | 'pricing' | 'trading' | 'investment' | 'expansion' | 'stock';
+export type DecisionType = 'production' | 'pricing' | 'trading' | 'investment' | 'expansion' | 'stock' | 'subsidiary';
 
 /**
  * AI决策结果
@@ -1258,6 +1277,8 @@ export function executeDecision(world: GameWorld, decision: AIDecision): boolean
       return executeInvestmentDecision(world, decision);
     case 'stock':
       return executeStockTradingDecision(world, decision);
+    case 'subsidiary':
+      return executeSubsidiaryDecision(world, decision);
     default:
       return false;
   }
@@ -1494,6 +1515,7 @@ export function runAIDecisionCycle(world: GameWorld, companyId: number): AIDecis
     ...generateTradingDecisions(world, companyId, assessment),
     ...generateInvestmentDecisions(world, companyId, assessment),
     ...generateStockTradingDecisions(world, companyId, assessment, personality),
+    ...generateSubsidiaryDecisions(world, companyId, assessment, personality),
   ];
   
   // 10. 【Phase 3】高级交易系统生成信号
@@ -2358,4 +2380,403 @@ export function autoPostBuyOrders(world: GameWorld): number {
   }
   
   return ordersCreated;
+}
+
+// ==================== 附属建筑决策系统 ====================
+
+/**
+ * 生成附属建筑决策
+ *
+ * AI公司会根据以下因素决定是否安装附属建筑：
+ * 1. 现金充裕程度
+ * 2. 建筑的生产效率需求
+ * 3. 附属建筑的性价比
+ * 4. 公司人格特点
+ */
+export function generateSubsidiaryDecisions(
+  world: GameWorld,
+  companyId: number,
+  assessment: CompanyAssessment,
+  personality: AIPersonality
+): AIDecision[] {
+  const decisions: AIDecision[] = [];
+  const b = world.buildings;
+  const c = world.companies;
+  
+  // 现金门槛：至少保留一定现金用于运营
+  const minCashReserve = 100000;
+  const availableCash = c.cash[companyId] - minCashReserve;
+  
+  if (availableCash <= 0) {
+    return decisions;
+  }
+  
+  // 遍历公司的所有建筑
+  for (let buildingId = 0; buildingId < b.count; buildingId++) {
+    if (b.owners[buildingId] !== companyId) continue;
+    if (!b.isActive[buildingId]) continue;
+    
+    const buildingTypeId = b.types[buildingId];
+    const buildingLevel = b.levels[buildingId];
+    
+    // 1. 检查是否需要维修现有附属建筑
+    const repairDecisions = generateRepairDecisions(world, companyId, buildingId, availableCash);
+    decisions.push(...repairDecisions);
+    
+    // 2. 检查是否可以安装新的附属建筑
+    const availableSlots = getAvailableSubsidiarySlots(world, buildingId);
+    if (availableSlots <= 0) continue;
+    
+    // 获取可用的附属建筑
+    const availableSubs = getAvailableSubsidiaries(buildingTypeId, buildingLevel);
+    if (availableSubs.length === 0) continue;
+    
+    // 评估每个附属建筑的价值
+    const evaluatedSubs = evaluateSubsidiaries(world, companyId, buildingId, availableSubs, personality);
+    
+    // 选择最有价值的附属建筑
+    for (const evalSub of evaluatedSubs.slice(0, 2)) { // 每个建筑最多考虑2个
+      if (evalSub.score < 50) continue; // 分数太低不考虑
+      if (evalSub.def.buildCost > availableCash * 0.3) continue; // 单个附属建筑不超过可用现金的30%
+      
+      // 检查是否可以安装
+      const check = canInstallSubsidiary(world, buildingId, evalSub.def.id);
+      if (!check.canInstall) continue;
+      
+      decisions.push({
+        type: 'subsidiary',
+        companyId,
+        action: 'install',
+        params: {
+          buildingId,
+          subsidiaryId: evalSub.def.id,
+          cost: evalSub.def.buildCost,
+          score: evalSub.score,
+        },
+        priority: 4 + evalSub.score / 25, // 4-8 优先级
+        expectedProfit: evalSub.expectedBenefit,
+        confidence: 0.6 + evalSub.score / 200,
+      });
+    }
+  }
+  
+  return decisions;
+}
+
+/**
+ * 生成维修决策
+ */
+function generateRepairDecisions(
+  world: GameWorld,
+  companyId: number,
+  buildingId: number,
+  availableCash: number
+): AIDecision[] {
+  const decisions: AIDecision[] = [];
+  const b = world.buildings;
+  const subsidiaryOffset = buildingId * MAX_SUBSIDIARIES;
+  
+  for (let slotIndex = 0; slotIndex < MAX_SUBSIDIARIES; slotIndex++) {
+    const subId = b.subsidiaryIds[subsidiaryOffset + slotIndex];
+    if (subId === 0) continue;
+    
+    const condition = b.subsidiaryConditions[subsidiaryOffset + slotIndex];
+    
+    // 状态低于70%时考虑维修
+    if (condition < 0.7) {
+      const costResult = calculateRepairCost(world, buildingId, slotIndex);
+      if (!costResult.canRepair) continue;
+      
+      // 检查是否有足够资金
+      if (costResult.cost > availableCash * 0.1) continue; // 维修费不超过可用现金的10%
+      
+      const def = getSubsidiaryDef(subId);
+      const urgency = 1 - condition; // 状态越差越紧急
+      
+      decisions.push({
+        type: 'subsidiary',
+        companyId,
+        action: 'repair',
+        params: {
+          buildingId,
+          slotIndex,
+          subsidiaryId: subId,
+          cost: costResult.cost,
+          currentCondition: condition,
+        },
+        priority: 5 + urgency * 4, // 5-9 优先级
+        expectedProfit: 0,
+        confidence: 0.8,
+      });
+    }
+  }
+  
+  return decisions;
+}
+
+/**
+ * 评估附属建筑的价值
+ */
+interface SubsidiaryEvaluation {
+  def: SubsidiaryBuildingDef;
+  score: number;
+  expectedBenefit: number;
+}
+
+function evaluateSubsidiaries(
+  world: GameWorld,
+  companyId: number,
+  buildingId: number,
+  subsidiaries: SubsidiaryBuildingDef[],
+  personality: AIPersonality
+): SubsidiaryEvaluation[] {
+  const evaluations: SubsidiaryEvaluation[] = [];
+  const b = world.buildings;
+  
+  // 获取建筑的配方信息
+  const recipeId = b.recipeIds[buildingId];
+  const recipe = RECIPES.find(r => r.id === recipeId);
+  
+  for (const def of subsidiaries) {
+    let score = 50; // 基础分
+    let expectedBenefit = 0;
+    
+    const effects = def.effects;
+    
+    // 1. 产出加成评分
+    if (effects.outputMultiplier && effects.outputMultiplier > 1) {
+      const bonus = (effects.outputMultiplier - 1) * 100;
+      score += bonus * 2; // 每1%产出加成 +2分
+      
+      // 估算收益
+      if (recipe) {
+        for (const output of recipe.outputs) {
+          const price = world.goods.prices[output.goodsId];
+          expectedBenefit += output.amount * price * (effects.outputMultiplier - 1) * 24 * 30; // 月收益
+        }
+      }
+    }
+    
+    // 2. 品质加成评分
+    if (effects.qualityBonus && effects.qualityBonus > 0) {
+      score += effects.qualityBonus * 50; // 每0.1品质 +5分
+      
+      // 高端型人格更看重品质
+      if (personality.pricingBias > 0.3) {
+        score += effects.qualityBonus * 30;
+      }
+    }
+    
+    // 3. 成本节约评分
+    if (effects.laborReduction && effects.laborReduction > 0) {
+      score += effects.laborReduction * 100; // 每10%人工节约 +10分
+      
+      // 成本领先型更看重成本节约
+      if (personality.pricingBias < -0.2) {
+        score += effects.laborReduction * 50;
+      }
+    }
+    
+    if (effects.inputReduction && effects.inputReduction > 0) {
+      score += effects.inputReduction * 150; // 每10%原料节约 +15分
+    }
+    
+    // 4. 容量扩展评分
+    if (effects.storageCapacity && effects.storageCapacity > 0) {
+      score += Math.min(effects.storageCapacity / 10, 20); // 最多+20分
+    }
+    
+    // 5. 额外产出评分
+    if (effects.bonusOutputChance && effects.bonusOutputChance > 0) {
+      score += effects.bonusOutputChance * 100; // 每10%几率 +10分
+    }
+    
+    // 6. 性价比调整
+    const costRatio = def.buildCost / 100000; // 以10万为基准
+    score = score / Math.max(costRatio, 0.5); // 成本越高分数越低
+    
+    // 7. 根据公司人格调整
+    // 激进型更愿意投资
+    if (personality.expansionBias > 0.5) {
+      score *= 1.2;
+    }
+    // 保守型更谨慎
+    if (personality.expansionBias < 0.3) {
+      score *= 0.8;
+    }
+    
+    // 8. 类别偏好
+    switch (def.category) {
+      case 'production':
+        // 所有人格都喜欢生产增强
+        score *= 1.1;
+        break;
+      case 'quality':
+        // 高端型更喜欢品质
+        if (personality.pricingBias > 0.3) {
+          score *= 1.3;
+        }
+        break;
+      case 'efficiency':
+        // 成本领先型更喜欢效率
+        if (personality.pricingBias < -0.2) {
+          score *= 1.3;
+        }
+        break;
+      case 'specialized':
+        // 专精型更喜欢专业化
+        if (personality.specializationDegree > 0.6) {
+          score *= 1.2;
+        }
+        break;
+    }
+    
+    evaluations.push({
+      def,
+      score,
+      expectedBenefit,
+    });
+  }
+  
+  // 按分数排序
+  evaluations.sort((a, b) => b.score - a.score);
+  
+  return evaluations;
+}
+
+/**
+ * 执行附属建筑决策
+ */
+function executeSubsidiaryDecision(world: GameWorld, decision: AIDecision): boolean {
+  const { companyId, action, params } = decision;
+  const c = world.companies;
+  
+  if (action === 'install') {
+    const buildingId = params.buildingId as number;
+    const subsidiaryId = params.subsidiaryId as number;
+    const cost = params.cost as number;
+    
+    // 检查资金
+    if (c.cash[companyId] < cost) {
+      return false;
+    }
+    
+    // 检查是否可以安装
+    const check = canInstallSubsidiary(world, buildingId, subsidiaryId);
+    if (!check.canInstall) {
+      return false;
+    }
+    
+    // 扣费
+    c.cash[companyId] -= cost;
+    
+    // 安装
+    const result = installSubsidiary(world, buildingId, subsidiaryId);
+    
+    if (result.success) {
+      const def = getSubsidiaryDef(subsidiaryId);
+      console.log(`[AI附属建筑 T${world.tick}] 公司${companyId}在建筑${buildingId}安装了「${def?.name || '未知'}」，花费¥${cost}`);
+      return true;
+    } else {
+      // 恢复资金
+      c.cash[companyId] += cost;
+      return false;
+    }
+  } else if (action === 'repair') {
+    const buildingId = params.buildingId as number;
+    const slotIndex = params.slotIndex as number;
+    const cost = params.cost as number;
+    
+    // 检查资金
+    if (c.cash[companyId] < cost) {
+      return false;
+    }
+    
+    // 扣费
+    c.cash[companyId] -= cost;
+    
+    // 维修
+    const result = repairSubsidiary(world, buildingId, slotIndex);
+    
+    if (result.success) {
+      const subsidiaryId = params.subsidiaryId as number;
+      const def = getSubsidiaryDef(subsidiaryId);
+      console.log(`[AI附属建筑 T${world.tick}] 公司${companyId}维修了建筑${buildingId}的「${def?.name || '未知'}」，花费¥${cost.toFixed(0)}`);
+      return true;
+    } else {
+      // 恢复资金
+      c.cash[companyId] += cost;
+      return false;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * AI公司自动管理附属建筑
+ *
+ * 在GameLoop中定期调用，用于：
+ * 1. 批量处理AI公司的附属建筑决策
+ * 2. 自动维修状态较差的附属建筑
+ * 3. 根据市场情况安装新的附属建筑
+ */
+export function runAISubsidiaryManagement(world: GameWorld): number {
+  let totalActions = 0;
+  const c = world.companies;
+  
+  // 每24tick（1天）运行一次
+  if (world.tick % 24 !== 0) {
+    return 0;
+  }
+  
+  // 遍历所有AI公司
+  for (let companyId = 1; companyId < c.count; companyId++) {
+    if (!c.isAI[companyId]) continue;
+    if (c.cash[companyId] < 50000) continue; // 资金太少跳过
+    
+    // 获取公司人格
+    const personality = getCompanyPersonalityForSubsidiary(companyId);
+    
+    // 评估公司状态
+    const assessment = assessCompanyState(world, companyId);
+    
+    // 生成附属建筑决策
+    const decisions = generateSubsidiaryDecisions(world, companyId, assessment, personality);
+    
+    // 按优先级排序
+    decisions.sort((a, b) => b.priority - a.priority);
+    
+    // 执行前3个最高优先级的决策
+    for (let i = 0; i < Math.min(3, decisions.length); i++) {
+      if (executeSubsidiaryDecision(world, decisions[i])) {
+        totalActions++;
+      }
+    }
+  }
+  
+  // 调试日志
+  if (totalActions > 0) {
+    console.log(`[AI附属建筑管理 T${world.tick}] 执行了${totalActions}个附属建筑操作`);
+  }
+  
+  return totalActions;
+}
+
+/**
+ * 获取公司人格（用于附属建筑决策）
+ */
+function getCompanyPersonalityForSubsidiary(companyId: number): AIPersonality {
+  const config = AI_COMPANIES.find(c => c.id === companyId);
+  if (config) {
+    return AI_PERSONALITIES[config.personality];
+  }
+  
+  // 动态分配人格
+  const personalityTypes: Array<keyof typeof AI_PERSONALITIES> = [
+    'aggressive', 'opportunist', 'cost_leader', 'diversified',
+    'specialist', 'innovator', 'conservative', 'premium',
+  ];
+  const typeIndex = (companyId - 1) % personalityTypes.length;
+  return AI_PERSONALITIES[personalityTypes[typeIndex]];
 }

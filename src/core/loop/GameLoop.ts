@@ -16,7 +16,7 @@ import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHea
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
@@ -81,6 +81,9 @@ export interface TickResult {
   cleanedOrders: number;
   
   aiDecisions: number;  // AI公司决策数量
+  
+  // AI附属建筑管理结果
+  aiSubsidiaryActions: number;
   
   // 新增系统结果
   season: Season;
@@ -425,13 +428,19 @@ export class GameLoop {
     // 21. 更新收购系统（处理过期要约等）
     updateAcquisitionSystem(this.world);
     
-    // 22. 更新品牌衰减（每天）
+    // 22. AI附属建筑管理（每天执行一次）
+    let aiSubsidiaryActions = 0;
+    if (currentTick % 24 === 0) {
+      aiSubsidiaryActions = runAISubsidiaryManagement(this.world);
+    }
+    
+    // 23. 更新品牌衰减（每天）
     brandManager.processDailyDecay(currentTick);
     
-    // 23. 更新供应合同状态
+    // 24. 更新供应合同状态
     supplyContractManager.updateContractStatus(currentTick);
     
-    // 24. 检查AI破产（每100个tick检查一次）
+    // 25. 检查AI破产（每100个tick检查一次）
     if (currentTick % 100 === 0) {
       this.checkAIBankruptcy();
     }
@@ -478,6 +487,7 @@ export class GameLoop {
         sellOrders: aiSellOrders,
         buyOrders: aiBuyOrders,
       },
+      aiSubsidiaryActions,
     };
     
     // 调用回调

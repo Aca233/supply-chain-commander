@@ -4,6 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { soundManager } from '@/core/sound';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -64,6 +65,22 @@ export function ToastProvider({ children, maxToasts = 5 }: ToastProviderProps) {
       const updated = [newToast, ...prev];
       return updated.slice(0, maxToasts);
     });
+    
+    // 根据toast类型播放对应音效
+    switch (toast.type) {
+      case 'success':
+        soundManager.playNotifySuccess();
+        break;
+      case 'error':
+        soundManager.playNotifyError();
+        break;
+      case 'warning':
+        soundManager.playNotifyWarning();
+        break;
+      case 'info':
+        soundManager.playNotifyInfo();
+        break;
+    }
     
     // 自动移除
     if (newToast.duration && newToast.duration > 0) {

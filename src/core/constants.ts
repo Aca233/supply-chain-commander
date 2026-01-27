@@ -30,6 +30,9 @@ export const MAX_OUTPUTS = 4;
 /** 每个建筑最大生产方式槽位 */
 export const MAX_SLOTS = 5;
 
+/** 每个建筑最大附属建筑槽位 */
+export const MAX_SUBSIDIARIES = 6;
+
 /** 价格历史记录长度 */
 export const HISTORY_SIZE = 365;
 

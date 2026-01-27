@@ -3,6 +3,7 @@
  * 批量处理所有建筑的生产计算
  * 包含劳动力和能源系统以及生产方式槽位修正
  * 支持新的建筑专属生产方式系统
+ * 集成附属建筑效果系统
  */
 
 import { GameWorld, addInventory } from '../world/GameWorld';
@@ -19,6 +20,11 @@ import {
   getProductionModifiersForBuilding
 } from './ProductionMethods';
 import { determineProductionQuality, QualityGrade, QUALITY_INFO } from '../economy/QualitySystem';
+import {
+  calculateCombinedEffects,
+  CombinedSubsidiaryEffects,
+  updateSubsidiaryConditions,
+} from './SubsidiaryBuildings';
 
 /**
  * 配方缓存表，用于快速查找
@@ -243,8 +249,14 @@ function processBuildingProduction(
   // 获取生产方式修正
   const modifiers = getBuildingProductionModifiers(world, buildingId);
   
+  // 获取附属建筑效果
+  const subsidiaryEffects = calculateCombinedEffects(world, buildingId);
+  
   // 计算本tick的基础产出率
   let tickOutput = efficiency / recipe.ticksRequired;
+  
+  // 应用附属建筑的速度加成
+  tickOutput *= subsidiaryEffects.speedMultiplier;
   
   // 应用生产方式的产出修正
   // 首先应用通用产出乘数
@@ -273,10 +285,16 @@ function processBuildingProduction(
     outputModifier *= specificModifier;
   }
   
+  // 应用附属建筑的产出乘数
+  outputModifier *= subsidiaryEffects.outputMultiplier;
+  
   tickOutput *= outputModifier;
   
+  // 计算劳动力修正（生产方式 + 附属建筑）
+  const laborMultiplier = modifiers.laborMultiplier * (1 - subsidiaryEffects.laborReduction);
+  
   // 检查劳动力是否足够（应用劳动力修正）
-  const laborNeeded = recipe.laborRequired * efficiency * modifiers.laborMultiplier;
+  const laborNeeded = recipe.laborRequired * efficiency * laborMultiplier;
   const availableLabor = resources.totalLabor - resources.usedLabor;
   if (laborNeeded > availableLabor) {
     // 劳动力不足，降低产能
@@ -290,8 +308,11 @@ function processBuildingProduction(
     }
   }
   
+  // 计算能源修正（生产方式 + 附属建筑）
+  const energyMultiplier = modifiers.energyMultiplier * (1 - subsidiaryEffects.energyReduction);
+  
   // 检查能源是否足够（应用能源修正）
-  const energyNeeded = recipe.energyRequired * efficiency * modifiers.energyMultiplier;
+  const energyNeeded = recipe.energyRequired * efficiency * energyMultiplier;
   const availableEnergy = resources.totalEnergy - resources.usedEnergy;
   if (energyNeeded > availableEnergy) {
     // 能源不足，降低产能
@@ -304,6 +325,9 @@ function processBuildingProduction(
       return result; // 完全没有能源，无法生产
     }
   }
+  
+  // 计算输入修正（生产方式 + 附属建筑的输入减少）
+  const inputReductionMultiplier = 1 - subsidiaryEffects.inputReduction;
   
   // 检查输入是否足够（应用输入修正）
   let canProduce = true;
@@ -318,6 +342,8 @@ function processBuildingProduction(
     if (inputMult === undefined) {
       inputMult = modifiers.inputMultipliers.get(0) ?? 1.0;
     }
+    // 应用附属建筑的输入减少
+    inputMult *= inputReductionMultiplier;
     inputMultipliers[j] = inputMult;
     
     const required = recipe.inputAmounts[j] * tickOutput * inputMult;
@@ -340,13 +366,21 @@ function processBuildingProduction(
   // 记录资源使用
   result.laborUsed = Math.min(laborNeeded, availableLabor);
   result.energyUsed = Math.min(energyNeeded, availableEnergy);
-  result.qualityBonus = modifiers.qualityBonus;
+  
+  // 合并品质加成（生产方式 + 附属建筑）
+  result.qualityBonus = modifiers.qualityBonus + subsidiaryEffects.qualityBonus;
   
   // 产出
   const outputOffset = buildingId * MAX_OUTPUTS;
   for (let j = 0; j < recipe.outputCount; j++) {
     const goodsId = recipe.outputGoods[j];
-    const amount = recipe.outputAmounts[j] * tickOutput;
+    let amount = recipe.outputAmounts[j] * tickOutput;
+    
+    // 应用附属建筑的特定商品加成
+    const specificBonus = subsidiaryEffects.specificGoodsBonus.get(goodsId);
+    if (specificBonus) {
+      amount *= specificBonus;
+    }
     
     // 添加到输出缓冲区
     b.outputBuffers[outputOffset + j] += amount;
@@ -358,7 +392,16 @@ function processBuildingProduction(
     g.supplies[goodsId] += amount;
     
     // 更新库存品质分数（使用加权平均）
-    updateInventoryQuality(world, owner, goodsId, amount, modifiers.qualityBonus);
+    updateInventoryQuality(world, owner, goodsId, amount, result.qualityBonus);
+  }
+  
+  // 处理附属建筑的额外产出
+  for (const bonusOutput of subsidiaryEffects.bonusOutputs) {
+    if (Math.random() < bonusOutput.chance) {
+      const bonusAmount = bonusOutput.amount;
+      addInventory(world, owner, bonusOutput.goodsId, bonusAmount);
+      g.supplies[bonusOutput.goodsId] += bonusAmount;
+    }
   }
   
   // 更新生产进度
@@ -384,6 +427,9 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     totalEnergyUsed: 0,
     totalQualityBonus: 0,
   };
+  
+  // 更新附属建筑状态（每tick衰减）
+  updateSubsidiaryConditions(world);
   
   // 首先计算每个公司的可用资源
   companyResources.clear();

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { Sidebar } from '@/ui/components/Layout/Sidebar';
 import { Header } from '@/ui/components/Layout/Header';
@@ -10,6 +10,7 @@ import { CompetitorsAndInvestment } from '@/ui/pages/CompetitorsAndInvestment';
 import { Settings } from '@/ui/pages/Settings';
 import Retail from '@/ui/pages/Retail';
 import { ToastProvider } from '@/ui/components/Toast/ToastContext';
+import { soundManager } from '@/core/sound';
 
 const App: React.FC = () => {
   const { initGame, startGame, initialized, paused, ui, setTheme } = useGameStore();
@@ -37,6 +38,41 @@ const App: React.FC = () => {
       // startGame(); // 取消注释以自动开始
     }
   }, [initialized, paused, startGame]);
+
+  // 全局点击音效
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // 检查是否点击了按钮或可交互元素
+      const isButton = target.tagName === 'BUTTON' ||
+                       target.closest('button') !== null;
+      const isClickable = target.tagName === 'A' ||
+                         target.closest('a') !== null ||
+                         target.role === 'button' ||
+                         target.closest('[role="button"]') !== null;
+      const isTab = target.closest('[role="tab"]') !== null;
+      const isSelect = target.tagName === 'SELECT';
+      
+      // 排除滑块和输入框
+      const isSlider = target.tagName === 'INPUT' &&
+                      (target as HTMLInputElement).type === 'range';
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+      
+      if (isSlider) return; // 滑块不播放点击音效
+      
+      if (isButton || isClickable || isTab || isSelect) {
+        soundManager.playClick();
+      }
+    };
+    
+    // 使用捕获阶段确保在其他处理器之前触发
+    document.addEventListener('click', handleClick, true);
+    
+    return () => {
+      document.removeEventListener('click', handleClick, true);
+    };
+  }, []);
 
   const renderPage = () => {
     switch (currentPage) {

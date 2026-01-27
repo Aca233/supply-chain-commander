@@ -11,6 +11,7 @@ import {
   MAX_INPUTS,
   MAX_OUTPUTS,
   MAX_SLOTS,
+  MAX_SUBSIDIARIES,
   HISTORY_SIZE,
   MAX_RETAIL_STORES,
   MAX_TRADES,
@@ -57,6 +58,12 @@ export interface BuildingsSystem {
   
   // 状态标记
   isActive: Uint8Array;           // 是否激活运营
+  
+  // 附属建筑系统
+  subsidiaryIds: Uint16Array;           // [N × MAX_SUBSIDIARIES] 已安装的附属建筑ID
+  subsidiaryConditions: Float32Array;   // [N × MAX_SUBSIDIARIES] 附属建筑状态 0-1
+  subsidiaryInstalledTicks: Uint32Array; // [N × MAX_SUBSIDIARIES] 安装时间
+  subsidiaryCount: Uint8Array;          // [N] 每个建筑已安装的附属建筑数量
 }
 
 /** 公司系统数据 */
@@ -213,6 +220,11 @@ export function createBuildingsSystem(): BuildingsSystem {
     outputBuffers: new Float32Array(MAX_BUILDINGS * MAX_OUTPUTS),
     recipeIds: new Uint8Array(MAX_BUILDINGS),
     isActive: new Uint8Array(MAX_BUILDINGS),
+    // 附属建筑系统
+    subsidiaryIds: new Uint16Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
+    subsidiaryConditions: new Float32Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
+    subsidiaryInstalledTicks: new Uint32Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
+    subsidiaryCount: new Uint8Array(MAX_BUILDINGS),
   };
 }
 

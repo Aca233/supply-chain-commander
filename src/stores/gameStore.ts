@@ -9,10 +9,30 @@ import { GameWorld, formatGameDate } from '@/core/world/GameWorld';
 import { initializeWorld, addBuilding, getBuildingSlotMethodsArray, setBuildingSlotMethod } from '@/core/world/WorldInitializer';
 import { GameLoop, createGameLoop, TickResult, PerformanceReport } from '@/core/loop/GameLoop';
 import { createBuyOrder, createSellOrder, createSellOrderWithReason, cancelOrder, getOrderBookView, OrderBookView, OrderResult } from '@/core/market/OrderBook';
+import { soundManager } from '@/core/sound';
 import { getMarketStats, MarketStats } from '@/core/market/MatchingEngine';
 import { getPriceTrend, PriceTrend, getPriceSummary, PriceSummary } from '@/core/economy/PriceEngine';
 import { getBuildingProductionStatus, BuildingProductionStatus, getBuildingProductionStatusWithMethods, getInventoryQualityName, getInventoryQualityPriceMultiplier } from '@/core/production/ProductionEngine';
 import { QUALITY_INFO, QualityGrade } from '@/core/economy/QualitySystem';
+import {
+  SubsidiaryBuildingDef,
+  InstalledSubsidiary,
+  CombinedSubsidiaryEffects,
+  getAvailableSubsidiaries,
+  getSubsidiaryDef,
+  getInstalledSubsidiaries,
+  canInstallSubsidiary,
+  installSubsidiary,
+  uninstallSubsidiary,
+  repairSubsidiary,
+  calculateRepairCost,
+  calculateCombinedEffects,
+  getTotalSubsidiarySlots,
+  getUsedSubsidiarySlots,
+  getAvailableSubsidiarySlots,
+  calculateDailySubsidiaryMaintenance,
+  formatEffectDescription,
+} from '@/core/production/SubsidiaryBuildings';
 import {
   perfMonitor,
   PerformanceSnapshot,
@@ -295,6 +315,16 @@ interface GameActions {
   getMemoryData: () => MemoryData;
   exportPerformanceJSON: (options?: Partial<ExportOptions>) => void;
   exportPerformanceCSV: (options?: Partial<ExportOptions>) => void;
+  
+  // ============ 附属建筑系统 (新增) ============
+  getAvailableSubsidiaries: (buildingId: number) => SubsidiaryBuildingDef[];
+  getInstalledSubsidiaries: (buildingId: number) => Array<InstalledSubsidiary & { slotIndex: number; def: SubsidiaryBuildingDef | undefined }>;
+  getBuildingSubsidiaryEffects: (buildingId: number) => CombinedSubsidiaryEffects | null;
+  getBuildingSubsidiarySlots: (buildingId: number) => { total: number; used: number; available: number };
+  installBuildingSubsidiary: (buildingId: number, subsidiaryId: number) => { success: boolean; reason?: string };
+  uninstallBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; reason?: string };
+  repairBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; cost: number; reason?: string };
+  getSubsidiaryMaintenanceCost: (buildingId: number) => number;
 }
 
 let notificationId = 0;
@@ -475,9 +505,11 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playOrderPlace();
         get().addNotification('success', `买单已提交: ${quantity}单位 @ ¥${price.toFixed(2)}`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', '买单提交失败：资金不足或订单池已满');
         return false;
       }
@@ -489,9 +521,11 @@ export const useGameStore = create<GameState & GameActions>()(
       const result = createSellOrderWithReason(worldRef, 0, goodsId, quantity, price);
       if (result.success) {
         const actualQty = result.actualQuantity ?? quantity;
+        soundManager.playOrderPlace();
         get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ¥${price.toFixed(2)}`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', `卖单提交失败：${result.reason || '未知错误'}`);
         return false;
       }
@@ -505,6 +539,7 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playOrderCancel();
         get().addNotification('info', '订单已取消');
       }
       return success;
@@ -528,9 +563,11 @@ export const useGameStore = create<GameState & GameActions>()(
           // 立即更新现金状态，确保其他UI组件能看到最新值
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playBuildComplete();
         get().addNotification('success', '建筑建造完成');
         return buildingId;
       } catch (e) {
+        soundManager.playTradeFail();
         get().addNotification('error', '建筑建造失败');
         return null;
       }
@@ -579,6 +616,7 @@ export const useGameStore = create<GameState & GameActions>()(
         state.playerCash = worldRef!.companies.cash[0];
       });
       
+      soundManager.playUpgrade();
       get().addNotification('success', `${building.name} 升级到 Lv.${currentLevel + 1}`);
       return true;
     },
@@ -655,8 +693,10 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playCoin();
         get().addNotification('success', `贷款申请成功！获得 ¥${amount.toLocaleString()}`);
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', `贷款申请失败：${result.reason}`);
       }
       
@@ -672,8 +712,10 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playTradeSuccess();
         get().addNotification('success', `贷款已提前还清${result.penalty ? `，罚金 ¥${result.penalty.toFixed(0)}` : ''}`);
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', `还款失败：${result.reason}`);
       }
       
@@ -1192,9 +1234,11 @@ export const useGameStore = create<GameState & GameActions>()(
           state.playerCash = worldRef!.companies.cash[0];
         });
         const stock = getStock(stockCompanyId);
+        soundManager.playTradeSuccess();
         get().addNotification('success', `买入股票 ${stock?.ticker || ''} ${quantity}股`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', '买入失败：资金不足或股票不可交易');
         return false;
       }
@@ -1206,9 +1250,11 @@ export const useGameStore = create<GameState & GameActions>()(
       const orderId = sellStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
       if (orderId !== null) {
         const stock = getStock(stockCompanyId);
+        soundManager.playTradeSuccess();
         get().addNotification('success', `卖出股票 ${stock?.ticker || ''} ${quantity}股`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', '卖出失败：持股不足或股票不可交易');
         return false;
       }
@@ -1222,9 +1268,11 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playCoin();
         get().addNotification('success', `IPO成功！发行${offeringShares}股 @ ¥${offeringPrice}`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', 'IPO失败：公司已上市');
         return false;
       }
@@ -1249,9 +1297,11 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playTradeSuccess();
         get().addNotification('success', `收购要约已发起，目标持股 ${(targetSharePercent * 100).toFixed(0)}%`);
         return true;
       } else {
+        soundManager.playTradeFail();
         get().addNotification('error', `收购失败：${result.reason}`);
         return false;
       }
@@ -1269,10 +1319,12 @@ export const useGameStore = create<GameState & GameActions>()(
             state.playerCash = worldRef!.companies.cash[0];
             state.playerBuildings++;
           });
+          soundManager.playCoin();
           get().addNotification('success', `资产购买成功！`);
           return true;
         }
       }
+      soundManager.playTradeFail();
       get().addNotification('error', `资产购买失败：${result.reason || '交易失败'}`);
       return false;
     },
@@ -1346,6 +1398,7 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.playerCash = worldRef!.companies.cash[0];
         });
+        soundManager.playCoin();
         get().addNotification('success', `分红成功！获得 ¥${result.playerReceived?.toLocaleString() || 0}`);
       }
       return result;
@@ -1404,6 +1457,171 @@ export const useGameStore = create<GameState & GameActions>()(
     
     exportPerformanceCSV: (options?: Partial<ExportOptions>) => {
       downloadPerformanceCSV(options);
+    },
+    
+    // ==================== 附属建筑系统 ====================
+    getAvailableSubsidiaries: (buildingId: number) => {
+      if (!worldRef) return [];
+      
+      const b = worldRef.buildings;
+      if (buildingId >= b.count) return [];
+      
+      const buildingTypeId = b.types[buildingId];
+      const buildingLevel = b.levels[buildingId];
+      
+      return getAvailableSubsidiaries(buildingTypeId, buildingLevel);
+    },
+    
+    getInstalledSubsidiaries: (buildingId: number) => {
+      if (!worldRef) return [];
+      return getInstalledSubsidiaries(worldRef, buildingId);
+    },
+    
+    getBuildingSubsidiaryEffects: (buildingId: number) => {
+      if (!worldRef) return null;
+      return calculateCombinedEffects(worldRef, buildingId);
+    },
+    
+    getBuildingSubsidiarySlots: (buildingId: number) => {
+      if (!worldRef) return { total: 0, used: 0, available: 0 };
+      
+      const b = worldRef.buildings;
+      if (buildingId >= b.count) return { total: 0, used: 0, available: 0 };
+      
+      const level = b.levels[buildingId];
+      const total = getTotalSubsidiarySlots(level);
+      const used = getUsedSubsidiarySlots(worldRef, buildingId);
+      
+      return {
+        total,
+        used,
+        available: total - used,
+      };
+    },
+    
+    installBuildingSubsidiary: (buildingId: number, subsidiaryId: number) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      
+      const b = worldRef.buildings;
+      
+      // 检查建筑是否存在
+      if (buildingId >= b.count) {
+        return { success: false, reason: '建筑不存在' };
+      }
+      
+      // 检查是否是玩家建筑
+      if (b.owners[buildingId] !== 0) {
+        return { success: false, reason: '无法修改非玩家建筑的附属设施' };
+      }
+      
+      // 获取附属建筑定义
+      const def = getSubsidiaryDef(subsidiaryId);
+      if (!def) {
+        return { success: false, reason: '附属建筑不存在' };
+      }
+      
+      // 检查是否可以安装
+      const check = canInstallSubsidiary(worldRef, buildingId, subsidiaryId);
+      if (!check.canInstall) {
+        return { success: false, reason: check.reason };
+      }
+      
+      // 检查资金
+      const playerCash = worldRef.companies.cash[0];
+      if (playerCash < def.buildCost) {
+        return { success: false, reason: `资金不足，需要 ¥${def.buildCost.toLocaleString()}` };
+      }
+      
+      // 扣费
+      worldRef.companies.cash[0] -= def.buildCost;
+      
+      // 安装
+      const result = installSubsidiary(worldRef, buildingId, subsidiaryId);
+      
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+          // 强制触发 tick 更新以刷新 UI
+          state.tick = state.tick + 0.001;
+        });
+        soundManager.playBuildComplete();
+        get().addNotification('success', `已安装「${def.name}」，花费 ¥${def.buildCost.toLocaleString()}`);
+      } else {
+        // 恢复资金
+        worldRef.companies.cash[0] += def.buildCost;
+        get().addNotification('error', `安装失败：${result.reason || '未知错误'}`);
+      }
+      
+      return result;
+    },
+    
+    uninstallBuildingSubsidiary: (buildingId: number, slotIndex: number) => {
+      if (!worldRef) return { success: false, reason: '游戏未初始化' };
+      
+      const b = worldRef.buildings;
+      
+      // 检查是否是玩家建筑
+      if (b.owners[buildingId] !== 0) {
+        return { success: false, reason: '无法修改非玩家建筑的附属设施' };
+      }
+      
+      const result = uninstallSubsidiary(worldRef, buildingId, slotIndex);
+      
+      if (result.success) {
+        soundManager.playOrderCancel();
+        get().addNotification('info', '附属设施已拆除');
+      }
+      
+      return result;
+    },
+    
+    repairBuildingSubsidiary: (buildingId: number, slotIndex: number) => {
+      if (!worldRef) return { success: false, cost: 0, reason: '游戏未初始化' };
+      
+      const b = worldRef.buildings;
+      
+      // 检查是否是玩家建筑
+      if (b.owners[buildingId] !== 0) {
+        return { success: false, cost: 0, reason: '无法修改非玩家建筑的附属设施' };
+      }
+      
+      // 先计算维修成本（不执行维修）
+      const costResult = calculateRepairCost(worldRef, buildingId, slotIndex);
+      
+      if (!costResult.canRepair) {
+        return { success: false, cost: 0, reason: costResult.reason };
+      }
+      
+      // 检查资金
+      const playerCash = worldRef.companies.cash[0];
+      if (playerCash < costResult.cost) {
+        return { success: false, cost: costResult.cost, reason: `资金不足，维修需要 ¥${costResult.cost.toFixed(0)}` };
+      }
+      
+      // 扣费
+      worldRef.companies.cash[0] -= costResult.cost;
+      
+      // 执行维修
+      const result = repairSubsidiary(worldRef, buildingId, slotIndex);
+      
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        
+        soundManager.playUpgrade();
+        get().addNotification('success', `维修完成，花费 ¥${costResult.cost.toFixed(0)}`);
+      } else {
+        // 恢复资金
+        worldRef.companies.cash[0] += costResult.cost;
+      }
+      
+      return result;
+    },
+    
+    getSubsidiaryMaintenanceCost: (buildingId: number) => {
+      if (!worldRef) return 0;
+      return calculateDailySubsidiaryMaintenance(worldRef, buildingId);
     },
   }))
 );

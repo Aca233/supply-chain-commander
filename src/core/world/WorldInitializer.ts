@@ -12,6 +12,7 @@ import { getDefaultSlotMethods, getBuildingSlotCount, initializeBuildingProducti
 import { createBuyOrder, createSellOrder, initOrderPool } from '../market/OrderBook';
 import { initRetailSystem, registerRetailStore } from '../economy/RetailSystem';
 import { buildingIndex, inventoryIndex, resetAllIndices } from '../performance/DataStructures';
+import { initializeSubsidiaries } from '../production/subsidiaries';
 
 // ==================== 智能配方分配系统 ====================
 
@@ -241,6 +242,9 @@ export function initializeWorld(): GameWorld {
   
   // 初始化建筑专属生产方式系统（必须在创建建筑之前）
   initializeBuildingProductionMethods();
+  
+  // 初始化附属建筑系统
+  initializeSubsidiaries();
   
   // 重置配方追踪器
   resetGlobalRecipeTracker();

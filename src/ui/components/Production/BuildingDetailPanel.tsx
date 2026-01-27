@@ -6,6 +6,7 @@ import { RECIPES } from '@/data/recipes';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
+import { SubsidiaryPanel } from './SubsidiaryPanel';
 import { ALL_FACILITIES, FACILITIES_BY_TYPE, getFacilityTypeName, getFacilityTypeIcon } from '@/core/production/Facilities';
 
 interface BuildingDetailPanelProps {
@@ -326,16 +327,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
 
         {/* 附属设施 */}
         <div className="p-4 rounded-xl bg-white/5 border border-white/5">
-          <h4 className="text-xs font-medium text-text-primary mb-3 flex items-center gap-2">
-            🔧 附属设施
-          </h4>
-          <button className="w-full py-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg 
-                           hover:bg-blue-500/20 transition-colors border border-blue-500/20">
-            + 添加设施
-          </button>
-          <div className="mt-3 text-[10px] text-text-tertiary text-center">
-            可用槽位: 5 + {buildingData.level - 1} = {4 + buildingData.level}
-          </div>
+          <SubsidiaryPanel buildingId={buildingIndex} />
         </div>
       </div>
 
