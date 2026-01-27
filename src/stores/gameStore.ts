@@ -98,6 +98,17 @@ import {
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
 import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '@/data/buildings';
 import { RECIPES } from '@/data/recipes';
+import { getBaseMaterials, getBuildTime } from '@/data/buildingMaterials';
+import {
+  getCompanyConstructionQueue,
+  getCompanyDemolitionQueue,
+  cancelConstruction as cancelConstructionTask,
+  cancelDemolition as cancelDemolitionTask,
+  startConstruction as startConstructionTask,
+  startUpgrade as startUpgradeTask,
+  startDemolition as startDemolitionTask,
+} from '@/core/construction/ConstructionTick';
+import { ConstructionStatus, DemolitionStatus } from '@/core/world/GameWorld';
 import { GOODS_COUNT, MAX_SLOTS } from '@/core/constants';
 import {
   getRetailStoreDetails,
@@ -224,6 +235,7 @@ interface GameActions {
   upgradeBuilding: (buildingId: number) => boolean;
   toggleBuildingActive: (buildingId: number) => boolean;
   setBuildingRecipe: (buildingId: number, recipeId: number) => boolean;
+  demolishBuilding: (buildingId: number) => boolean;
   
   // 贷款
   applyLoan: (amount: number, loanType: LoanType, collateralType?: 'inventory' | 'building' | 'none') => { approved: boolean; loanId?: number; reason?: string };
@@ -331,6 +343,40 @@ interface GameActions {
   uninstallBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; reason?: string };
   repairBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; cost: number; reason?: string };
   getSubsidiaryMaintenanceCost: (buildingId: number) => number;
+  
+  // ============ 建造队列系统 (新增) ============
+  getConstructionQueue: () => Array<{
+    taskId: number;
+    queueIdx: number;
+    buildingTypeId: number;
+    buildingName: string;
+    targetLevel: number;
+    status: number;
+    progress: number;
+    progressTicks: number;
+    requiredTicks: number;
+    taskType: number;
+    speedBoost: number;
+    reservedMaterials: Array<{ goodsId: number; amount: number }>;
+  }>;
+  getDemolitionQueue: () => Array<{
+    taskId: number;
+    queueIdx: number;
+    buildingId: number;
+    buildingTypeId: number;
+    buildingName: string;
+    buildingLevel: number;
+    status: number;
+    progress: number;
+    progressTicks: number;
+    requiredTicks: number;
+    recoveredCash: number;
+    recoveredMaterials: Array<{ goodsId: number; amount: number }>;
+  }>;
+  pauseConstruction: (taskId: number) => boolean;
+  resumeConstruction: (taskId: number) => boolean;
+  cancelPlayerConstruction: (taskId: number) => boolean;
+  cancelPlayerDemolition: (taskId: number) => boolean;
 }
 
 let notificationId = 0;
@@ -605,23 +651,83 @@ export const useGameStore = create<GameState & GameActions>()(
       if (!worldRef) return null;
       
       try {
-        const buildingId = addBuilding(worldRef, 0, buildingTypeId, recipeId);
+        const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+        if (!building) {
+          get().addNotification('error', '未知的建筑类型');
+          return null;
+        }
         
-        // 如果是零售建筑，需要注册到零售系统
-        // isNewlyBuilt = true 表示是玩家新建的，初始库存为0，需要进货
-        if (isRetailBuilding(buildingTypeId)) {
-          registerRetailStore(worldRef, buildingId, true);
+        // 获取建造材料需求
+        const requiredMaterials = getBaseMaterials(buildingTypeId);
+        
+        // 计算材料缺口和成本
+        const playerCompanyId = 0;
+        let totalMaterialCost = 0;
+        const materialsToBuy: Array<{ goodsId: number; amount: number; price: number }> = [];
+        
+        for (const mat of requiredMaterials) {
+          const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
+          const available = worldRef.companies.inventories[inventoryIdx] || 0;
+          const missing = Math.max(0, mat.amount - available);
+          
+          if (missing > 0) {
+            const marketPrice = worldRef.goods.prices[mat.goodsId] || 100;
+            const buyPrice = marketPrice * 1.1; // 10%溢价
+            totalMaterialCost += missing * buyPrice;
+            materialsToBuy.push({ goodsId: mat.goodsId, amount: missing, price: buyPrice });
+          }
+        }
+        
+        // 计算总费用
+        const totalCost = building.buildCost + totalMaterialCost;
+        
+        // 检查资金
+        if (worldRef.companies.cash[0] < totalCost) {
+          soundManager.playTradeFail();
+          get().addNotification('error', `资金不足！需要 ¥${totalCost.toLocaleString()}`);
+          return null;
+        }
+        
+        // 扣除建造费用
+        worldRef.companies.cash[0] -= building.buildCost;
+        
+        // 为缺少的材料挂买单
+        for (const mat of materialsToBuy) {
+          const orderId = createBuyOrder(worldRef, 0, mat.goodsId, mat.amount, mat.price);
+          if (orderId !== null) {
+            const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
+            get().addNotification('info', `已挂单采购 ${mat.amount.toFixed(0)} ${goods?.name || '材料'}`);
+          }
+        }
+        
+        // 添加到建造队列
+        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, recipeId);
+        
+        if (!result.success) {
+          // 退还建造费用
+          worldRef.companies.cash[0] += building.buildCost;
+          soundManager.playTradeFail();
+          get().addNotification('error', `建造失败：${result.error || '未知错误'}`);
+          return null;
         }
         
         set((state) => {
-          state.playerBuildings++;
-          // 立即更新现金状态，确保其他UI组件能看到最新值
           state.playerCash = worldRef!.companies.cash[0];
+          // 强制触发 tick 更新以刷新建造队列UI
+          state.tick = state.tick + 0.001;
         });
+        
         soundManager.playBuildComplete();
-        get().addNotification('success', '建筑建造完成');
-        return buildingId;
+        if (materialsToBuy.length > 0) {
+          get().addNotification('success', `建筑已加入建造队列！已自动采购 ${materialsToBuy.length} 种材料`);
+        } else {
+          get().addNotification('success', '建筑已加入建造队列！');
+        }
+        
+        // 返回队列索引作为临时ID（建筑完成后会有真正的ID）
+        return result.queueIdx ?? -1;
       } catch (e) {
+        console.error('Build building error:', e);
         soundManager.playTradeFail();
         get().addNotification('error', '建筑建造失败');
         return null;
@@ -651,28 +757,78 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
       
+      const targetLevel = currentLevel + 1;
       const upgradeCost = building.upgradeCosts[currentLevel] || building.buildCost * 0.5;
+      
+      // 获取升级材料需求（建造材料的50%）
+      const baseMaterials = getBaseMaterials(typeId);
+      const upgradeMaterials = baseMaterials.map(mat => ({
+        goodsId: mat.goodsId,
+        amount: Math.ceil(mat.amount * 0.5) // 升级只需50%材料
+      }));
+      
+      // 计算材料缺口和成本
+      const playerCompanyId = 0;
+      let totalMaterialCost = 0;
+      const materialsToBuy: Array<{ goodsId: number; amount: number; price: number }> = [];
+      
+      for (const mat of upgradeMaterials) {
+        const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
+        const available = worldRef.companies.inventories[inventoryIdx] || 0;
+        const missing = Math.max(0, mat.amount - available);
+        
+        if (missing > 0) {
+          const marketPrice = worldRef.goods.prices[mat.goodsId] || 100;
+          const buyPrice = marketPrice * 1.1; // 10%溢价
+          totalMaterialCost += missing * buyPrice;
+          materialsToBuy.push({ goodsId: mat.goodsId, amount: missing, price: buyPrice });
+        }
+      }
+      
+      // 计算总费用
+      const totalCost = upgradeCost + totalMaterialCost;
       const playerCash = worldRef.companies.cash[0];
       
-      if (playerCash < upgradeCost) {
-        get().addNotification('error', `资金不足，升级需要 ¥${upgradeCost.toLocaleString()}`);
+      if (playerCash < totalCost) {
+        get().addNotification('error', `资金不足，升级需要 ¥${totalCost.toLocaleString()}`);
         return false;
       }
       
-      // 扣费并升级
+      // 扣除升级费用
       worldRef.companies.cash[0] -= upgradeCost;
-      worldRef.buildings.levels[buildingId] = currentLevel + 1;
       
-      // 更新效率
-      const newEfficiency = building.efficiencyMultipliers[currentLevel] || 1;
-      worldRef.buildings.efficiencies[buildingId] = newEfficiency;
+      // 为缺少的材料挂买单
+      for (const mat of materialsToBuy) {
+        const orderId = createBuyOrder(worldRef, 0, mat.goodsId, mat.amount, mat.price);
+        if (orderId !== null) {
+          const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
+          get().addNotification('info', `已挂单采购 ${mat.amount.toFixed(0)} ${goods?.name || '材料'}`);
+        }
+      }
+      
+      // 添加到建造队列（升级任务）
+      const result = startUpgradeTask(worldRef, playerCompanyId, buildingId, targetLevel);
+      
+      if (!result.success) {
+        // 退还升级费用
+        worldRef.companies.cash[0] += upgradeCost;
+        soundManager.playTradeFail();
+        get().addNotification('error', `升级失败：${result.error || '未知错误'}`);
+        return false;
+      }
       
       set((state) => {
         state.playerCash = worldRef!.companies.cash[0];
+        // 强制触发 tick 更新以刷新建造队列UI
+        state.tick = state.tick + 0.001;
       });
       
       soundManager.playUpgrade();
-      get().addNotification('success', `${building.name} 升级到 Lv.${currentLevel + 1}`);
+      if (materialsToBuy.length > 0) {
+        get().addNotification('success', `${building.name} 已加入升级队列！已自动采购 ${materialsToBuy.length} 种材料`);
+      } else {
+        get().addNotification('success', `${building.name} 已加入升级队列！`);
+      }
       return true;
     },
     
@@ -734,6 +890,35 @@ export const useGameStore = create<GameState & GameActions>()(
       
       const recipe = RECIPES.find(r => r.id === recipeId);
       get().addNotification('success', `已切换配方为「${recipe?.name || '未知配方'}」`);
+      
+      return true;
+    },
+    
+    demolishBuilding: (buildingId) => {
+      if (!worldRef) return false;
+      
+      // 检查建筑所有权
+      if (worldRef.buildings.owners[buildingId] !== 0) {
+        get().addNotification('error', '无法拆除不属于你的建筑');
+        return false;
+      }
+      
+      // 添加到拆除队列
+      const result = startDemolitionTask(worldRef, 0, buildingId);
+      
+      if (!result.success) {
+        soundManager.playTradeFail();
+        get().addNotification('error', `拆除失败：${result.error || '未知错误'}`);
+        return false;
+      }
+      
+      set((state) => {
+        // 强制触发 tick 更新以刷新UI
+        state.tick = state.tick + 0.001;
+      });
+      
+      soundManager.playOrderPlace();
+      get().addNotification('success', '建筑已加入拆除队列！');
       
       return true;
     },
@@ -1677,6 +1862,115 @@ export const useGameStore = create<GameState & GameActions>()(
     getSubsidiaryMaintenanceCost: (buildingId: number) => {
       if (!worldRef) return 0;
       return calculateDailySubsidiaryMaintenance(worldRef, buildingId);
+    },
+    
+    // ==================== 建造队列系统 ====================
+    getConstructionQueue: () => {
+      if (!worldRef) return [];
+      
+      const rawQueue = getCompanyConstructionQueue(worldRef, 0);
+      const playerCompanyId = 0;
+      
+      // 转换为UI期望的格式，包含材料信息
+      return rawQueue.map(item => {
+        // 获取建造所需材料
+        const requiredMaterials = getBaseMaterials(item.buildingTypeId);
+        
+        // 计算每种材料的当前库存和需求量
+        const materialsStatus = requiredMaterials.map(mat => {
+          const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
+          const currentAmount = worldRef!.companies.inventories[inventoryIdx] || 0;
+          const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
+          return {
+            goodsId: mat.goodsId,
+            goodsName: goods?.name || '未知',
+            requiredAmount: mat.amount,
+            currentAmount: currentAmount,
+            isSufficient: currentAmount >= mat.amount,
+          };
+        });
+        
+        // 检查是否所有材料都充足
+        const allMaterialsReady = materialsStatus.every(m => m.isSufficient);
+        
+        return {
+          taskId: item.queueIdx,
+          queueIdx: item.queueIdx,
+          buildingTypeId: item.buildingTypeId,
+          buildingName: item.buildingName,
+          targetLevel: item.targetLevel,
+          status: item.status,
+          progress: item.progress,
+          progressTicks: Math.floor(item.progress * 100),
+          requiredTicks: 100,
+          taskType: item.isUpgrade ? 1 : 0,
+          speedBoost: 1.0,
+          reservedMaterials: [],
+          materialsStatus,
+          allMaterialsReady,
+        };
+      });
+    },
+    
+    getDemolitionQueue: () => {
+      if (!worldRef) return [];
+      
+      const rawQueue = getCompanyDemolitionQueue(worldRef, 0);
+      
+      // 转换为UI期望的格式
+      return rawQueue.map(item => ({
+        taskId: item.queueIdx,
+        queueIdx: item.queueIdx,
+        buildingId: item.buildingId,
+        buildingTypeId: item.buildingTypeId,
+        buildingName: item.buildingName,
+        buildingLevel: 1, // 默认值
+        status: item.status,
+        progress: item.progress,
+        progressTicks: Math.floor(item.progress * 100),
+        requiredTicks: 100,
+        recoveredCash: item.estimatedCashRecovery,
+        recoveredMaterials: [],
+      }));
+    },
+    
+    pauseConstruction: (_taskId: number) => {
+      // 当前系统不支持暂停，返回false
+      get().addNotification('warning', '当前版本不支持暂停建造');
+      return false;
+    },
+    
+    resumeConstruction: (_taskId: number) => {
+      // 当前系统不支持恢复，返回false
+      get().addNotification('warning', '当前版本不支持恢复建造');
+      return false;
+    },
+    
+    cancelPlayerConstruction: (taskId: number) => {
+      if (!worldRef) return false;
+      
+      const result = cancelConstructionTask(worldRef, taskId);
+      if (result.success) {
+        set((state) => {
+          state.playerCash = worldRef!.companies.cash[0];
+        });
+        soundManager.playOrderCancel();
+        get().addNotification('info', `建造已取消，退还材料 ${result.refundedMaterials.length} 种`);
+        return true;
+      }
+      return false;
+    },
+    
+    cancelPlayerDemolition: (taskId: number) => {
+      if (!worldRef) return false;
+      
+      const result = cancelDemolitionTask(worldRef, taskId);
+      if (result.success) {
+        soundManager.playOrderCancel();
+        get().addNotification('info', '拆除已取消，建筑已恢复');
+        return true;
+      }
+      return false;
     },
   }))
 );

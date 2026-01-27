@@ -8,6 +8,11 @@ import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { SubsidiaryPanel } from './SubsidiaryPanel';
 import { ALL_FACILITIES, FACILITIES_BY_TYPE, getFacilityTypeName, getFacilityTypeIcon } from '@/core/production/Facilities';
+import {
+  getBuildingConstructionConfig,
+  isHazardousBuilding,
+  MaterialRequirement
+} from '@/data/buildingMaterials';
 
 interface BuildingDetailPanelProps {
   buildingIndex: number;
@@ -18,9 +23,10 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
   buildingIndex,
   onClose,
 }) => {
-  const { getWorld, playerCash, upgradeBuilding, toggleBuildingActive, setBuildingRecipe, tick, setSelectedGoods, setCurrentPage } = useGameStore();
+  const { getWorld, playerCash, upgradeBuilding, toggleBuildingActive, setBuildingRecipe, demolishBuilding, tick, setSelectedGoods, setCurrentPage } = useGameStore();
   const world = getWorld();
   const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [showDemolishModal, setShowDemolishModal] = useState(false);
 
   const buildingData = useMemo(() => {
     if (!world) return null;
@@ -140,6 +146,80 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       buildingDef,
     };
   }, [world, buildingIndex, playerCash, tick]);
+
+  // 计算拆除预估
+  const demolitionEstimate = useMemo(() => {
+    if (!buildingData) return null;
+
+    const config = getBuildingConstructionConfig(buildingData.typeId);
+    const buildingDef = buildingData.buildingDef;
+    if (!buildingDef) return null;
+
+    const buildCost = buildingDef.buildCost;
+    // 简化：假设建筑年龄基于等级估算（每级约1000 ticks）
+    const buildingAge = buildingData.level * 1000;
+    
+    // 拆除时间 = 建造时间的一半
+    const demolitionTime = config ? Math.floor(config.buildTime / 2) : 12;
+    
+    // 拆除成本
+    const laborCost = buildCost * 0.3;
+    const equipmentCost = buildCost * 0.1;
+    const isHazardous = isHazardousBuilding(buildingData.typeId);
+    const hazardousPenalty = isHazardous ? 0.2 : 0;
+    const totalCost = Math.floor((laborCost + equipmentCost) * (1 + hazardousPenalty));
+
+    // 折旧计算
+    const levelDepreciation = (buildingData.level - 1) * 0.05;
+    const ageDepreciation = buildingAge * 0.00001;
+    const depreciationRate = Math.min(levelDepreciation + ageDepreciation, 0.8);
+    const recoveryMultiplier = 1 - depreciationRate;
+
+    // 材料回收 (50%)
+    const recoveredMaterials: MaterialRequirement[] = [];
+    if (config) {
+      for (const mat of config.baseMaterials) {
+        const recoveredAmount = Math.floor(mat.amount * 0.5 * recoveryMultiplier);
+        if (recoveredAmount > 0) {
+          recoveredMaterials.push({
+            goodsId: mat.goodsId,
+            amount: recoveredAmount,
+          });
+        }
+      }
+    }
+
+    // 现金回收 (30%)
+    const cashRecovery = Math.floor(buildCost * 0.3 * recoveryMultiplier);
+
+    // 材料估值
+    let materialValue = 0;
+    if (world) {
+      for (const mat of recoveredMaterials) {
+        const price = world.goods.prices[mat.goodsId] || 100;
+        materialValue += mat.amount * price * 0.8; // 80%市价出售
+      }
+    }
+    materialValue = Math.floor(materialValue);
+
+    const totalRecovery = cashRecovery + materialValue;
+    const netCost = totalCost - totalRecovery;
+
+    return {
+      demolitionTime,
+      laborCost: Math.floor(laborCost),
+      equipmentCost: Math.floor(equipmentCost),
+      totalCost,
+      recoveredMaterials,
+      cashRecovery,
+      materialValue,
+      totalRecovery,
+      netCost,
+      depreciationRate,
+      isHazardous,
+      canAfford: playerCash >= totalCost,
+    };
+  }, [buildingData, world, buildingIndex, playerCash]);
 
   // 获取该建筑类型可用的配方列表
   const availableRecipes = useMemo(() => {
@@ -408,6 +488,14 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             🔄 更换配方
           </button>
         </div>
+
+        {/* 拆除按钮 */}
+        <button
+          onClick={() => setShowDemolishModal(true)}
+          className="w-full py-2 text-xs rounded-lg transition-colors bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:border-red-500/40"
+        >
+          🗑️ 拆除建筑
+        </button>
       </div>
 
       {/* 配方选择弹窗 */}
@@ -485,6 +573,202 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
                   暂无可用配方
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拆除确认弹窗 */}
+      {showDemolishModal && demolitionEstimate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-[480px] bg-slate-800 rounded-xl border border-red-500/30 shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-red-500/30 bg-gradient-to-r from-red-600/20 to-transparent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🗑️</span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-red-400">确认拆除建筑</h3>
+                    <p className="text-xs text-text-tertiary">{buildingData.name} #{buildingIndex}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDemolishModal(false)}
+                  className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center
+                             text-text-tertiary hover:text-text-primary transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              {/* 危险提示 */}
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                <p className="text-xs text-red-400">
+                  ⚠️ 拆除操作不可逆！建筑将被永久移除。
+                </p>
+              </div>
+
+              {/* 拆除信息 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-text-tertiary mb-1">拆除时间</p>
+                  <p className="text-sm font-medium text-text-primary tabular-nums">
+                    {demolitionEstimate.demolitionTime} 小时
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                  <p className="text-[10px] text-text-tertiary mb-1">折旧率</p>
+                  <p className="text-sm font-medium text-amber-400 tabular-nums">
+                    {(demolitionEstimate.depreciationRate * 100).toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+
+              {/* 成本与回收 */}
+              <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                <h4 className="text-xs font-medium text-text-primary mb-3">💰 费用明细</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-text-tertiary">人工费用</span>
+                    <span className="text-red-400 tabular-nums">
+                      -¥{demolitionEstimate.laborCost.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-tertiary">设备费用</span>
+                    <span className="text-red-400 tabular-nums">
+                      -¥{demolitionEstimate.equipmentCost.toLocaleString()}
+                    </span>
+                  </div>
+                  {demolitionEstimate.isHazardous && (
+                    <div className="flex justify-between">
+                      <span className="text-text-tertiary">危险处理附加</span>
+                      <span className="text-red-400 tabular-nums">+20%</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t border-white/10">
+                    <span className="text-text-secondary font-medium">拆除总成本</span>
+                    <span className="text-red-400 font-medium tabular-nums">
+                      -¥{demolitionEstimate.totalCost.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 回收预估 */}
+              <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/10">
+                <h4 className="text-xs font-medium text-green-400 mb-3">♻️ 回收预估</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-text-tertiary">现金回收</span>
+                    <span className="text-green-400 tabular-nums">
+                      +¥{demolitionEstimate.cashRecovery.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-tertiary">材料估值 (可出售)</span>
+                    <span className="text-green-400 tabular-nums">
+                      +¥{demolitionEstimate.materialValue.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-green-500/20">
+                    <span className="text-text-secondary font-medium">预计回收</span>
+                    <span className="text-green-400 font-medium tabular-nums">
+                      +¥{demolitionEstimate.totalRecovery.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 回收材料列表 */}
+              {demolitionEstimate.recoveredMaterials.length > 0 && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                  <h4 className="text-xs font-medium text-text-primary mb-3">📦 可回收材料</h4>
+                  <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto scrollbar-thin">
+                    {demolitionEstimate.recoveredMaterials.slice(0, 9).map((mat) => {
+                      const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
+                      return (
+                        <div key={mat.goodsId} className="flex items-center gap-1.5 p-1.5 rounded bg-white/5">
+                          <GoodsIcon goodsId={mat.goodsId} size={14} />
+                          <span className="text-xs text-text-secondary truncate">
+                            {mat.amount} {goods?.name?.slice(0, 4) || `#${mat.goodsId}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {demolitionEstimate.recoveredMaterials.length > 9 && (
+                      <div className="flex items-center justify-center p-1.5 rounded bg-white/5">
+                        <span className="text-xs text-text-tertiary">
+                          +{demolitionEstimate.recoveredMaterials.length - 9} 更多
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 净成本 */}
+              <div className={`p-4 rounded-xl border ${
+                demolitionEstimate.netCost > 0
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : 'bg-green-500/10 border-green-500/30'
+              }`}>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-text-primary">净成本</span>
+                  <span className={`text-xl font-bold tabular-nums ${
+                    demolitionEstimate.netCost > 0 ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    {demolitionEstimate.netCost > 0 ? '-' : '+'}¥{Math.abs(demolitionEstimate.netCost).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-xs text-text-tertiary mt-1">
+                  {demolitionEstimate.netCost > 0
+                    ? '拆除此建筑将花费您的资金'
+                    : '拆除此建筑可获得净收益'}
+                </p>
+              </div>
+            </div>
+
+            {/* 底部按钮 */}
+            <div className="p-4 border-t border-white/10 bg-black/20 flex items-center justify-between">
+              <div className="text-sm">
+                {demolitionEstimate.canAfford ? (
+                  <span className="text-green-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-400"></span>
+                    资金充足
+                  </span>
+                ) : (
+                  <span className="text-red-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-400"></span>
+                    资金不足 (需要 ¥{demolitionEstimate.totalCost.toLocaleString()})
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDemolishModal(false)}
+                  className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10
+                            text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    demolishBuilding(buildingIndex);
+                    setShowDemolishModal(false);
+                    onClose();
+                  }}
+                  disabled={!demolitionEstimate.canAfford}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    demolitionEstimate.canAfford
+                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30'
+                      : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  确认拆除
+                </button>
+              </div>
             </div>
           </div>
         </div>

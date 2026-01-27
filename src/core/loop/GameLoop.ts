@@ -16,7 +16,7 @@ import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHea
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
@@ -44,6 +44,7 @@ import { executeConsumerPurchases, MarketConsumptionSummary, CONSUMER_MARKET_CON
 import { executePlayerAutoTrade } from '../ai/PlayerAutoTrader';
 import { updateRetailSystem, RetailTickResult } from '../economy/RetailSystem';
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
+import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
 
 /**
  * 游戏循环状态
@@ -115,6 +116,9 @@ export interface TickResult {
     sellOrders: number;
     buyOrders: number;
   };
+  
+  // 建造/拆除系统结果
+  construction: ConstructionTickResult;
 }
 
 /**
@@ -307,6 +311,8 @@ export class GameLoop {
     
     // ==================== 阶段3: 库存管理 ====================
     
+    const endInventory = perfMonitor.startMeasure('inventory');
+    
     // 4. 处理库存损耗（每天结算一次）
     const decayEvents = inventoryDecayManager.processDailyDecay(currentTick);
     
@@ -315,6 +321,8 @@ export class GameLoop {
     
     // 6. 处理供应合同执行
     const executedContracts = supplyContractManager.processContracts(currentTick);
+    
+    endInventory();
     
     // ==================== 阶段4: 市场交易 ====================
     
@@ -335,13 +343,22 @@ export class GameLoop {
     // 8.5. AI自动挂单（确保市场有流动性）
     const aiSellOrders = autoPostSellOrders(this.world);
     const aiBuyOrders = autoPostBuyOrders(this.world);
+    
+    // 8.6. AI订单价格自动调整（长期未成交订单降价/涨价）
+    if (currentTick % 6 === 0) {
+      adjustAllAIOrderPrices(this.world);
+    }
     endAI();
     
     // 9. 玩家自动交易（自动销售产品和采购原材料）
+    const endPlayerTrade = perfMonitor.startMeasure('playerTrade');
     const playerAutoTrade = executePlayerAutoTrade(this.world);
+    endPlayerTrade();
     
     // 10. 消费者市场购买（核心：让需求转化为实际交易）
+    const endConsumer = perfMonitor.startMeasure('consumer');
     const consumerPurchases = executeConsumerPurchases(this.world, CONSUMER_MARKET_CONFIG);
+    endConsumer();
     
     // 10.5. 零售系统更新（进货、Pop消费、价格调整）
     const endRetail = perfMonitor.startMeasure('retail');
@@ -354,10 +371,14 @@ export class GameLoop {
     endService();
     
     // 11. 检查高级订单触发（止损、止盈等）
+    const endAdvanced = perfMonitor.startMeasure('advancedOrders');
     const triggeredAdvancedOrders = this.checkAdvancedOrders(currentTick);
+    endAdvanced();
     
-    // 12. 订单撮合（已有内部性能监控）
+    // 12. 订单撮合
+    const endMatching = perfMonitor.startMeasure('matching');
     const matchingResult = matchAllOrders(this.world);
+    endMatching();
     
     // 调试日志：每100个tick输出一次市场状态
     if (currentTick % 100 === 0) {
@@ -378,10 +399,16 @@ export class GameLoop {
     // 13. 应用交易手续费
     this.applyTradingFees(matchingResult);
     
-    // 14. 处理渠道订单交付和付款
+    // 14. 处理渠道订单交付和付款（错峰执行：交付在tick%24===0，付款在tick%24===6）
     if (currentTick % 24 === 0) {
+      const endDistribution = perfMonitor.startMeasure('distribution');
       distributionManager.processDeliveries(currentTick);
+      endDistribution();
+    }
+    if (currentTick % 24 === 6) {
+      const endPayments = perfMonitor.startMeasure('distribution-payments');
       distributionManager.processPayments(currentTick);
+      endPayments();
     }
     
     // 15. 清理过期订单
@@ -390,19 +417,22 @@ export class GameLoop {
     
     // ==================== 阶段5: 价格和金融 ====================
     
-    // 16. 价格更新（已有内部性能监控）
+    const endPricing = perfMonitor.startMeasure('pricing');
+    
+    // 16. 价格更新
     const priceResult = updateAllPrices(this.world);
     
-    // 17. 更新期货市场
+    // 17. 更新期货市场（错峰执行：从tick%24===0改为tick%24===18）
     let expiredFuturesContracts = 0;
-    if (currentTick % 24 === 0) {
+    if (currentTick % 24 === 18) {
+      const endFutures = perfMonitor.startMeasure('futures');
       const spotPrices = new Map<number, number>();
       for (let i = 0; i < this.world.goods.count; i++) {
         spotPrices.set(i, this.world.goods.prices[i]);
       }
       
       // 创建新合约（每月初）
-      if (currentTick % (30 * 24) === 0) {
+      if (currentTick % (30 * 24) === 18) {
         futuresMarket.createMonthlyContracts(currentTick, spotPrices);
       }
       
@@ -411,12 +441,16 @@ export class GameLoop {
       
       // 处理到期合约
       futuresMarket.handleExpiry(currentTick, spotPrices);
+      endFutures();
     }
     
     // 17.5. 需求衰减（每天结束时处理未满足的需求）
     decayUnmetDemand(this.world);
     
+    endPricing();
+    
     // 18. 更新经济周期
+    const endFinance = perfMonitor.startMeasure('finance');
     this.updateBusinessCycle();
     
     // 19. 更新银行系统（每个tick处理还款等）
@@ -429,27 +463,35 @@ export class GameLoop {
       executeAIStockTrading(this.world);
     }
     
-    // 21. 更新股票市场（提高更新频率到每4小时更新一次，使市场更活跃）
-    if (currentTick % 4 === 0) {
+    // 21. 更新股票市场（降低更新频率从每4小时改为每12小时，减少计算开销）
+    if (currentTick % 12 === 0) {
       updateStockMarket(this.world);
     }
     
     // 21. 更新收购系统（处理过期要约等）
     updateAcquisitionSystem(this.world);
     
-    // 22. AI附属建筑管理（每天执行一次）
+    endFinance();
+    
+    // 22. AI附属建筑管理（错峰执行：从tick%24===0改为tick%24===12）
     let aiSubsidiaryActions = 0;
-    if (currentTick % 24 === 0) {
+    if (currentTick % 24 === 12) {
+      const endAISubsidiary = perfMonitor.startMeasure('ai-subsidiary');
       aiSubsidiaryActions = runAISubsidiaryManagement(this.world);
+      endAISubsidiary();
     }
     
     // 23. 更新品牌衰减（每天）
+    const endState = perfMonitor.startMeasure('state');
     brandManager.processDailyDecay(currentTick);
     
-    // 23.5 重置服务设施每日统计
-    if (currentTick % 24 === 0) {
+    // 23.5 重置服务设施每日统计（错峰执行：从tick%24===0改为tick%24===6）
+    if (currentTick % 24 === 6) {
       resetDailyServiceStats();
     }
+    
+    // 23.6 处理建造/拆除队列
+    const constructionResult = processConstructionAndDemolitionTick(this.world);
     
     // 24. 更新供应合同状态
     supplyContractManager.updateContractStatus(currentTick);
@@ -458,6 +500,8 @@ export class GameLoop {
     if (currentTick % 100 === 0) {
       this.checkAIBankruptcy();
     }
+    
+    endState();
     
     // 计算tick时间
     const tickTime = performance.now() - startTime;
@@ -503,6 +547,7 @@ export class GameLoop {
         buyOrders: aiBuyOrders,
       },
       aiSubsidiaryActions,
+      construction: constructionResult,
     };
     
     // 调用回调
@@ -611,8 +656,8 @@ export class GameLoop {
     // 3. 根据周期阶段调整经济参数
     this.applyCycleEffects(stats);
     
-    // 4. 每天更新GDP（每24个tick更新一次）
-    if (this.world.tick % 24 === 0) {
+    // 4. 每天更新GDP（错峰执行：从tick%24===0改为tick%24===3）
+    if (this.world.tick % 24 === 3) {
       this.updateGDP();
     }
   }

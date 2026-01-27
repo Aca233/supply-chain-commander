@@ -8,6 +8,7 @@ import {
   BuildingCatalog,
   BuildModal,
   BuildingDetailPanel,
+  ConstructionQueuePanel,
 } from '@/ui/components/Production';
 
 // 视图模式
@@ -22,6 +23,7 @@ export const Production: React.FC = () => {
   const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [showCatalog, setShowCatalog] = useState(true);
+  const [showConstructionQueue, setShowConstructionQueue] = useState(true);
   
   // 用于跟踪是否已经处理过从 store 传入的 selectedBuildingId
   const processedStoreSelectionRef = useRef<number | null>(null);
@@ -112,8 +114,22 @@ export const Production: React.FC = () => {
             </div>
           </div>
           
-          {/* 视图切换 */}
-          <div className="flex items-center gap-2">
+          {/* 视图切换和队列按钮 */}
+          <div className="flex items-center gap-3">
+            {/* 建造队列按钮 */}
+            <button
+              onClick={() => setShowConstructionQueue(!showConstructionQueue)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                showConstructionQueue
+                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                  : 'bg-white/5 text-text-tertiary hover:bg-white/10'
+              }`}
+              title="显示/隐藏建造队列"
+            >
+              🏗️ 建造队列
+            </button>
+            
+            {/* 视图切换 */}
             <div className="flex bg-white/5 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('grid')}
@@ -208,6 +224,20 @@ export const Production: React.FC = () => {
           onClose={() => setBuildModalTypeId(null)}
           onConfirm={handleBuild}
         />
+      )}
+
+      {/* 建造队列悬浮面板 - 当有详情面板时向左偏移 */}
+      {showConstructionQueue && (
+        <div
+          className={`fixed bottom-4 w-80 z-40 transition-all duration-300 ${
+            selectedBuilding !== null ? 'right-[340px]' : 'right-4'
+          }`}
+        >
+          <ConstructionQueuePanel
+            collapsed={false}
+            onToggleCollapse={() => setShowConstructionQueue(false)}
+          />
+        </div>
       )}
 
       {/* 自定义动画样式 */}

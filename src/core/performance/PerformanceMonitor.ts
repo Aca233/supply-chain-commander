@@ -46,7 +46,7 @@ export interface MemoryData {
 }
 
 /**
- * 系统breakdown数据
+ * 系统breakdown数据（扩展版）
  */
 export interface TickBreakdown {
   production: number;
@@ -54,6 +54,13 @@ export interface TickBreakdown {
   pricing: number;
   ai: number;
   retail: number;
+  // 新增细分类别
+  inventory: number;
+  consumer: number;
+  service: number;
+  finance: number;
+  state: number;
+  // 剩余未分类
   other: number;
 }
 
@@ -422,23 +429,36 @@ export class PerformanceMonitor {
       });
     }
     
-    // 计算分解
+    // 计算分解（扩展版）
     const breakdown: TickBreakdown = {
       production: this.currentTickMetrics.get('production') || 0,
       matching: this.currentTickMetrics.get('matching') || 0,
       pricing: this.currentTickMetrics.get('pricing') || 0,
       ai: this.currentTickMetrics.get('ai') || 0,
       retail: this.currentTickMetrics.get('retail') || 0,
+      // 新增细分类别
+      inventory: this.currentTickMetrics.get('inventory') || 0,
+      consumer: this.currentTickMetrics.get('consumer') || 0,
+      service: this.currentTickMetrics.get('service') || 0,
+      finance: this.currentTickMetrics.get('finance') || 0,
+      state: this.currentTickMetrics.get('state') || 0,
       other: 0,
     };
     
-    breakdown.other = Math.max(0, totalTime - (
+    // 计算已追踪的总时间
+    const trackedTime =
       breakdown.production +
       breakdown.matching +
       breakdown.pricing +
       breakdown.ai +
-      breakdown.retail
-    ));
+      breakdown.retail +
+      breakdown.inventory +
+      breakdown.consumer +
+      breakdown.service +
+      breakdown.finance +
+      breakdown.state;
+    
+    breakdown.other = Math.max(0, totalTime - trackedTime);
     
     // 生成警告
     const warnings: string[] = [];

@@ -375,9 +375,17 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       },
     };
 
-    // 图例配置 - 根据图表模式动态设置
+    // 图例配置 - 根据图表模式动态设置，确保只包含实际存在的series
     const mainSeriesName = chartMode === 'candlestick' ? 'K线' : '价格';
-    const legendData = [mainSeriesName, ...maConfigs.filter(ma => activeMAs[ma.period]).map(ma => ma.name)];
+    const legendData: string[] = [mainSeriesName];
+    // 只有当showMA为true且对应的MA数据存在时才添加到图例
+    if (showMA) {
+      maConfigs.forEach(ma => {
+        if (activeMAs[ma.period] && maData[ma.period]) {
+          legendData.push(ma.name);
+        }
+      });
+    }
     if (showVolume) legendData.push('成交量');
 
     return {

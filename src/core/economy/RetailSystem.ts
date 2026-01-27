@@ -18,9 +18,11 @@ import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
 import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition } from '@/data/goods';
 import { BUILDINGS_BY_ID, isRetailBuilding, getRetailConfig, RetailConfig } from '@/data/buildings';
 import { createBuyOrder, getOrderBookView } from '../market/OrderBook';
+import { getOrderBookIndex } from '../market/OrderBookIndex';
 import {
   GOODS_COUNT,
   MAX_RETAIL_STORES,
+  MAX_ORDERS,
   RETAIL_RESTOCK_THRESHOLD,
   RETAIL_TARGET_STOCK_LEVEL,
   RETAIL_MAX_CUSTOMER_RATE,
@@ -62,7 +64,7 @@ const attractivenessCache: StoreAttractivenessCache = {
 
 /** 消费批次控制 */
 let consumptionBatchIndex = 0;
-const CONSUMPTION_BATCH_SIZE = 5;  // 每tick处理5种商品
+const CONSUMPTION_BATCH_SIZE = 10;  // 每tick处理10种商品（从5提高到10）
 
 // ==================== 类型定义 ====================
 
@@ -275,7 +277,7 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
   // 1. 处理收货（将公司库存转移到零售店）
   const deliveredCount = processRetailDelivery(world);
   
-  // 2. 处理进货（在市场上挂买单）
+  // 2. 处理进货（在市场上挂买单）- 分批处理优化
   result.restockOrders = processRestocking(world);
   
   // 3. 处理Pop消费（核心：Pop只能在零售店消费）
@@ -310,10 +312,13 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
 // ==================== 进货系统 ====================
 
 /**
- * 直接从卖单采购
- * 遍历市场上的卖单，直接成交
+ * 直接从卖单采购（优化版）
+ * 使用OrderBookIndex获取已排序的卖单，避免O(n)遍历
  *
- * 修复：添加交易记录到 world.trades，让成交历史可见
+ * 性能优化：
+ * 1. 使用 getAllSellOrders(goodsId) 获取已排序的订单索引
+ * 2. 避免重复排序（订单簿已按价格排序）
+ * 3. 提前退出当价格超出预算
  */
 function purchaseFromSellOrders(
   world: GameWorld,
@@ -325,55 +330,57 @@ function purchaseFromSellOrders(
   const o = world.orders;
   const c = world.companies;
   const t = world.trades;
+  const orderIndex = getOrderBookIndex();
   
   let totalPurchased = 0;
   let totalSpent = 0;
   let remainingQty = maxQuantity;
   
-  // 遍历所有卖单，按价格从低到高处理
-  // 先收集所有合适的卖单
-  const eligibleSellOrders: { idx: number; price: number; remaining: number }[] = [];
+  // 【优化】使用订单簿索引获取已排序的卖单（价格升序）
+  const sellOrderIndices = orderIndex.getAllSellOrders(goodsId);
   
-  for (let i = 0; i < 10000; i++) {  // MAX_ORDERS
-    if (!o.isActive[i]) continue;
-    if (o.goodsIds[i] !== goodsId) continue;
-    if (o.types[i] !== 1) continue;  // 1 = sell
-    if (o.prices[i] > maxPrice) continue;  // 价格超出预算
-    if (o.companyIds[i] === ownerId) continue;  // 不能从自己买
+  // 遍历已排序的卖单
+  for (let i = 0; i < sellOrderIndices.length && remainingQty > 0; i++) {
+    const orderIdx = sellOrderIndices[i];
     
-    eligibleSellOrders.push({
-      idx: i,
-      price: o.prices[i],
-      remaining: o.remainings[i],
-    });
-  }
-  
-  // 按价格升序排序（便宜的优先）
-  eligibleSellOrders.sort((a, b) => a.price - b.price);
-  
-  // 依次从卖单购买
-  for (const sellOrder of eligibleSellOrders) {
-    if (remainingQty <= 0) break;
+    // 验证订单仍然有效
+    if (!o.isActive[orderIdx]) continue;
     
-    const buyQty = Math.min(remainingQty, sellOrder.remaining);
+    const sellPrice = o.prices[orderIdx];
+    
+    // 【优化】价格超出预算则停止（后续都更贵）
+    if (sellPrice > maxPrice) break;
+    
+    // 不能从自己买
+    if (o.companyIds[orderIdx] === ownerId) continue;
+    
+    const sellOrder = {
+      idx: orderIdx,
+      price: sellPrice,
+      remaining: o.remainings[orderIdx],
+    };
+    
+    // 计算购买数量
+    let buyQty = Math.min(remainingQty, sellOrder.remaining);
     const cost = buyQty * sellOrder.price;
     
     // 检查买方资金
     if (c.cash[ownerId] < cost) {
-      // 资金不足，能买多少买多少
+      // 资金不足，计算能买多少
       const affordableQty = Math.floor(c.cash[ownerId] / sellOrder.price);
-      if (affordableQty <= 0) break;
-      continue;
+      if (affordableQty <= 0) continue;
+      buyQty = affordableQty;
     }
     
+    const actualCost = buyQty * sellOrder.price;
     const sellerId = o.companyIds[sellOrder.idx];
     const inventoryIdx = sellerId * GOODS_COUNT + goodsId;
     
     // 执行交易
     // 1. 买方付款
-    c.cash[ownerId] -= cost;
+    c.cash[ownerId] -= actualCost;
     // 2. 卖方收款
-    c.cash[sellerId] += cost;
+    c.cash[sellerId] += actualCost;
     // 3. 卖方库存转移到买方
     c.inventories[ownerId * GOODS_COUNT + goodsId] += buyQty;
     c.inventories[inventoryIdx] -= buyQty;
@@ -385,9 +392,11 @@ function purchaseFromSellOrders(
       // 卖单已完全成交，标记为非激活
       o.isActive[sellOrder.idx] = 0;
       o.activeCount--;
+      // 从订单簿索引移除
+      orderIndex.removeOrder(sellOrder.idx);
     }
     
-    // ✅ 5. 创建交易记录（修复：之前缺失这一步）
+    // 5. 创建交易记录
     const tradeIdx = t.count % t.maxTrades;
     t.buyOrderIds[tradeIdx] = -2;  // -2 表示零售直购
     t.sellOrderIds[tradeIdx] = sellOrder.idx;
@@ -403,13 +412,13 @@ function purchaseFromSellOrders(
     // 更新累计销售统计（卖方的销售记录）
     const sellStatsIdx = sellerId * GOODS_COUNT + goodsId;
     t.cumulativeSalesQuantity[sellStatsIdx] += buyQty;
-    t.cumulativeSalesRevenue[sellStatsIdx] += cost;
+    t.cumulativeSalesRevenue[sellStatsIdx] += actualCost;
     
     totalPurchased += buyQty;
-    totalSpent += cost;
+    totalSpent += actualCost;
     remainingQty -= buyQty;
     
-    // 更新市场价格（使用现有属性）
+    // 更新市场价格
     world.goods.prices[goodsId] = sellOrder.price;
   }
   
@@ -417,17 +426,110 @@ function purchaseFromSellOrders(
 }
 
 /**
- * 处理零售店进货
- * 优先直接从现有卖单采购，如果卖单不足再挂买单
+ * 公司买单缓存 - 避免重复遍历订单
+ */
+interface CompanyBuyOrderCache {
+  quantities: Map<number, number>;  // goodsId → totalQuantity
+  lastUpdate: number;
+}
+
+const companyBuyOrderCaches: Map<number, CompanyBuyOrderCache> = new Map();
+const BUY_ORDER_CACHE_TTL = 6;  // 缓存有效期6tick
+
+/**
+ * 统计公司对某商品的现有买单总量（优化版）
+ * 使用缓存避免重复遍历
+ */
+function countExistingBuyOrders(world: GameWorld, companyId: number, goodsId: number): number {
+  // 检查缓存
+  let cache = companyBuyOrderCaches.get(companyId);
+  if (cache && world.tick - cache.lastUpdate < BUY_ORDER_CACHE_TTL) {
+    return cache.quantities.get(goodsId) || 0;
+  }
+  
+  // 缓存过期或不存在，重新计算整个公司的买单
+  const o = world.orders;
+  const quantities = new Map<number, number>();
+  
+  // 只遍历一次，统计该公司所有商品的买单
+  for (let i = 0; i < MAX_ORDERS; i++) {
+    if (!o.isActive[i]) continue;
+    if (o.companyIds[i] !== companyId) continue;
+    if (o.types[i] !== 0) continue;  // 0 = buy
+    
+    const gId = o.goodsIds[i];
+    quantities.set(gId, (quantities.get(gId) || 0) + o.remainings[i]);
+  }
+  
+  // 更新缓存
+  companyBuyOrderCaches.set(companyId, {
+    quantities,
+    lastUpdate: world.tick,
+  });
+  
+  return quantities.get(goodsId) || 0;
+}
+
+/**
+ * 清理过期的买单缓存（每100tick调用）
+ */
+function cleanupBuyOrderCache(currentTick: number): void {
+  for (const [companyId, cache] of companyBuyOrderCaches) {
+    if (currentTick - cache.lastUpdate > BUY_ORDER_CACHE_TTL * 10) {
+      companyBuyOrderCaches.delete(companyId);
+    }
+  }
+}
+
+/** 进货间隔控制 - 使用更高效的Uint32Array */
+const RESTOCK_INTERVAL = 24;  // 每24 tick检查一次进货（一天一次）
+const RESTOCK_BATCH_SIZE = 10;  // 每tick最多处理10个零售店
+let restockBatchIndex = 0;
+
+// 使用TypedArray替代Map，更高效
+let lastRestockTicks: Uint32Array | null = null;
+
+function getLastRestockTick(retailId: number, goodsId: number): number {
+  if (!lastRestockTicks) return 0;
+  const idx = retailId * GOODS_COUNT + goodsId;
+  return lastRestockTicks[idx] || 0;
+}
+
+function setLastRestockTick(retailId: number, goodsId: number, tick: number): void {
+  if (!lastRestockTicks) {
+    lastRestockTicks = new Uint32Array(MAX_RETAIL_STORES * GOODS_COUNT);
+  }
+  const idx = retailId * GOODS_COUNT + goodsId;
+  lastRestockTicks[idx] = tick;
+}
+
+/**
+ * 处理零售店进货（优化版）
+ *
+ * 性能优化：
+ * 1. 分批处理：每tick只处理部分零售店
+ * 2. 使用订单簿索引：O(k)而非O(n)查找
+ * 3. 缓存买单统计：避免重复遍历
+ * 4. 增加进货间隔：24tick检查一次
  */
 function processRestocking(world: GameWorld): number {
   const retail = world.retail;
   const c = world.companies;
   let ordersPlaced = 0;
   let directPurchases = 0;
-  let debugInfo: string[] = [];
   
-  for (let retailId = 0; retailId < retail.count; retailId++) {
+  // 计算本tick要处理的零售店范围
+  const totalRetails = retail.count;
+  if (totalRetails === 0) return 0;
+  
+  const startIdx = restockBatchIndex * RESTOCK_BATCH_SIZE;
+  const endIdx = Math.min(startIdx + RESTOCK_BATCH_SIZE, totalRetails);
+  
+  // 更新批次索引
+  restockBatchIndex = (restockBatchIndex + 1) % Math.ceil(totalRetails / RESTOCK_BATCH_SIZE);
+  
+  // 只处理本批次的零售店
+  for (let retailId = startIdx; retailId < endIdx; retailId++) {
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId] as number;
     const retailConfig = getRetailConfig(buildingType);
@@ -443,11 +545,30 @@ function processRestocking(world: GameWorld): number {
       
       // 检查是否需要进货（库存低于阈值时触发）
       const stockRatio = capacity > 0 ? currentStock / capacity : 0;
-      const restockThreshold = 0.5;  // 50%以下就进货
+      const restockThreshold = 0.5;  // 50%以下就进货（从60%调整）
       
       if (stockRatio < restockThreshold) {
+        // ============ 进货间隔检查（使用TypedArray）============
+        const lastRestock = getLastRestockTick(retailId, goodsId);
+        if (world.tick - lastRestock < RESTOCK_INTERVAL) {
+          continue;  // 还没到进货间隔时间
+        }
+        
         const targetStock = capacity * 0.9;
-        const neededQuantity = Math.max(50, Math.floor(targetStock - currentStock));
+        
+        // ============ 关键修复：检查现有买单和公司库存 ============
+        const existingBuyOrders = countExistingBuyOrders(world, ownerId, goodsId);
+        const companyInventory = c.inventories[ownerId * GOODS_COUNT + goodsId] || 0;
+        
+        // 实际还需要的数量 = 目标 - 当前零售库存 - 现有买单 - 公司库存
+        const actualNeeded = targetStock - currentStock - existingBuyOrders - companyInventory;
+        
+        // 如果已有足够的进货中订单，跳过
+        if (actualNeeded <= 10) {
+          continue;
+        }
+        
+        const neededQuantity = Math.max(50, Math.floor(actualNeeded));
         
         // 获取商品信息
         const goods = ALL_GOODS.find(g => g.id === goodsId);
@@ -460,12 +581,12 @@ function processRestocking(world: GameWorld): number {
         
         // 检查公司资金
         const ownerCash = c.cash[ownerId];
-        const affordableQty = Math.floor(ownerCash * 0.3 / maxBuyPrice);  // 最多用30%的现金
-        if (affordableQty < 10) continue;
+        const affordableQty = Math.floor(ownerCash * 0.5 / maxBuyPrice);  // 最多用50%的现金
+        if (affordableQty < 5) continue;  // 最小进货量
         
         const orderQuantity = Math.min(neededQuantity, affordableQty);
         
-        // ============ 优先直接从卖单采购 ============
+        // ============ 优先直接从卖单采购（使用优化版）============
         const purchaseResult = purchaseFromSellOrders(world, ownerId, goodsId, orderQuantity, maxBuyPrice);
         
         if (purchaseResult.purchased > 0) {
@@ -473,38 +594,46 @@ function processRestocking(world: GameWorld): number {
           
           // 更新进货成本
           retail.purchaseCosts[idx] = purchaseResult.spent / purchaseResult.purchased;
-          
-          // 调试日志
-          if (ownerId === 0 || world.tick % 100 === 0) {
-            debugInfo.push(`店铺${retailId}${goods.name}:直购${purchaseResult.purchased}件@¥${(purchaseResult.spent/purchaseResult.purchased).toFixed(2)}`);
-          }
         }
         
         // ============ 如果还需要更多，挂买单 ============
         const stillNeeded = orderQuantity - purchaseResult.purchased;
-        if (stillNeeded >= 10) {
+        if (stillNeeded >= 20) {  // 从10提高到20，减少小额订单
+          // 再次检查，确保不会过量下单
+          const updatedExistingOrders = countExistingBuyOrders(world, ownerId, goodsId);
+          const updatedCompanyInv = c.inventories[ownerId * GOODS_COUNT + goodsId] || 0;
+          const finalNeeded = targetStock - currentStock - updatedExistingOrders - updatedCompanyInv;
+          
+          if (finalNeeded <= 20) {
+            continue;  // 已经有足够的订单在进行中
+          }
+          
+          const actualOrderQty = Math.min(stillNeeded, Math.floor(finalNeeded));
+          if (actualOrderQty < 20) continue;
+          
           const currentCash = c.cash[ownerId];
           const buyPrice = Math.max(basePrice, currentMarketPrice) * (1.0 + Math.random() * 0.1);
           
-          if (currentCash >= stillNeeded * buyPrice) {
-            const orderId = createBuyOrder(world, ownerId, goodsId, stillNeeded, buyPrice);
+          if (currentCash >= actualOrderQty * buyPrice) {
+            const orderId = createBuyOrder(world, ownerId, goodsId, actualOrderQty, buyPrice);
             
             if (orderId !== null) {
               ordersPlaced++;
-              
-              if (ownerId === 0 || world.tick % 200 === 0) {
-                debugInfo.push(`店铺${retailId}${goods.name}:挂单${stillNeeded}@¥${buyPrice.toFixed(2)}`);
-              }
+              // 记录本次进货时间
+              setLastRestockTick(retailId, goodsId, world.tick);
             }
           }
         }
+        
+        // 即使没有挂单，只要做了进货检查就更新时间（防止频繁检查）
+        setLastRestockTick(retailId, goodsId, world.tick);
       }
     }
   }
   
-  // 输出调试信息
-  if (debugInfo.length > 0 && (world.tick % 50 === 0 || debugInfo.some(d => d.includes('店铺0')))) {
-    console.log(`[零售进货 T${world.tick}] 直购${directPurchases} 挂单${ordersPlaced} | ${debugInfo.slice(0, 5).join('; ')}`);
+  // 每100tick清理缓存
+  if (world.tick % 100 === 0) {
+    cleanupBuyOrderCache(world.tick);
   }
   
   return ordersPlaced + directPurchases;

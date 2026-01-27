@@ -360,26 +360,31 @@ export function adjustDecisionByPersonality(
   // 根据人格调整优先级
   switch (decision.type) {
     case 'investment':
-      // 【优化】扩张偏好影响投资优先级，但保持较高的基础值
-      // 原来：0.5 + expansionBias (范围0.5-1.4)
-      // 现在：0.7 + expansionBias * 0.5 (范围0.7-1.15)
-      adjusted.priority *= (0.7 + personality.expansionBias * 0.5);
+      // 【进一步优化】大幅提高投资优先级保留
+      // 原来：0.7 + expansionBias * 0.5 (范围0.7-1.15)
+      // 现在：1.0 + expansionBias * 0.4 (范围1.0-1.36)
+      // 保守型也能保持100%优先级，激进型最高136%
+      adjusted.priority *= (1.0 + personality.expansionBias * 0.4);
       
-      // 风险容忍度影响信心
-      adjusted.confidence *= (0.7 + personality.riskTolerance * 0.6);
+      // 风险容忍度影响信心，也提高基础值
+      adjusted.confidence *= (0.8 + personality.riskTolerance * 0.4);
       
       // 【新增】如果公司建筑数量少，额外提高投资优先级
-      if (assessment.buildingCount < 5) {
-        adjusted.priority *= 1.3; // 小公司更需要扩张
+      if (assessment.buildingCount < 3) {
+        adjusted.priority *= 1.5; // 很小的公司急需扩张
+      } else if (assessment.buildingCount < 5) {
+        adjusted.priority *= 1.35; // 小公司更需要扩张
       } else if (assessment.buildingCount < 10) {
-        adjusted.priority *= 1.15;
+        adjusted.priority *= 1.2;
       }
       
       // 【新增】如果利润率高，说明业务健康，鼓励扩张
       if (assessment.profitMargin > 0.15) {
-        adjusted.priority *= 1.2;
+        adjusted.priority *= 1.25;
       } else if (assessment.profitMargin > 0.08) {
-        adjusted.priority *= 1.1;
+        adjusted.priority *= 1.15;
+      } else if (assessment.profitMargin > 0) {
+        adjusted.priority *= 1.05; // 只要盈利就稍微鼓励扩张
       }
       break;
       
@@ -407,23 +412,36 @@ export function adjustDecisionByPersonality(
       break;
   }
   
-  // 现金储备约束
-  if (assessment.cashRatio < personality.targetCashRatio * 0.5) {
-    // 【优化】现金紧张时降低投资优先级，但惩罚减轻
-    // 原来：0.5倍，现在：0.7倍
+  // 现金储备约束 - 进一步放宽惩罚
+  if (assessment.cashRatio < personality.targetCashRatio * 0.3) {
+    // 只有现金极度紧张时才降低投资优先级
+    // 原来：0.7倍，现在：0.8倍
     if (decision.type === 'investment') {
-      adjusted.priority *= 0.7;
+      adjusted.priority *= 0.8;
     }
     // 提高卖出优先级
     if (decision.type === 'trading' && decision.action === 'sell') {
       adjusted.priority *= 1.5;
     }
+  } else if (assessment.cashRatio < personality.targetCashRatio * 0.5) {
+    // 现金稍紧，轻微降低投资优先级
+    if (decision.type === 'investment') {
+      adjusted.priority *= 0.9;
+    }
   }
   
   // 【新增】现金充裕时鼓励投资
-  if (assessment.cashRatio > personality.targetCashRatio * 1.5) {
+  if (assessment.cashRatio > personality.targetCashRatio * 2.0) {
     if (decision.type === 'investment') {
-      adjusted.priority *= 1.3; // 现金过多时更积极投资
+      adjusted.priority *= 1.5; // 现金过多时大幅提高投资积极性
+    }
+  } else if (assessment.cashRatio > personality.targetCashRatio * 1.5) {
+    if (decision.type === 'investment') {
+      adjusted.priority *= 1.3; // 现金充裕时更积极投资
+    }
+  } else if (assessment.cashRatio > personality.targetCashRatio) {
+    if (decision.type === 'investment') {
+      adjusted.priority *= 1.1; // 现金达标就稍微鼓励投资
     }
   }
   

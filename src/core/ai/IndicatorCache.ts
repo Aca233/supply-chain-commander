@@ -640,8 +640,9 @@ function createSimplePrediction(
 class IndicatorCacheManager {
   private cache: GlobalIndicatorCache | null = null;
   private lastBuildTime = 0;
-  private rebuildInterval = 6; // 每6tick重建一次缓存，而不是每tick
-  private minActiveThreshold = 10; // 供需之和至少10才视为活跃商品
+  private rebuildInterval = 12; // 每12tick重建一次缓存（从6提高到12）
+  private minActiveThreshold = 20; // 供需之和至少20才视为活跃商品（从10提高到20）
+  private highActivityThreshold = 50; // 高活跃度阈值（从20提高到50）
   
   /**
    * 获取或重建缓存
@@ -692,7 +693,7 @@ class IndicatorCacheManager {
         newCache.indicators.set(goodsId, indicators);
         
         // 只为高活跃度商品计算完整分析
-        if (activity >= this.minActiveThreshold * 2) {
+        if (activity >= this.highActivityThreshold) {
           // 计算趋势
           const trend = analyzePriceTrend(world, goodsId);
           newCache.trends.set(goodsId, trend);

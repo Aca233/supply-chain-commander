@@ -23,17 +23,17 @@ import {
 // ==================== 配置 ====================
 
 const FAST_CONFIG = {
-  maxGoodsPerCompany: 8,        // 每公司最多处理8种商品
-  minInventoryToSell: 50,       // 最小卖出库存阈值
+  maxGoodsPerCompany: 5,        // 每公司最多处理5种商品（从8降到5）
+  minInventoryToSell: 80,       // 最小卖出库存阈值（从50提高到80）
   maxInventoryDays: 20,         // 最大库存天数
-  minCashRatio: 0.1,            // 最低现金比例
-  orderExpiryTicks: 24,         // 订单过期tick数
+  minCashRatio: 0.12,           // 最低现金比例（从0.1提高到0.12）
+  orderExpiryTicks: 36,         // 订单过期tick数（从24增加到36减少取消频率）
   buyQuantityBase: 100,         // 基础买入数量
   sellQuantityRatio: 0.3,       // 卖出比例（库存的30%）
   priceMarginBuy: 1.02,         // 买入价格上浮2%
   priceMarginSell: 0.98,        // 卖出价格下浮2%
-  skipPredictionThreshold: 300, // 跳过预测的库存阈值
-  minCashForBuy: 50000,         // 最小买入现金要求
+  skipPredictionThreshold: 400, // 跳过预测的库存阈值（从300提高到400）
+  minCashForBuy: 60000,         // 最小买入现金要求（从50000提高到60000）
 };
 
 // ==================== 主营商品缓存 ====================
@@ -41,7 +41,7 @@ const FAST_CONFIG = {
 // 每个公司的主营商品列表（按重要性排序）
 const companyMainGoods: Map<number, number[]> = new Map();
 const companyMainGoodsLastUpdate: Map<number, number> = new Map();
-const MAIN_GOODS_UPDATE_INTERVAL = 60; // 每60tick更新一次
+const MAIN_GOODS_UPDATE_INTERVAL = 120; // 每120tick更新一次（从60提高到120）
 
 /**
  * 获取公司主营商品列表
@@ -124,8 +124,8 @@ export function fastDecision(world: GameWorld, companyId: number): number {
     decisionsCount += ultraFastGoodsDecision(world, companyId, goodsId, cash, cashRatio);
   }
   
-  // 3. 订单管理只在特定tick执行（每5tick一次）
-  if (world.tick % 5 === companyId % 5) {
+  // 3. 订单管理只在特定tick执行（每8tick一次，从5提高到8）
+  if (world.tick % 8 === companyId % 8) {
     decisionsCount += fastOrderManagement(world, companyId);
   }
   
@@ -347,11 +347,11 @@ function calculateFastBuyPrice(
 
 // ==================== 快速订单管理 ====================
 
-/** 订单取消的价格偏离阈值（10%，从20%降低以更快清理无效订单） */
-const PRICE_DEVIATION_CANCEL_THRESHOLD = 0.1;
+/** 订单取消的价格偏离阈值（15%，从10%提高到15%以减少取消频率） */
+const PRICE_DEVIATION_CANCEL_THRESHOLD = 0.15;
 
-/** 长期未成交订单的取消阈值（tick数） */
-const STALE_ORDER_THRESHOLD = 50;
+/** 长期未成交订单的取消阈值（tick数，从50提高到72） */
+const STALE_ORDER_THRESHOLD = 72;
 
 /**
  * 快速订单管理 - 取消过期和无效订单
@@ -361,10 +361,16 @@ function fastOrderManagement(world: GameWorld, companyId: number): number {
   let cancelledCount = 0;
   const o = world.orders;
   
+  // 优化：使用早期退出和限制处理数量
+  let processedCount = 0;
+  const maxOrdersToProcess = 50; // 每次最多检查50个订单
+  
   // 遍历该公司的所有活跃订单
-  for (let orderIdx = 0; orderIdx < MAX_ORDERS; orderIdx++) {
+  for (let orderIdx = 0; orderIdx < MAX_ORDERS && processedCount < maxOrdersToProcess; orderIdx++) {
     if (!o.isActive[orderIdx]) continue;
     if (o.companyIds[orderIdx] !== companyId) continue;
+    
+    processedCount++;
     
     const goodsId = o.goodsIds[orderIdx];
     const orderType = o.types[orderIdx]; // 0 = buy, 1 = sell

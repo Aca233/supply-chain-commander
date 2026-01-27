@@ -1,6 +1,6 @@
 /**
  * 玩家自动交易系统
- * 
+ *
  * 功能：
  * 1. 自动销售：当玩家有多余库存时，自动挂卖单
  * 2. 自动采购：当玩家建筑需要的原材料不足时，自动购买
@@ -11,7 +11,23 @@ import { GameWorld } from '../world/GameWorld';
 import { ALL_GOODS } from '@/data/goods';
 import { RECIPES } from '@/data/recipes';
 import { GOODS_COUNT, MAX_ORDERS } from '../constants';
-import { createBuyOrder, createSellOrder, getOrderBookView } from '../market/OrderBook';
+import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder } from '../market/OrderBook';
+import { getBaseMaterials, getUpgradeMaterials, getBuildingConstructionConfig } from '@/data/buildingMaterials';
+import { getCompanyConstructionQueue } from '../construction/ConstructionTick';
+
+// 订单价格调整配置
+const ORDER_PRICE_ADJUST_CONFIG = {
+  // 订单存在多少tick后开始调整价格
+  adjustAfterTicks: 12,
+  // 每次调整的价格比例
+  adjustPercent: 0.05,  // 5%
+  // 最大调整次数（防止价格无限调整）
+  maxAdjustments: 10,
+  // 卖单最低价格（相对于基础价）
+  minSellPriceRatio: 0.3,  // 30%
+  // 买单最高价格（相对于基础价）
+  maxBuyPriceRatio: 2.0,   // 200%
+};
 
 // 价格策略
 export type PriceStrategy = 'aggressive' | 'normal' | 'conservative';
@@ -152,6 +168,9 @@ export function executePlayerAutoTrade(world: GameWorld): {
   
   const playerId = 0; // 玩家公司ID
   
+  // 0. 先调整长期未成交的订单价格
+  adjustStaleOrderPrices(world, playerId);
+  
   // 1. 执行自动销售
   if (config.autoSell.enabled) {
     sellOrders = executeAutoSell(world, playerId, config);
@@ -180,6 +199,49 @@ function executeAutoSell(
   const b = world.buildings;
   let ordersPlaced = 0;
   
+  // 收集建造队列中需要保留的材料（不应该自动卖出）
+  const reservedForConstruction = new Map<number, number>();
+  const constructionQueue = getCompanyConstructionQueue(world, playerId);
+  for (const task of constructionQueue) {
+    // 只关注未完成的任务
+    if (task.status < 2) { // WAITING=0, IN_PROGRESS=1
+      let materials;
+      if (task.isUpgrade) {
+        const cfg = getBuildingConstructionConfig(task.buildingTypeId);
+        const upgradeMats = cfg?.upgradeMaterials?.[task.targetLevel - 2];
+        if (upgradeMats && upgradeMats.length > 0) {
+          materials = upgradeMats;
+        } else {
+          materials = getBaseMaterials(task.buildingTypeId).map(mat => ({
+            goodsId: mat.goodsId,
+            amount: Math.ceil(mat.amount * 0.5),
+          }));
+        }
+      } else {
+        materials = getBaseMaterials(task.buildingTypeId);
+      }
+      for (const mat of materials) {
+        const current = reservedForConstruction.get(mat.goodsId) || 0;
+        reservedForConstruction.set(mat.goodsId, current + mat.amount);
+      }
+    }
+  }
+  
+  // 收集生产配方需要的原材料（这些也不应该自动卖出！）
+  const productionInputs = new Set<number>();
+  for (let buildingId = 0; buildingId < b.count; buildingId++) {
+    if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
+    
+    const recipeId = b.recipeIds[buildingId];
+    const recipe = RECIPES.find(r => r.id === recipeId);
+    if (!recipe) continue;
+    
+    // 记录所有输入材料
+    for (const input of recipe.inputs) {
+      productionInputs.add(input.goodsId);
+    }
+  }
+  
   // 收集玩家建筑的产出商品
   const outputGoods = new Set<number>();
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
@@ -196,7 +258,18 @@ function executeAutoSell(
   
   // 同时也检查所有有库存的商品（不仅是建筑产出）
   // 这样可以自动卖出多余的原材料，降低门槛到10个单位
+  // 但排除建造队列需要的材料和生产需要的原材料
   for (let goodsId = 0; goodsId < GOODS_COUNT; goodsId++) {
+    // 跳过建造队列需要的材料
+    if (reservedForConstruction.has(goodsId)) {
+      continue;
+    }
+    
+    // 跳过生产需要的原材料（避免自己买自己卖）
+    if (productionInputs.has(goodsId)) {
+      continue;
+    }
+    
     const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
     // 如果库存超过10，也加入可销售列表（从100降低到10）
     if (inventory > 10) {
@@ -206,9 +279,23 @@ function executeAutoSell(
   
   // 为每种产出商品检查是否需要挂卖单
   for (const goodsId of outputGoods) {
+    // 再次检查：如果这个商品是生产需要的原材料，不要卖出
+    if (productionInputs.has(goodsId)) {
+      continue;
+    }
+    
+    // 检查是否已经有买单（避免同时买卖同一商品）
+    const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
+    if (existingBuyOrders > 0) {
+      continue; // 已有买单，不要卖
+    }
+    
     const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
     const reserved = c.inventoryReserved[playerId * GOODS_COUNT + goodsId];
-    const available = inventory - reserved;
+    
+    // 额外保留建造队列需要的材料
+    const constructionReserved = reservedForConstruction.get(goodsId) || 0;
+    const available = inventory - reserved - constructionReserved;
     
     // 保留一定比例
     const reserveAmount = inventory * config.autoSell.reserveRatio;
@@ -285,9 +372,10 @@ function executeAutoBuy(
   const b = world.buildings;
   let ordersPlaced = 0;
   
-  // 计算每种原材料的需求量
+  // 计算每种原材料的需求量（包括生产和建造）
   const materialNeeds = new Map<number, number>();
   
+  // 1. 收集生产配方需要的原材料
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
     
@@ -302,7 +390,125 @@ function executeAutoBuy(
     }
   }
   
-  // 为每种原材料检查库存并采购
+  // 2. 收集建造队列需要的材料（优先级最高！）
+  const constructionNeeds = new Map<number, number>();
+  const constructionQueue = getCompanyConstructionQueue(world, playerId);
+  
+  // 调试日志
+  if (world.tick % 50 === 0 && constructionQueue.length > 0) {
+    console.log(`[PlayerAutoTrader T${world.tick}] 建造队列: ${constructionQueue.length} 个任务`);
+  }
+  
+  for (const task of constructionQueue) {
+    // 只关注等待材料的任务
+    if (task.status === 0) { // WAITING = 0
+      // 修复：使用与ConstructionTick一致的材料获取逻辑
+      let materials;
+      if (task.isUpgrade) {
+        // 升级任务：优先使用升级材料，否则使用基础材料的50%
+        const config = getBuildingConstructionConfig(task.buildingTypeId);
+        const upgradeMats = config?.upgradeMaterials?.[task.targetLevel - 2];
+        if (upgradeMats && upgradeMats.length > 0) {
+          materials = upgradeMats;
+        } else {
+          materials = getBaseMaterials(task.buildingTypeId).map(mat => ({
+            goodsId: mat.goodsId,
+            amount: Math.ceil(mat.amount * 0.5),
+          }));
+        }
+      } else {
+        // 新建任务：使用基础材料
+        materials = getBaseMaterials(task.buildingTypeId);
+      }
+      
+      // 调试日志
+      if (world.tick % 50 === 0) {
+        console.log(`[PlayerAutoTrader] 任务: ${task.buildingName}, 类型ID=${task.buildingTypeId}, 升级=${task.isUpgrade}, 材料数=${materials.length}`);
+      }
+      
+      for (const mat of materials) {
+        const current = constructionNeeds.get(mat.goodsId) || 0;
+        constructionNeeds.set(mat.goodsId, current + mat.amount);
+      }
+    }
+  }
+  
+  // 3. 优先为建造队列采购材料
+  for (const [goodsId, neededAmount] of constructionNeeds) {
+    const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
+    const reserved = c.inventoryReserved[playerId * GOODS_COUNT + goodsId];
+    const available = inventory - reserved;
+    
+    // 计算现有买单的总量
+    const existingBuyQuantity = countExistingOrderQuantity(world, playerId, goodsId, 'buy');
+    
+    // 计算实际缺口（考虑库存 + 现有买单）
+    const totalPending = available + existingBuyQuantity;
+    
+    // 如果库存+现有买单已经足够，跳过
+    if (totalPending >= neededAmount) {
+      continue;
+    }
+    
+    // 计算还需要采购多少
+    const shortfall = neededAmount - totalPending;
+    // 多采购20%作为缓冲
+    const buyQuantity = Math.ceil(shortfall * 1.2);
+    
+    if (buyQuantity < 1) continue;
+    
+    // 计算买价（建造材料采购使用激进策略，快速买入）
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    const marketPrice = world.goods.prices[goodsId];
+    
+    // 建造材料：比市价高15%快速买入（更激进）
+    let buyPrice = Math.max(marketPrice, basePrice) * 1.15;
+    
+    // 【吃单功能】检查市场上是否有更便宜的卖单，如果有则使用卖单价格
+    const orderBookView = getOrderBookView(world, goodsId);
+    if (orderBookView.bestAsk !== null && orderBookView.bestAsk < buyPrice) {
+      // 使用市场最低卖价（吃单），但要排除自己的卖单
+      const cheapestNonPlayerSellOrder = orderBookView.sellOrders.find(
+        order => order.companyId !== playerId
+      );
+      if (cheapestNonPlayerSellOrder && cheapestNonPlayerSellOrder.price < buyPrice) {
+        buyPrice = cheapestNonPlayerSellOrder.price;
+        // console.log(`[吃单] 商品${goodsId} 使用对方卖价 ${buyPrice.toFixed(2)}`);
+      }
+    }
+    
+    // 检查资金
+    const cost = buyQuantity * buyPrice;
+    if (c.cash[playerId] < cost) {
+      // 资金不足，减少采购量
+      const affordableQty = Math.floor(c.cash[playerId] * 0.3 / buyPrice);
+      if (affordableQty < 1) continue;
+    }
+    
+    // 检查是否已有足够的买单数量（避免太多订单）
+    const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
+    if (existingBuyOrders >= 3) continue; // 建造材料最多3个买单
+    
+    const orderId = createBuyOrder(
+      world,
+      playerId,
+      goodsId,
+      buyQuantity,
+      buyPrice,
+      9999999 // 建造材料订单永不过期
+    );
+    
+    if (orderId !== null) {
+      ordersPlaced++;
+      playerAutoTradeState.totalBought += buyQuantity;
+      // console.log(`[建造材料采购] 商品${goodsId} 数量${buyQuantity} 价格${buyPrice.toFixed(2)} 缺口${shortfall}`);
+    }
+  }
+  
+  // 4. 为生产原材料检查库存并采购
   for (const [goodsId, neededPerCycle] of materialNeeds) {
     const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
     
@@ -342,6 +548,19 @@ function executeAutoBuy(
         break;
     }
     
+    // 【吃单功能】检查市场上是否有更便宜的卖单，如果有则使用卖单价格
+    const orderBookView = getOrderBookView(world, goodsId);
+    if (orderBookView.bestAsk !== null && orderBookView.bestAsk < buyPrice) {
+      // 使用市场最低卖价（吃单），但要排除自己的卖单
+      const cheapestNonPlayerSellOrder = orderBookView.sellOrders.find(
+        order => order.companyId !== playerId
+      );
+      if (cheapestNonPlayerSellOrder && cheapestNonPlayerSellOrder.price < buyPrice) {
+        buyPrice = cheapestNonPlayerSellOrder.price;
+        // console.log(`[生产材料吃单] 商品${goodsId} 使用对方卖价 ${buyPrice.toFixed(2)}`);
+      }
+    }
+    
     // 检查资金
     const cost = buyQuantity * buyPrice;
     if (c.cash[playerId] < cost * 1.2) {
@@ -354,21 +573,19 @@ function executeAutoBuy(
     const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
     if (existingBuyOrders >= 3) continue; // 最多3个买单
     
-    // 分批挂单
-    const batchSize = Math.min(buyQuantity, Math.max(10, buyQuantity * 0.5));
-    
+    // 一次性买够需要的数量（不再分批）
     const orderId = createBuyOrder(
       world,
       playerId,
       goodsId,
-      batchSize,
+      buyQuantity,
       buyPrice,
-      24 * 3 // 3天过期
+      24 * 5 // 5天过期（延长过期时间）
     );
     
     if (orderId !== null) {
       ordersPlaced++;
-      playerAutoTradeState.totalBought += batchSize;
+      playerAutoTradeState.totalBought += buyQuantity;
     }
   }
   
@@ -400,6 +617,138 @@ function countExistingOrders(
   }
   
   return count;
+}
+
+/**
+ * 统计现有订单的总数量（用于避免重复下单）
+ */
+function countExistingOrderQuantity(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  orderType: 'buy' | 'sell'
+): number {
+  const o = world.orders;
+  const typeValue = orderType === 'buy' ? 0 : 1;
+  let totalQuantity = 0;
+  
+  for (let i = 0; i < MAX_ORDERS; i++) {
+    if (
+      o.isActive[i] &&
+      o.companyIds[i] === companyId &&
+      o.goodsIds[i] === goodsId &&
+      o.types[i] === typeValue
+    ) {
+      totalQuantity += o.remainings[i];
+    }
+  }
+  
+  return totalQuantity;
+}
+
+/**
+ * 调整长期未成交的订单价格
+ * 卖单：降价促销
+ * 买单：涨价买入
+ */
+function adjustStaleOrderPrices(world: GameWorld, playerId: number): void {
+  const o = world.orders;
+  const currentTick = world.tick;
+  
+  // 收集需要调整的订单
+  const ordersToAdjust: Array<{
+    orderIdx: number;
+    goodsId: number;
+    orderType: number; // 0=buy, 1=sell
+    price: number;
+    remaining: number;
+    createdTick: number;
+  }> = [];
+  
+  for (let i = 0; i < MAX_ORDERS; i++) {
+    if (!o.isActive[i] || o.companyIds[i] !== playerId) continue;
+    
+    const orderAge = currentTick - o.createdTicks[i];
+    
+    // 只调整存在超过阈值时间的订单
+    if (orderAge >= ORDER_PRICE_ADJUST_CONFIG.adjustAfterTicks) {
+      ordersToAdjust.push({
+        orderIdx: i,
+        goodsId: o.goodsIds[i],
+        orderType: o.types[i],
+        price: o.prices[i],
+        remaining: o.remainings[i],
+        createdTick: o.createdTicks[i],
+      });
+    }
+  }
+  
+  // 调整每个订单
+  for (const order of ordersToAdjust) {
+    const goods = ALL_GOODS.find(g => g.id === order.goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    let newPrice: number;
+    
+    if (order.orderType === 1) {
+      // 卖单：降价
+      newPrice = order.price * (1 - ORDER_PRICE_ADJUST_CONFIG.adjustPercent);
+      const minPrice = basePrice * ORDER_PRICE_ADJUST_CONFIG.minSellPriceRatio;
+      
+      // 检查是否低于最低价
+      if (newPrice < minPrice) {
+        newPrice = minPrice;
+        // 如果已经是最低价，不再调整
+        if (order.price <= minPrice) {
+          continue;
+        }
+      }
+      
+      // 取消旧订单，以新价格重新下单
+      if (cancelOrder(world, order.orderIdx)) {
+        const orderId = createSellOrder(
+          world,
+          playerId,
+          order.goodsId,
+          order.remaining,
+          newPrice,
+          24 * 5
+        );
+        if (orderId !== null) {
+          // console.log(`[价格调整] 卖单 商品${order.goodsId} 降价 ${order.price.toFixed(2)} -> ${newPrice.toFixed(2)}`);
+        }
+      }
+    } else {
+      // 买单：涨价
+      newPrice = order.price * (1 + ORDER_PRICE_ADJUST_CONFIG.adjustPercent);
+      const maxPrice = basePrice * ORDER_PRICE_ADJUST_CONFIG.maxBuyPriceRatio;
+      
+      // 检查是否高于最高价
+      if (newPrice > maxPrice) {
+        newPrice = maxPrice;
+        // 如果已经是最高价，不再调整
+        if (order.price >= maxPrice) {
+          continue;
+        }
+      }
+      
+      // 取消旧订单，以新价格重新下单
+      if (cancelOrder(world, order.orderIdx)) {
+        const orderId = createBuyOrder(
+          world,
+          playerId,
+          order.goodsId,
+          order.remaining,
+          newPrice,
+          9999999
+        );
+        if (orderId !== null) {
+          // console.log(`[价格调整] 买单 商品${order.goodsId} 涨价 ${order.price.toFixed(2)} -> ${newPrice.toFixed(2)}`);
+        }
+      }
+    }
+  }
 }
 
 /**

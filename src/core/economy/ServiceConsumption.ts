@@ -210,7 +210,7 @@ function calculateServiceDemand(world: GameWorld, goodsId: number): number {
   for (const tier of CONSUMER_TIERS) {
     // 人均服务消费频率（根据收入调整）
     const incomeRatio = tier.baseIncome / 12000;  // 相对于中等收入
-    let perCapitaRate = 0.001;  // 基础消费率（每人每tick）
+    let perCapitaRate = 0.005;  // 基础消费率（每人每tick）- 从0.001提高5倍
     
     // 收入弹性调整
     perCapitaRate *= Math.pow(incomeRatio, goods.incomeElasticity);
@@ -218,31 +218,31 @@ function calculateServiceDemand(world: GameWorld, goodsId: number): number {
     // 价格弹性调整
     perCapitaRate *= Math.pow(priceRatio, goods.priceElasticity);
     
-    // 根据服务类型调整消费率
+    // 根据服务类型调整消费率 - 全面提高
     switch (goods.key) {
       case 'education-service':
-        perCapitaRate *= 0.1;  // 教育频率低
+        perCapitaRate *= 0.3;   // 从0.1提高到0.3
         break;
       case 'healthcare-service':
-        perCapitaRate *= 0.05; // 医疗频率较低
+        perCapitaRate *= 0.2;   // 从0.05提高到0.2
         break;
       case 'entertainment-service':
-        perCapitaRate *= 0.5;  // 娱乐频率高
+        perCapitaRate *= 1.0;   // 从0.5提高到1.0
         break;
       case 'catering-service':
-        perCapitaRate *= 1.5;  // 餐饮频率最高
+        perCapitaRate *= 2.5;   // 从1.5提高到2.5
         break;
       case 'transport-service':
-        perCapitaRate *= 2.0;  // 交通频率很高
+        perCapitaRate *= 3.0;   // 从2.0提高到3.0
         break;
       case 'financial-service':
-        perCapitaRate *= 0.1;  // 金融频率低
+        perCapitaRate *= 0.3;   // 从0.1提高到0.3
         break;
       case 'hotel-service':
-        perCapitaRate *= 0.02; // 住宿频率很低
+        perCapitaRate *= 0.08;  // 从0.02提高到0.08
         break;
       default:
-        perCapitaRate *= 0.3;
+        perCapitaRate *= 0.6;   // 从0.3提高到0.6
     }
     
     totalDemand += tier.population * perCapitaRate;

@@ -169,7 +169,7 @@ export const RETAIL_RESTOCK_THRESHOLD = 0.3;
 export const RETAIL_TARGET_STOCK_LEVEL = 0.9;
 
 /** 每tick最大客流处理比例（提高以增加市场活跃度） */
-export const RETAIL_MAX_CUSTOMER_RATE = 0.15;
+export const RETAIL_MAX_CUSTOMER_RATE = 0.25;  // 从0.15提高到0.25，增加消费速度
 
 /** 零售价格调整周期（tick） */
 export const RETAIL_PRICE_ADJUST_INTERVAL = 24;
@@ -181,6 +181,44 @@ export const RETAIL_MAX_TURNOVER_DAYS = 30;
 
 /** 最大成交记录数（环形缓冲区大小，增大以保留更多历史记录） */
 export const MAX_TRADES = 100000;
+
+// ==================== 建造/拆除系统常量 ====================
+
+/** 每个公司最大建造队列长度 */
+export const MAX_CONSTRUCTION_QUEUE = 10;
+
+/** 每个公司同时建造的建筑数量上限 */
+export const MAX_CONCURRENT_CONSTRUCTIONS = 3;
+
+/** 取消建造退款比例 */
+export const CONSTRUCTION_CANCEL_REFUND_RATE = 0.8;
+
+/** 每个公司最大拆除队列长度 */
+export const MAX_DEMOLITION_QUEUE = 10;
+
+/** 每个公司同时拆除的建筑数量上限 */
+export const MAX_CONCURRENT_DEMOLITIONS = 2;
+
+/** 建筑每升一级的折旧率 */
+export const DEMOLITION_LEVEL_DEPRECIATION = 0.05;
+
+/** 建筑每年的折旧率 */
+export const DEMOLITION_YEAR_DEPRECIATION = 0.02;
+
+/** 拆除材料回收率 */
+export const DEMOLITION_MATERIAL_RECOVERY_RATE = 0.5;
+
+/** 拆除现金回收率（相对于折旧后价值） */
+export const DEMOLITION_CASH_RECOVERY_RATE = 0.3;
+
+/** 危险建筑额外拆除成本比例 */
+export const HAZARDOUS_DEMOLITION_COST_MULTIPLIER = 0.2;
+
+/** 最大预留材料条目数 */
+export const MAX_RESERVED_MATERIALS = 10000;
+
+/** 最大回收材料条目数 */
+export const MAX_RECOVERED_MATERIALS = 10000;
 
 // ==================== 性能目标常量 ====================
 

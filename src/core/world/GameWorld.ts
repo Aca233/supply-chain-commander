@@ -15,6 +15,10 @@ import {
   HISTORY_SIZE,
   MAX_RETAIL_STORES,
   MAX_TRADES,
+  MAX_CONSTRUCTION_QUEUE,
+  MAX_DEMOLITION_QUEUE,
+  MAX_RESERVED_MATERIALS,
+  MAX_RECOVERED_MATERIALS,
 } from '../constants';
 
 // ==================== 类型定义 ====================
@@ -155,6 +159,98 @@ export interface RetailSystemData {
   lastRestockTick: Uint32Array;
 }
 
+/** 建造队列状态 */
+export enum ConstructionStatus {
+  WAITING = 0,      // 等待材料/资源
+  IN_PROGRESS = 1,  // 建造中
+  COMPLETED = 2,    // 已完成
+  CANCELLED = 3,    // 已取消
+}
+
+/** 拆除队列状态 */
+export enum DemolitionStatus {
+  WAITING = 0,      // 等待开始
+  IN_PROGRESS = 1,  // 拆除中
+  COMPLETED = 2,    // 已完成
+  CANCELLED = 3,    // 已取消
+}
+
+/** 建造队列系统数据 (SoA设计) */
+export interface ConstructionQueueSystem {
+  maxQueueSize: number;
+  count: number;                        // 当前队列总数
+  
+  // 队列数据 (大小 = MAX_COMPANIES * MAX_CONSTRUCTION_QUEUE)
+  companyIds: Uint16Array;              // 所属公司ID
+  buildingTypeIds: Uint8Array;          // 目标建筑类型ID
+  targetLevels: Uint8Array;             // 目标等级 (1=新建, 2-5=升级)
+  statuses: Uint8Array;                 // ConstructionStatus
+  progress: Float32Array;               // 建造进度 0-1
+  startTicks: Uint32Array;              // 开始时间
+  estimatedEndTicks: Uint32Array;       // 预计完成时间
+  materialReserveIds: Uint32Array;      // 预留材料池的起始索引
+  
+  // 已有建筑升级专用 (新建时为-1)
+  existingBuildingIds: Int16Array;      // 正在升级的建筑ID，-1表示新建
+  
+  // 状态标记
+  isActive: Uint8Array;                 // 是否活跃 (位图)
+  
+  // 队列索引跟踪
+  nextQueueId: number;
+}
+
+/** 拆除队列系统数据 (SoA设计) */
+export interface DemolitionQueueSystem {
+  maxQueueSize: number;
+  count: number;
+  
+  // 队列数据 (大小 = MAX_COMPANIES * MAX_DEMOLITION_QUEUE)
+  companyIds: Uint16Array;              // 所属公司ID
+  buildingIds: Uint16Array;             // 目标建筑ID
+  buildingTypeIds: Uint8Array;          // 建筑类型ID (用于计算回收)
+  buildingLevels: Uint8Array;           // 建筑等级
+  statuses: Uint8Array;                 // DemolitionStatus
+  progress: Float32Array;               // 拆除进度 0-1
+  startTicks: Uint32Array;              // 开始时间
+  estimatedEndTicks: Uint32Array;       // 预计完成时间
+  recoveryPoolIds: Uint32Array;         // 回收材料池的起始索引
+  
+  // 拆除成本与回收
+  demolitionCosts: Float32Array;        // 拆除花费
+  estimatedCashRecovery: Float32Array;  // 预计现金回收
+  
+  // 状态标记
+  isActive: Uint8Array;
+  isHazardous: Uint8Array;              // 是否危险建筑 (需额外成本)
+  
+  nextQueueId: number;
+}
+
+/** 预留材料池 (用于建造) */
+export interface ReservedMaterialsPool {
+  maxSize: number;
+  count: number;
+  
+  queueIds: Uint32Array;                // 关联的建造队列ID
+  goodsIds: Uint8Array;                 // 商品ID
+  quantities: Float32Array;             // 数量
+  companyIds: Uint16Array;              // 来源公司ID
+  isReserved: Uint8Array;               // 是否已预留
+}
+
+/** 回收材料池 (用于拆除) */
+export interface RecoveredMaterialsPool {
+  maxSize: number;
+  count: number;
+  
+  queueIds: Uint32Array;                // 关联的拆除队列ID
+  goodsIds: Uint8Array;                 // 商品ID
+  quantities: Float32Array;             // 数量
+  targetCompanyIds: Uint16Array;        // 目标公司ID
+  isCollected: Uint8Array;              // 是否已领取
+}
+
 /** 游戏世界主结构 */
 export interface GameWorld {
   tick: number;
@@ -169,6 +265,12 @@ export interface GameWorld {
   
   // 零售系统（Pop只能在零售建筑消费）
   retail: RetailSystemData;
+  
+  // 建造/拆除系统
+  construction: ConstructionQueueSystem;
+  demolition: DemolitionQueueSystem;
+  reservedMaterials: ReservedMaterialsPool;
+  recoveredMaterials: RecoveredMaterialsPool;
   
   // 经济指标
   economyStats: {
@@ -324,6 +426,83 @@ export function createRetailSystem(): RetailSystemData {
 }
 
 /**
+ * 创建建造队列系统
+ */
+export function createConstructionQueueSystem(): ConstructionQueueSystem {
+  const size = MAX_COMPANIES * MAX_CONSTRUCTION_QUEUE;
+  return {
+    maxQueueSize: size,
+    count: 0,
+    companyIds: new Uint16Array(size),
+    buildingTypeIds: new Uint8Array(size),
+    targetLevels: new Uint8Array(size),
+    statuses: new Uint8Array(size),
+    progress: new Float32Array(size),
+    startTicks: new Uint32Array(size),
+    estimatedEndTicks: new Uint32Array(size),
+    materialReserveIds: new Uint32Array(size),
+    existingBuildingIds: new Int16Array(size).fill(-1),
+    isActive: new Uint8Array(size),
+    nextQueueId: 1,
+  };
+}
+
+/**
+ * 创建拆除队列系统
+ */
+export function createDemolitionQueueSystem(): DemolitionQueueSystem {
+  const size = MAX_COMPANIES * MAX_DEMOLITION_QUEUE;
+  return {
+    maxQueueSize: size,
+    count: 0,
+    companyIds: new Uint16Array(size),
+    buildingIds: new Uint16Array(size),
+    buildingTypeIds: new Uint8Array(size),
+    buildingLevels: new Uint8Array(size),
+    statuses: new Uint8Array(size),
+    progress: new Float32Array(size),
+    startTicks: new Uint32Array(size),
+    estimatedEndTicks: new Uint32Array(size),
+    recoveryPoolIds: new Uint32Array(size),
+    demolitionCosts: new Float32Array(size),
+    estimatedCashRecovery: new Float32Array(size),
+    isActive: new Uint8Array(size),
+    isHazardous: new Uint8Array(size),
+    nextQueueId: 1,
+  };
+}
+
+/**
+ * 创建预留材料池
+ */
+export function createReservedMaterialsPool(): ReservedMaterialsPool {
+  return {
+    maxSize: MAX_RESERVED_MATERIALS,
+    count: 0,
+    queueIds: new Uint32Array(MAX_RESERVED_MATERIALS),
+    goodsIds: new Uint8Array(MAX_RESERVED_MATERIALS),
+    quantities: new Float32Array(MAX_RESERVED_MATERIALS),
+    companyIds: new Uint16Array(MAX_RESERVED_MATERIALS),
+    isReserved: new Uint8Array(MAX_RESERVED_MATERIALS),
+  };
+}
+
+/**
+ * 创建回收材料池
+ */
+export function createRecoveredMaterialsPool(): RecoveredMaterialsPool {
+  return {
+    maxSize: MAX_RECOVERED_MATERIALS,
+    count: 0,
+    queueIds: new Uint32Array(MAX_RECOVERED_MATERIALS),
+    goodsIds: new Uint8Array(MAX_RECOVERED_MATERIALS),
+    quantities: new Float32Array(MAX_RECOVERED_MATERIALS),
+    targetCompanyIds: new Uint16Array(MAX_RECOVERED_MATERIALS),
+    isCollected: new Uint8Array(MAX_RECOVERED_MATERIALS),
+  };
+}
+
+/**
  * 创建完整的游戏世界
  */
 export function createGameWorld(): GameWorld {
@@ -338,6 +517,12 @@ export function createGameWorld(): GameWorld {
     orders: createOrdersSystem(),
     trades: createTradesSystem(),
     retail: createRetailSystem(),
+    
+    // 建造/拆除系统
+    construction: createConstructionQueueSystem(),
+    demolition: createDemolitionQueueSystem(),
+    reservedMaterials: createReservedMaterialsPool(),
+    recoveredMaterials: createRecoveredMaterialsPool(),
     
     economyStats: {
       gdp: 0,

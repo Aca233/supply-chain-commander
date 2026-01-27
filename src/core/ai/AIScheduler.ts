@@ -39,17 +39,17 @@ export interface AISchedulerConfig {
 }
 
 const DEFAULT_CONFIG: AISchedulerConfig = {
-  // 大幅降低批次大小以减少每tick处理量
-  fastBatchSize: 5,          // 从30降到5
-  standardBatchSize: 2,      // 从5降到2
-  deepBatchSize: 1,          // 从2降到1
+  // 进一步降低批次大小以减少每tick处理量
+  fastBatchSize: 3,          // 从5降到3
+  standardBatchSize: 1,      // 从2降到1
+  deepBatchSize: 1,          // 保持1
   
-  // 增加决策间隔以分散负载
-  fastInterval: 3,           // 从1改为每3tick执行
-  standardInterval: 30,      // 从10改为每30tick执行
-  deepInterval: 120,         // 从60改为每120tick执行
+  // 进一步增加决策间隔以分散负载
+  fastInterval: 4,           // 从3改为每4tick执行
+  standardInterval: 48,      // 从30改为每48tick执行
+  deepInterval: 180,         // 从120改为每180tick执行
   
-  maxTimePerTick: 5,         // 从10ms降到5ms
+  maxTimePerTick: 3,         // 从5ms降到3ms
   
   enableFastDecision: true,
   enableStandardDecision: true,
