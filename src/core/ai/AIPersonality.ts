@@ -600,12 +600,14 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 16,
     name: '海螺水泥',
     personality: 'cost_leader',
-    initialCash: 50000000,
-    focusGoods: [21],  // 水泥
+    initialCash: 60000000,  // 增加初始资金以支持更多生产
+    focusGoods: [21, 36, 47],  // 水泥、建筑材料、建材成品
     category: 'processing',
-    description: '水泥生产',
+    description: '水泥及建材生产',
     initialBuildings: [
-      { typeId: 14, recipeId: 19, count: 4 },
+      { typeId: 14, recipeId: 19, count: 3 },  // 水泥生产
+      { typeId: 14, recipeId: 71, count: 2 },  // 建筑材料生产
+      { typeId: 14, recipeId: 72, count: 2 },  // 建材成品生产
     ],
   },
   {
@@ -693,13 +695,14 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 23,
     name: '华为终端',
     personality: 'innovator',
-    initialCash: 80000000,
-    focusGoods: [55, 56, 39],  // 高端手机、电脑、消费电子
+    initialCash: 100000000,  // 增加资金
+    focusGoods: [55, 56, 39, 52],  // 高端手机、电脑、消费电子、无人机
     category: 'manufacturing',
-    description: '消费电子产品',
+    description: '消费电子产品及无人机',
     initialBuildings: [
-      { typeId: 16, recipeId: 22, count: 2 },
-      { typeId: 16, recipeId: 23, count: 2 },
+      { typeId: 16, recipeId: 22, count: 2 },  // 平价手机
+      { typeId: 16, recipeId: 23, count: 2 },  // 电脑
+      { typeId: 16, recipeId: 82, count: 2 },  // 无人机生产
     ],
   },
   {
@@ -718,27 +721,31 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 25,
     name: '宁德时代',
     personality: 'innovator',
-    initialCash: 90000000,
-    focusGoods: [28],  // 电池
+    initialCash: 120000000,  // 增加资金支持更多产线
+    focusGoods: [28, 49, 50],  // 电池、光伏系统、储能系统
     category: 'manufacturing',
-    description: '动力电池制造',
+    description: '动力电池及储能系统制造',
     initialBuildings: [
-      { typeId: 20, recipeId: 28, count: 3 },
+      { typeId: 20, recipeId: 28, count: 3 },  // 电池生产
+      { typeId: 20, recipeId: 77, count: 2 },  // 光伏系统组装
+      { typeId: 20, recipeId: 81, count: 2 },  // 储能系统生产
     ],
   },
   {
     id: 26,
     name: '零部件集团',
     personality: 'specialist',
-    initialCash: 70000000,
-    focusGoods: [31, 32, 29, 30],  // 机械部件、汽车零部件、电机、发动机
+    initialCash: 100000000,  // 增加资金支持更多产线
+    focusGoods: [31, 32, 29, 30, 46, 51],  // 机械部件、汽车零部件、电机、屏幕、家具、工业机器人
     category: 'manufacturing',
-    description: '机械零部件制造',
+    description: '机械零部件及工业设备制造',
     initialBuildings: [
-      { typeId: 21, recipeId: 79, count: 2 },
-      { typeId: 21, recipeId: 29, count: 1 },
-      { typeId: 21, recipeId: 30, count: 1 },
-      { typeId: 21, recipeId: 31, count: 1 },
+      { typeId: 21, recipeId: 79, count: 2 },  // 机械部件生产
+      { typeId: 21, recipeId: 29, count: 1 },  // 汽车零部件
+      { typeId: 21, recipeId: 30, count: 1 },  // 电机
+      { typeId: 21, recipeId: 31, count: 1 },  // 屏幕
+      { typeId: 21, recipeId: 70, count: 2 },  // 家具生产
+      { typeId: 21, recipeId: 73, count: 2 },  // 工业机器人生产
     ],
   },
   

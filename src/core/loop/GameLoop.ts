@@ -341,20 +341,20 @@ export class GameLoop {
                         aiSchedulerStats.deepProcessed;
     
     // 8.5. AI自动挂单（确保市场有流动性）
-    // 性能优化：降低执行频率，每6tick执行一次（原来是每tick）
+    // 【性能优化】使用模8错峰执行，避免与Deep决策冲突
     let aiSellOrders = 0;
     let aiBuyOrders = 0;
-    if (currentTick % 6 === 0) {
+    if (currentTick % 8 === 1) {  // 从 tick%6===0 改为 tick%8===1
       aiSellOrders = autoPostSellOrders(this.world);
     }
     // 买单和卖单错峰执行
-    if (currentTick % 6 === 3) {
+    if (currentTick % 8 === 5) {  // 从 tick%6===3 改为 tick%8===5
       aiBuyOrders = autoPostBuyOrders(this.world);
     }
     
     // 8.6. AI订单价格自动调整（长期未成交订单降价/涨价）
-    // 性能优化：降低频率，从每6tick改为每12tick
-    if (currentTick % 12 === 0) {
+    // 【性能优化】错峰执行，避免与其他任务冲突
+    if (currentTick % 12 === 3) {  // 从 tick%12===0 改为 tick%12===3
       adjustAllAIOrderPrices(this.world);
     }
     endAI();
@@ -408,13 +408,14 @@ export class GameLoop {
     // 13. 应用交易手续费
     this.applyTradingFees(matchingResult);
     
-    // 14. 处理渠道订单交付和付款（错峰执行：交付在tick%24===0，付款在tick%24===6）
-    if (currentTick % 24 === 0) {
+    // 14. 处理渠道订单交付和付款
+    // 【性能优化】错峰执行：避免与Deep决策(tick%8===0)冲突
+    if (currentTick % 24 === 2) {  // 从 tick%24===0 改为 tick%24===2
       const endDistribution = perfMonitor.startMeasure('distribution');
       distributionManager.processDeliveries(currentTick);
       endDistribution();
     }
-    if (currentTick % 24 === 6) {
+    if (currentTick % 24 === 10) {  // 从 tick%24===6 改为 tick%24===10
       const endPayments = perfMonitor.startMeasure('distribution-payments');
       distributionManager.processPayments(currentTick);
       endPayments();
@@ -467,13 +468,15 @@ export class GameLoop {
     
     // ==================== 阶段6: 品牌和状态更新 ====================
     
-    // 20. AI股票交易决策（每12个tick执行一次，分散负载）
-    if (currentTick % 12 === 0) {
+    // 20. AI股票交易决策
+    // 【性能优化】错峰执行，避免与其他任务冲突
+    if (currentTick % 12 === 7) {  // 从 tick%12===0 改为 tick%12===7
       executeAIStockTrading(this.world);
     }
     
-    // 21. 更新股票市场（降低更新频率从每4小时改为每12小时，减少计算开销）
-    if (currentTick % 12 === 0) {
+    // 21. 更新股票市场
+    // 【性能优化】错峰执行
+    if (currentTick % 12 === 9) {  // 从 tick%12===0 改为 tick%12===9
       updateStockMarket(this.world);
     }
     
@@ -482,9 +485,10 @@ export class GameLoop {
     
     endFinance();
     
-    // 22. AI附属建筑管理（错峰执行：从tick%24===0改为tick%24===12）
+    // 22. AI附属建筑管理
+    // 【性能优化】错峰执行，避免与Deep决策冲突
     let aiSubsidiaryActions = 0;
-    if (currentTick % 24 === 12) {
+    if (currentTick % 24 === 14) {  // 从 tick%24===12 改为 tick%24===14
       const endAISubsidiary = perfMonitor.startMeasure('ai-subsidiary');
       aiSubsidiaryActions = runAISubsidiaryManagement(this.world);
       endAISubsidiary();

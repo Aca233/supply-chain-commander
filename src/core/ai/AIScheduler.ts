@@ -40,17 +40,17 @@ export interface AISchedulerConfig {
 }
 
 const DEFAULT_CONFIG: AISchedulerConfig = {
-  // 性能优化：进一步降低批次大小
-  fastBatchSize: 1,          // 从3降到1，每次只处理1家公司
-  standardBatchSize: 1,      // 保持1
-  deepBatchSize: 1,          // 保持1
+  // 【性能优化】减少批次大小，分散执行
+  fastBatchSize: 2,          // 每次处理2家公司
+  standardBatchSize: 2,      // 每次处理2家公司
+  deepBatchSize: 2,          // 【修复】从5降到2，分3批完成（减少单帧卡顿）
   
-  // 性能优化：进一步增加决策间隔
-  fastInterval: 6,           // 从4改为每6tick执行
-  standardInterval: 72,      // 从48改为每72tick执行
-  deepInterval: 48,          // 从240改为每48tick执行（每2游戏天，确保AI能建造建筑）
+  // 决策间隔
+  fastInterval: 6,           // 每6tick执行fast决策
+  standardInterval: 48,      // 每48tick执行standard决策
+  deepInterval: 8,           // 【修复】从24降到8，分3批完成所有公司的deep决策
   
-  maxTimePerTick: 2,         // 从3ms降到2ms（更严格的时间预算）
+  maxTimePerTick: 15,        // 【修复】增加时间预算到15ms，并实际执行时间检查
   
   enableFastDecision: true,
   enableStandardDecision: true,
@@ -274,13 +274,20 @@ class AISchedulerManager {
   
   /**
    * 处理Deep批次
+   * 【性能优化】添加时间限制，防止单帧卡顿
    */
   private processDeepBatch(world: GameWorld, startTime: number): void {
     const config = this.config;
     let processed = 0;
+    let skippedDueToTime = 0;
     
+    // 【修复】添加时间限制检查
     while (processed < config.deepBatchSize && this.deepQueue.length > 0) {
-      if (performance.now() - startTime > config.maxTimePerTick) {
+      // 检查时间预算（留出5ms余量给其他系统）
+      const elapsedTime = performance.now() - startTime;
+      if (elapsedTime > config.maxTimePerTick) {
+        skippedDueToTime = config.deepBatchSize - processed;
+        console.log(`[AIScheduler T${world.tick}] Deep批次时间超限 ${elapsedTime.toFixed(1)}ms，已处理${processed}家，跳过${skippedDueToTime}家`);
         break;
       }
       
@@ -288,7 +295,7 @@ class AISchedulerManager {
       const company = this.companies.get(companyId);
       
       if (company) {
-        // Deep决策使用完整分析
+        // Deep决策使用完整分析（包括投资建造）
         this.processDeepDecision(world, companyId);
         company.lastDeepTick = world.tick;
         processed++;
@@ -298,6 +305,12 @@ class AISchedulerManager {
     }
     
     this.stats.deepProcessed = processed;
+    
+    // 调试日志：每24tick输出一次
+    if (world.tick % 24 === 0) {
+      const elapsed = performance.now() - startTime;
+      console.log(`[AIScheduler T${world.tick}] Deep批次处理了${processed}家公司，耗时${elapsed.toFixed(1)}ms`);
+    }
   }
   
   /**
@@ -343,10 +356,12 @@ class AISchedulerManager {
   private processDeepDecision(world: GameWorld, companyId: number): void {
     // 计算公司健康状况
     const healthScore = this.calculateCompanyHealth(world, companyId);
+    const cash = world.companies.cash[companyId];
     
-    // 只有健康的公司才执行完整决策周期（包括投资建造）
-    // 健康分数>0.3的公司执行完整决策
-    if (healthScore > 0.3) {
+    // 【修复】降低门槛：健康分数>0.2 或 现金>10万 的公司都执行完整决策
+    const shouldExecute = healthScore > 0.2 || cash > 100000;
+    
+    if (shouldExecute) {
       try {
         // 【关键】调用完整的AI决策周期，包括：
         // - 生产决策
@@ -356,6 +371,11 @@ class AISchedulerManager {
         // - 股票交易决策
         // - 附属建筑决策
         runAIDecisionCycle(world, companyId);
+        
+        // 调试日志：每100tick输出一次执行情况
+        if (world.tick % 100 === 0) {
+          console.log(`[AIScheduler] 公司${companyId}执行了完整决策周期 (健康=${healthScore.toFixed(2)}, 现金=${cash})`);
+        }
       } catch (e) {
         // 捕获异常避免单个公司的错误影响其他公司
         console.error(`[AIScheduler] 公司${companyId}决策周期异常:`, e);

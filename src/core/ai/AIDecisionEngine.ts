@@ -245,6 +245,11 @@ function removeBuildingIntent(companyId: number, buildingTypeId: number, recipeI
 /**
  * 处理公司的待建意向
  * 检查材料是否已到位，如果是则执行建造
+ *
+ * 【关键改进】
+ * 1. 延长过期时间到2000tick（约83游戏天）
+ * 2. 每次检查时主动追加采购单
+ * 3. 使用"吃单"策略直接以卖单价格买入
  */
 function processBuildingIntents(world: GameWorld, companyId: number): number {
   const intents = getBuildingIntents(companyId);
@@ -254,10 +259,15 @@ function processBuildingIntents(world: GameWorld, companyId: number): number {
   const remainingIntents: BuildingIntent[] = [];
   
   for (const intent of intents) {
-    // 检查意向是否过期（超过500tick未完成）
-    if (world.tick - intent.createdTick > 500) {
+    // 【改进1】延长过期时间到2000tick（约83游戏天）
+    if (world.tick - intent.createdTick > 2000) {
       console.log(`[AI建造意向] 公司${companyId}的${intent.buildingTypeId}建造意向过期`);
       continue; // 放弃这个意向
+    }
+    
+    // 【改进2】每10tick主动检查并追加采购单
+    if (intent.attempts % 10 === 0) {
+      ensureAllMaterialsOrdered(world, intent);
     }
     
     // 尝试执行建造
@@ -270,8 +280,8 @@ function processBuildingIntents(world: GameWorld, companyId: number): number {
       // 更新尝试次数
       intent.attempts++;
       
-      // 如果尝试次数过多，放弃
-      if (intent.attempts > 50) {
+      // 【改进3】放宽尝试次数限制到200次
+      if (intent.attempts > 200) {
         console.log(`[AI建造意向] 公司${companyId}的${intent.buildingTypeId}建造意向因尝试次数过多放弃`);
         continue;
       }
@@ -282,6 +292,79 @@ function processBuildingIntents(world: GameWorld, companyId: number): number {
   
   buildingIntents.set(companyId, remainingIntents);
   return built;
+}
+
+/**
+ * 确保所有建造材料都有采购单
+ * 使用"吃单"策略 - 直接以卖单价格买入
+ */
+function ensureAllMaterialsOrdered(world: GameWorld, intent: BuildingIntent): void {
+  const { companyId, buildingTypeId } = intent;
+  const materials = getBaseMaterials(buildingTypeId);
+  
+  for (const mat of materials) {
+    const idx = companyId * GOODS_COUNT + mat.goodsId;
+    const available = world.companies.inventories[idx] - world.companies.inventoryReserved[idx];
+    
+    if (available < mat.amount) {
+      const needed = mat.amount - available;
+      
+      // 使用吃单策略采购
+      tryTakeSellOrderForMaterial(world, companyId, mat.goodsId, needed);
+    }
+  }
+}
+
+/**
+ * 吃单采购建材 - 直接以卖单价格买入，确保能够成交
+ */
+function tryTakeSellOrderForMaterial(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  neededAmount: number
+): boolean {
+  const goods = ALL_GOODS.find(g => g.id === goodsId);
+  if (!goods) return false;
+  
+  // 获取订单簿，找最低价的卖单
+  const orderBook = getOrderBookView(world, goodsId);
+  if (orderBook.sellOrders.length === 0) {
+    // 没有卖单，下一个高价买单等待
+    const basePrice = goods.basePrice;
+    const buyPrice = basePrice * 2.0; // 愿意支付200%基准价
+    const buyQty = Math.min(neededAmount + 20, 300);
+    
+    const availableCash = world.companies.cash[companyId] * 0.3;
+    if (buyQty * buyPrice <= availableCash) {
+      createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+    }
+    return false;
+  }
+  
+  // 有卖单，直接以卖单价格买入（吃单）
+  for (const sellOrder of orderBook.sellOrders) {
+    if (sellOrder.companyId === companyId) continue; // 不买自己的
+    
+    const buyQty = Math.min(neededAmount, sellOrder.remaining, 500);
+    if (buyQty < 1) continue;
+    
+    const buyPrice = sellOrder.price; // 直接匹配卖单价格
+    const cost = buyQty * buyPrice;
+    
+    // 检查资金
+    if (cost > world.companies.cash[companyId] * 0.4) continue;
+    
+    // 下买单以吃掉卖单
+    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+    
+    if (world.tick % 50 === 0) {
+      console.log(`[AI建材吃单] 公司${companyId}以¥${buyPrice.toFixed(2)}购买${goods.name}×${buyQty}`);
+    }
+    return true;
+  }
+  
+  return false;
 }
 
 /**

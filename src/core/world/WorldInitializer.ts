@@ -221,19 +221,22 @@ function initializeAICompanies(world: GameWorld): void {
       }
     }
     
-    // 给AI初始建筑材料库存（只使用有效的商品ID）
+    // 给AI初始建筑材料库存（大幅增加以确保AI能建造建筑）
+    // 【关键修复】增加初始建材数量，确保AI公司能够建造建筑
     const buildingMaterialsInit: Array<{ goodsId: number; amount: number }> = [
-      { goodsId: 14, amount: 500 + Math.random() * 1000 },  // 钢材
-      { goodsId: 21, amount: 400 + Math.random() * 600 },   // 水泥
-      { goodsId: 6, amount: 300 + Math.random() * 500 },    // 木材
-      { goodsId: 17, amount: 200 + Math.random() * 300 },   // 玻璃
-      { goodsId: 36, amount: 200 + Math.random() * 300 },   // 建筑材料
-      { goodsId: 47, amount: 80 + Math.random() * 120 },    // 建材成品
-      { goodsId: 29, amount: 20 + Math.random() * 30 },     // 电机
-      { goodsId: 31, amount: 100 + Math.random() * 150 },   // 机械部件
-      { goodsId: 25, amount: 300 + Math.random() * 500 },   // 燃油
-      { goodsId: 18, amount: 200 + Math.random() * 300 },   // 塑料
-      { goodsId: 19, amount: 100 + Math.random() * 150 },   // 橡胶制品
+      { goodsId: 14, amount: 2000 + Math.random() * 3000 },  // 钢材 - 大幅增加
+      { goodsId: 21, amount: 1500 + Math.random() * 2000 },  // 水泥 - 大幅增加
+      { goodsId: 6, amount: 800 + Math.random() * 1200 },    // 木材
+      { goodsId: 17, amount: 600 + Math.random() * 800 },    // 玻璃
+      { goodsId: 36, amount: 800 + Math.random() * 1200 },   // 建筑材料 - 大幅增加
+      { goodsId: 47, amount: 300 + Math.random() * 400 },    // 建材成品 - 大幅增加
+      { goodsId: 29, amount: 50 + Math.random() * 80 },      // 电机 - 增加
+      { goodsId: 31, amount: 300 + Math.random() * 400 },    // 机械部件 - 大幅增加
+      { goodsId: 25, amount: 500 + Math.random() * 800 },    // 燃油
+      { goodsId: 18, amount: 400 + Math.random() * 600 },    // 塑料
+      { goodsId: 19, amount: 200 + Math.random() * 300 },    // 橡胶制品
+      { goodsId: 26, amount: 100 + Math.random() * 200 },    // 电子元件
+      { goodsId: 51, amount: 10 + Math.random() * 20 },      // 工业机器人
     ];
     
     for (const mat of buildingMaterialsInit) {
@@ -292,6 +295,10 @@ function initializeMarketState(world: GameWorld): void {
  */
 function generateInitialMarketOrders(world: GameWorld): void {
   const c = world.companies;
+  
+  // 【关键修复】首先为建筑材料生成大量初始卖单
+  // 确保AI公司能够采购到建造所需的材料
+  generateBuildingMaterialSellOrders(world);
   
   // 为每个AI公司生成初始订单
   for (let companyId = 1; companyId < c.count; companyId++) {
@@ -606,4 +613,86 @@ function addRetailBuilding(
   }
   
   return buildingId;
+}
+
+// ==================== 建筑材料市场初始化 ====================
+
+/**
+ * 生成建筑材料的初始卖单
+ * 【关键修复】确保市场上有足够的建材供应，使AI公司能够采购到建造所需材料
+ */
+function generateBuildingMaterialSellOrders(world: GameWorld): void {
+  const c = world.companies;
+  
+  // 建筑材料列表及其初始供应量 - 【v3.1更新】大幅增加种类和数量
+  const buildingMaterials: Array<{ goodsId: number; name: string; sellQty: number }> = [
+    // 基础建材 - 大幅增加供应
+    { goodsId: 14, name: '钢材', sellQty: 10000 },      // 钢材 - 最重要的建材
+    { goodsId: 21, name: '水泥', sellQty: 6000 },       // 水泥
+    { goodsId: 6, name: '木材', sellQty: 4000 },        // 木材
+    { goodsId: 17, name: '玻璃', sellQty: 3000 },       // 玻璃
+    { goodsId: 36, name: '建筑材料', sellQty: 4000 },   // 建筑材料
+    { goodsId: 47, name: '建材成品', sellQty: 1500 },   // 建材成品
+    
+    // 机械和电子材料
+    { goodsId: 29, name: '电机', sellQty: 400 },        // 电机 - 增加
+    { goodsId: 31, name: '机械部件', sellQty: 2000 },   // 机械部件 - 增加
+    { goodsId: 26, name: '电子元件', sellQty: 1000 },   // 电子元件 - 增加
+    { goodsId: 51, name: '工业机器人', sellQty: 200 },  // 工业机器人 - 增加
+    { goodsId: 27, name: '芯片', sellQty: 300 },        // 芯片 - 新增
+    
+    // 化工和能源材料
+    { goodsId: 18, name: '塑料', sellQty: 2000 },       // 塑料 - 增加
+    { goodsId: 19, name: '橡胶制品', sellQty: 1000 },   // 橡胶制品 - 增加
+    { goodsId: 20, name: '化工产品', sellQty: 600 },    // 化工产品 - 增加
+    { goodsId: 25, name: '燃油', sellQty: 3000 },       // 燃油 - 增加
+    
+    // 高端建材（发电厂、物流中心等需要）
+    { goodsId: 49, name: '光伏系统', sellQty: 50 },     // 光伏系统 - 新增
+    { goodsId: 50, name: '储能系统', sellQty: 30 },     // 储能系统 - 新增
+    { goodsId: 52, name: '无人机', sellQty: 60 },       // 无人机 - 新增
+    { goodsId: 39, name: '电脑', sellQty: 100 },        // 电脑 - 新增（仓储、物流需要）
+    
+    // 零售店建材
+    { goodsId: 40, name: '家电', sellQty: 200 },        // 家电 - 新增
+    { goodsId: 46, name: '家具', sellQty: 500 },        // 家具 - 新增
+    { goodsId: 43, name: '服装', sellQty: 300 },        // 服装 - 新增（服装店需要）
+    { goodsId: 41, name: '汽车', sellQty: 30 },         // 汽车 - 新增（4S店需要）
+    { goodsId: 42, name: '电动汽车', sellQty: 20 },     // 电动汽车 - 新增
+    { goodsId: 54, name: '珠宝', sellQty: 100 },        // 珠宝 - 新增（奢侈品店需要）
+    { goodsId: 55, name: '高端手机', sellQty: 50 },     // 高端手机 - 新增
+    { goodsId: 56, name: '平价手机', sellQty: 200 },    // 平价手机 - 新增
+    { goodsId: 78, name: '诊断设备', sellQty: 20 },     // 诊断设备 - 新增（药店需要）
+  ];
+  
+  let ordersCreated = 0;
+  
+  for (const mat of buildingMaterials) {
+    const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    
+    // 为每种建材创建多个卖单（分散在不同AI公司）
+    // 每个卖单数量较小，确保多样性
+    const ordersPerMaterial = 8;  // 每种建材8个卖单
+    const qtyPerOrder = Math.ceil(mat.sellQty / ordersPerMaterial);
+    
+    for (let i = 0; i < ordersPerMaterial; i++) {
+      // 选择一个随机AI公司
+      const companyId = 1 + (i % Math.max(1, c.count - 1));
+      if (companyId >= c.count) continue;
+      
+      // 给该公司增加库存
+      const currentInv = world.companies.inventories[companyId * GOODS_COUNT + mat.goodsId] || 0;
+      setInventory(world, companyId, mat.goodsId, currentInv + qtyPerOrder);
+      
+      // 创建卖单（价格略低于基准价，确保有吸引力）
+      const sellPrice = basePrice * (0.85 + Math.random() * 0.15);  // 85%-100%基准价
+      createSellOrder(world, companyId, mat.goodsId, qtyPerOrder, sellPrice, 9999999);
+      ordersCreated++;
+    }
+  }
+  
+  console.log(`[初始化] 生成了${ordersCreated}个建筑材料初始卖单`);
 }

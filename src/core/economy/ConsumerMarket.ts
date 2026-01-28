@@ -90,6 +90,8 @@ export interface ConsumerBuyConfig {
   b2bExecutionInterval: number;
   // 每次处理的商品分组数
   goodsBatchGroups: number;
+  // B2B采购的建筑分组数（用于分批处理）
+  b2bBuildingBatchGroups: number;
 }
 
 // 默认配置
@@ -102,6 +104,7 @@ const DEFAULT_CONFIG: ConsumerBuyConfig = {
   executionInterval: 4,          // 每4tick执行一次消费者购买
   b2bExecutionInterval: 4,       // 每4tick执行一次B2B采购
   goodsBatchGroups: 4,           // 商品分4组轮询处理
+  b2bBuildingBatchGroups: 4,     // 【性能优化】建筑分4组轮询处理B2B采购
 };
 
 // 消费者购买结果
@@ -171,21 +174,11 @@ export function executeConsumerPurchases(
   
   // 1. 处理消费者购买
   if (shouldExecuteConsumer) {
-    // 检查是否启用零售系统
+    // 【修复】零售系统已在GameLoop中单独调用，这里不再重复调用
+    // 检查是否启用零售系统 - 如果有零售店，跳过传统市场购买
     if (world.retail && world.retail.count > 0) {
-      // 使用零售系统处理Pop消费
-      const retailResult = updateRetailSystem(world);
-      
-      // 转换零售结果到消费汇总
-      summary.totalPurchases = retailResult.totalCustomers;
-      summary.totalSpent = retailResult.totalRevenue;
-      summary.totalQuantity = retailResult.totalSales;
-      
-      // 更新经济统计
-      if (world.economyStats) {
-        world.economyStats.retailSales = retailResult.totalSales;
-        world.economyStats.retailRevenue = retailResult.totalRevenue;
-      }
+      // 零售系统在GameLoop中单独处理，这里只更新统计信息
+      // summary保持为空，零售结果由GameLoop中的updateRetailSystem提供
     } else {
       // 降级：没有零售店时，使用传统的直接市场购买（向后兼容）
       // 性能优化：商品分组处理，每次只处理一组
@@ -231,6 +224,8 @@ export function executeConsumerPurchases(
 /**
  * 执行企业B2B采购
  * 根据生产需求，企业从市场采购原材料和中间品
+ *
+ * 【性能优化】将建筑分组处理，每次只处理一组
  */
 function executeB2BPurchases(
   world: GameWorld,
@@ -243,8 +238,14 @@ function executeB2BPurchases(
   const c = world.companies;
   const b = world.buildings;
   
-  // 遍历所有建筑，计算原材料需求
+  // 【性能优化】建筑分组处理，每次只处理一组
+  const currentTick = world.tick;
+  const groupIndex = Math.floor(currentTick / config.b2bExecutionInterval) % config.b2bBuildingBatchGroups;
+  
+  // 遍历当前组的建筑，计算原材料需求
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
+    // 【性能优化】只处理当前组的建筑
+    if (buildingId % config.b2bBuildingBatchGroups !== groupIndex) continue;
     if (!b.isActive[buildingId]) continue;
     
     const companyId = b.owners[buildingId];
