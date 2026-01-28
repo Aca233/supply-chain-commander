@@ -220,6 +220,18 @@ export function recordDecision(
       specializationDegree: 0.5,
       innovationInvestment: 0.05,
       decisionFrequency: 1,
+      industryPreferences: {
+        extraction: 1.0,
+        processing: 1.0,
+        manufacturing: 1.0,
+        service: 1.0,
+        retail: 1.0,
+        agriculture: 1.0,
+        pharma: 1.0,
+        luxury: 1.0,
+        tech: 1.0,
+        basic: 1.0,
+      },
       preferredCategories: [],
       avoidedCategories: [],
     });
