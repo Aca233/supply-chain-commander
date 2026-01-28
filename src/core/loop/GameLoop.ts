@@ -12,11 +12,11 @@ import { GameWorld } from '../world/GameWorld';
 import { updateAllProduction, autoFeedBuildings, initRecipeCache } from '../production/ProductionEngine';
 import { initializeBuildingProductionMethods } from '../production/ProductionMethods';
 import { matchAllOrders, MatchingResult } from '../market/MatchingEngine';
-import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHealth, logOrderPoolPerformance } from '../market/OrderBook';
+import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHealth, logOrderPoolPerformance, syncOrderPoolWithWorld } from '../market/OrderBook';
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
@@ -25,7 +25,7 @@ import { DEFAULT_TICK_INTERVAL, BASE_INTEREST_RATE, TARGET_INFLATION, GOODS_COUN
 import { perfMonitor, TickPerformanceReport } from '../performance/PerformanceMonitor';
 import { memoryManager } from '../performance/MemoryManager';
 import { tickAllPools } from '../performance/ObjectPool';
-import { processAITick, getAISchedulerStats, resetAIScheduler } from '../ai/AIScheduler';
+import { processAITick, getAISchedulerStats, resetAIScheduler, initAISchedulerWorker, getAIWorkerStatus, destroyAIScheduler } from '../ai/AIScheduler';
 import { indicatorCache } from '../ai/IndicatorCache';
 import { clearAllModuleCache } from '../ai/ModuleCache';
 
@@ -130,6 +130,7 @@ export class GameLoop {
   private tickCallback?: (result: TickResult) => void;
   private timerId?: number;
   private lastPerfReport: TickPerformanceReport | null = null;
+  private aiWorkerInitialized: boolean = false;
   
   constructor(world: GameWorld) {
     this.world = world;
@@ -151,9 +152,38 @@ export class GameLoop {
     initOrderPool();
     resetOrderBookIndex();
     resetPriceCache();
+    
+    // 【关键修复】同步订单池和 OrderBookIndex，确保所有现有订单都能被撮合
+    const syncResult = syncOrderPoolWithWorld(world);
+    if (syncResult.fixed) {
+      console.log(`[GameLoop] 订单同步: ${syncResult.details}`);
+    }
+    
     initializeBankingSystem(world);
     initializeStockMarket(world);
     initializeAcquisitionSystem();
+    
+    // 【新增】初始化AI Worker（异步，不阻塞构造函数）
+    this.initializeAIWorker();
+  }
+  
+  /**
+   * 【新增】初始化AI Worker
+   */
+  private async initializeAIWorker(): Promise<void> {
+    try {
+      const success = await initAISchedulerWorker();
+      this.aiWorkerInitialized = success;
+      
+      if (success) {
+        console.log('[GameLoop] AI Worker异步处理已启用');
+      } else {
+        console.warn('[GameLoop] AI Worker初始化失败，使用同步模式');
+      }
+    } catch (error) {
+      console.error('[GameLoop] AI Worker初始化异常:', error);
+      this.aiWorkerInitialized = false;
+    }
   }
   
   /**
@@ -231,6 +261,15 @@ export class GameLoop {
       clearTimeout(this.timerId);
       this.timerId = undefined;
     }
+  }
+  
+  /**
+   * 【新增】销毁游戏循环
+   */
+  destroy(): void {
+    this.stop();
+    destroyAIScheduler();
+    console.log('[GameLoop] 已销毁');
   }
   
   /**
@@ -469,14 +508,15 @@ export class GameLoop {
     // ==================== 阶段6: 品牌和状态更新 ====================
     
     // 20. AI股票交易决策
-    // 【性能优化】错峰执行，避免与其他任务冲突
-    if (currentTick % 12 === 7) {  // 从 tick%12===0 改为 tick%12===7
+    // 【性能优化】降低执行频率，从每12tick改为每24tick
+    if (currentTick % 24 === 7) {
       executeAIStockTrading(this.world);
     }
     
-    // 21. 更新股票市场
-    // 【性能优化】错峰执行
-    if (currentTick % 12 === 9) {  // 从 tick%12===0 改为 tick%12===9
+    // 21. 更新股票市场（分批处理）
+    // 【性能优化】StockMarket内部已做分批处理（每tick处理1/4股票）
+    // 每4个tick调用一次，确保所有股票都能被更新
+    if (currentTick % 4 === 0) {
       updateStockMarket(this.world);
     }
     
@@ -512,6 +552,13 @@ export class GameLoop {
     // 25. 检查AI破产（每100个tick检查一次）
     if (currentTick % 100 === 0) {
       this.checkAIBankruptcy();
+    }
+    
+    // 26. 战略建材检查（确保关键建材供应链不断裂）
+    // 每100tick运行一次，检测订单簿中有大量买单但无供应的建材
+    const strategicMaterialDecisions = runStrategicMaterialCheck(this.world);
+    if (strategicMaterialDecisions > 0 && currentTick % 100 === 0) {
+      console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
     }
     
     endState();
@@ -707,6 +754,7 @@ export class GameLoop {
   
   /**
    * 检查AI公司破产
+   * 【性能优化】使用预计算的buildingCounts，复杂度从O(N×M)降至O(N)
    */
   private checkAIBankruptcy(): void {
     const companies = this.world.companies;
@@ -724,12 +772,8 @@ export class GameLoop {
       // 破产条件：
       // 1. 净资产为负
       // 2. 现金不足以支付运营成本（假设每个建筑需要1000/tick）
-      let buildingCount = 0;
-      for (let b = 0; b < this.world.buildings.count; b++) {
-        if (this.world.buildings.owners[b] === i) {
-          buildingCount++;
-        }
-      }
+      // 【性能优化】直接读取预计算的建筑数量，无需遍历所有建筑
+      const buildingCount = companies.buildingCounts[i];
       
       const operatingCost = buildingCount * 1000;
       const isCashInsolvent = cash < operatingCost && cash < 10000;
@@ -866,6 +910,17 @@ export class GameLoop {
       targetTickTime: this.state.tickInterval,
       performanceRatio: this.state.avgTickTime / this.state.tickInterval,
       isHealthy: this.state.avgTickTime < this.state.tickInterval * 0.5,
+    };
+  }
+  
+  /**
+   * 【新增】获取AI Worker状态
+   */
+  getAIWorkerStatus() {
+    const workerStatus = getAIWorkerStatus();
+    return {
+      ...workerStatus,
+      loopInitialized: this.aiWorkerInitialized,
     };
   }
   

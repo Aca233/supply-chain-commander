@@ -237,6 +237,9 @@ function processConstructionTick(world: GameWorld): {
               }
               buildingsData.recipeIds[newBuildingId] = recipeId;
               
+              // 【性能优化】更新公司建筑计数
+              world.companies.buildingCounts[companyId]++;
+              
               newBuildings.push(newBuildingId);
             }
           }
@@ -394,6 +397,12 @@ function processDemolitionTick(world: GameWorld): {
           const estimatedCash = demolition.estimatedCashRecovery[queueIdx];
           companies.cash[companyId] += estimatedCash;
           cashRecovered += estimatedCash;
+          
+          // 【性能优化】更新公司建筑计数（在修改owners之前获取companyId）
+          const originalOwner = buildingsData.owners[buildingId];
+          if (originalOwner < world.companies.count && world.companies.buildingCounts[originalOwner] > 0) {
+            world.companies.buildingCounts[originalOwner]--;
+          }
           
           // 标记建筑为已拆除（将所有者设为0xFFFF表示无效）
           buildingsData.owners[buildingId] = 0xFFFF;

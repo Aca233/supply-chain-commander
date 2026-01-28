@@ -235,9 +235,11 @@ export function resetOrderPool(): void {
  * 同步订单池状态（修复订单池和world.orders不一致的问题）
  * 这个函数会根据world.orders中的实际活跃订单重建订单池
  * 注意：这是唯一需要遍历MAX_ORDERS的地方，只在同步时调用一次
+ * 【关键修复】同时重建OrderBookIndex确保撮合引擎能找到所有订单
  */
 export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; details: string } {
   const o = world.orders;
+  const orderIndex = getOrderBookIndex();
   
   // 1. 统计world.orders中的实际活跃订单，并重建activeOrderIndices
   const foundActiveIndices: number[] = [];
@@ -281,7 +283,56 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
       companyGoodsIndex!.add(idx, o.companyIds[idx], o.goodsIds[idx], o.types[idx]);
     }
     
+    // 【关键修复】重建OrderBookIndex，确保撮合引擎能找到所有订单
+    orderIndex.clearAll();
+    for (const idx of foundActiveIndices) {
+      const goodsId = o.goodsIds[idx];
+      const orderType = o.types[idx] as 0 | 1;
+      const price = o.prices[idx];
+      orderIndex.addOrder(idx, goodsId, orderType, price);
+    }
+    console.log(`[订单池同步] OrderBookIndex已重建，包含${foundActiveIndices.length}个订单`);
+    
     return { fixed: true, details };
+  }
+  
+  // 4. 【新增】即使订单池状态一致，也检查并同步 OrderBookIndex
+  // 这是因为 OrderBookIndex 可能在其他地方被意外清空
+  let orderIndexNeedsRebuild = false;
+  for (const idx of foundActiveIndices) {
+    const goodsId = o.goodsIds[idx];
+    const orderType = o.types[idx] as 0 | 1;
+    
+    // 检查订单是否在 OrderBookIndex 中
+    const allOrders = orderType === 0
+      ? orderIndex.getAllBuyOrders(goodsId)
+      : orderIndex.getAllSellOrders(goodsId);
+    
+    let found = false;
+    for (let i = 0; i < allOrders.length; i++) {
+      if (allOrders[i] === idx) {
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      orderIndexNeedsRebuild = true;
+      break;
+    }
+  }
+  
+  if (orderIndexNeedsRebuild) {
+    console.warn(`[订单池同步] OrderBookIndex与订单池不同步，正在重建...`);
+    orderIndex.clearAll();
+    for (const idx of foundActiveIndices) {
+      const goodsId = o.goodsIds[idx];
+      const orderType = o.types[idx] as 0 | 1;
+      const price = o.prices[idx];
+      orderIndex.addOrder(idx, goodsId, orderType, price);
+    }
+    console.log(`[订单池同步] OrderBookIndex已重建，包含${foundActiveIndices.length}个订单`);
+    return { fixed: true, details: `OrderBookIndex已同步，包含${foundActiveIndices.length}个订单` };
   }
   
   return { fixed: false, details: `订单池状态正常：可用${poolAvailable}/${MAX_ORDERS}` };
@@ -530,8 +581,12 @@ export function createBuyOrder(
   // 更新买单计数
   orderPool!.incrementOrderCount(0);
   
-  // 添加到订单簿索引
-  orderIndex.addOrder(orderIdx, goodsId, 0, price);
+  // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
+  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 0, price);
+  if (!indexAdded) {
+    console.error(`[createBuyOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
+    // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
+  }
   
   // 【新增】添加到公司商品索引
   cgIndex.add(orderIdx, companyId, goodsId, 0);
@@ -700,8 +755,12 @@ export function createSellOrderWithReason(
   // 更新卖单计数
   orderPool!.incrementOrderCount(1);
   
-  // 添加到订单簿索引
-  orderIndex.addOrder(orderIdx, goodsId, 1, price);
+  // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
+  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 1, price);
+  if (!indexAdded) {
+    console.error(`[createSellOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
+    // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
+  }
   
   // 【新增】添加到公司商品索引
   cgIndex.add(orderIdx, companyId, goodsId, 1);

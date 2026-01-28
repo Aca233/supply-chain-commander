@@ -1,0 +1,451 @@
+/**
+ * 🎮 主菜单专用样式
+ * 包含动画、背景效果、霓虹发光等
+ */
+
+/* ==================== 背景层样式 ==================== */
+
+.menu-background {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(135deg, #050505 0%, #0a0a12 50%, #050508 100%);
+}
+
+/* 网格背景 */
+.menu-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: gridMove 20s linear infinite;
+}
+
+@keyframes gridMove {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(60px, 60px);
+  }
+}
+
+/* 顶部光晕 */
+.menu-glow-top {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 60%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(59, 130, 246, 0.15) 0%,
+    rgba(139, 92, 246, 0.08) 30%,
+    transparent 70%
+  );
+  pointer-events: none;
+  animation: glowPulse 4s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.05);
+  }
+}
+
+/* 底部渐变 */
+.menu-gradient-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(
+    to top,
+    rgba(5, 5, 5, 0.9) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* ==================== 粒子效果 ==================== */
+
+.particle-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ==================== Logo 样式 ==================== */
+
+.menu-logo-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 装饰线 */
+.menu-decorative-line {
+  width: 200px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.6) 20%,
+    rgba(0, 212, 255, 0.8) 50%,
+    rgba(0, 212, 255, 0.6) 80%,
+    transparent 100%
+  );
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+  transform: scaleX(0);
+  animation: lineExpand 0.6s ease-out 0.2s forwards;
+}
+
+@keyframes lineExpand {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+/* 主标题 */
+.menu-title-main {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 56px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #00D4FF;
+  text-shadow:
+    0 0 10px rgba(0, 212, 255, 0.5),
+    0 0 20px rgba(0, 212, 255, 0.3),
+    0 0 40px rgba(0, 212, 255, 0.2);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.menu-title-main.glow-animation {
+  animation: textGlow 3s ease-in-out infinite;
+}
+
+@keyframes textGlow {
+  0%, 100% {
+    text-shadow:
+      0 0 10px rgba(0, 212, 255, 0.5),
+      0 0 20px rgba(0, 212, 255, 0.3),
+      0 0 40px rgba(0, 212, 255, 0.2);
+    filter: brightness(1);
+  }
+  50% {
+    text-shadow:
+      0 0 15px rgba(0, 212, 255, 0.7),
+      0 0 30px rgba(0, 212, 255, 0.5),
+      0 0 60px rgba(0, 212, 255, 0.3),
+      0 0 80px rgba(0, 212, 255, 0.2);
+    filter: brightness(1.1);
+  }
+}
+
+/* 副标题 */
+.menu-title-sub {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: #FAFAFA;
+  margin: 0;
+  opacity: 0;
+  animation: fadeSlideIn 0.5s ease-out 0.7s forwards;
+}
+
+/* 口号 */
+.menu-tagline {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: #A1A1AA;
+  margin: 0;
+  margin-top: 8px;
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out 1s forwards;
+}
+
+/* 逐字动画 */
+.char-animate {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: charSlideIn 0.4s ease-out forwards;
+}
+
+@keyframes charSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* ==================== 菜单按钮样式 ==================== */
+
+.menu-button-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 48px;
+}
+
+.menu-button {
+  position: relative;
+  width: 280px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease-out;
+  outline: none;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: buttonSlideIn 0.4s ease-out forwards;
+}
+
+@keyframes buttonSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 主要按钮 - 霓虹风格 */
+.menu-button--primary {
+  background: transparent;
+  border: 2px solid rgba(0, 212, 255, 0.6);
+  color: #00D4FF;
+  font-weight: 600;
+  box-shadow:
+    0 0 15px rgba(0, 212, 255, 0.3),
+    0 0 30px rgba(0, 212, 255, 0.1),
+    inset 0 0 20px rgba(0, 212, 255, 0.05);
+}
+
+.menu-button--primary:hover {
+  border-color: rgba(0, 212, 255, 0.9);
+  background: rgba(0, 212, 255, 0.1);
+  box-shadow:
+    0 0 25px rgba(0, 212, 255, 0.5),
+    0 0 50px rgba(0, 212, 255, 0.2),
+    inset 0 0 30px rgba(0, 212, 255, 0.1);
+  transform: scale(1.02);
+}
+
+.menu-button--primary:active {
+  background: rgba(0, 212, 255, 0.15);
+  transform: scale(0.98);
+}
+
+.menu-button--primary .button-icon {
+  transition: transform 0.2s ease-out;
+}
+
+.menu-button--primary:hover .button-icon {
+  transform: translateX(4px);
+}
+
+/* 次要按钮 */
+.menu-button--secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #FAFAFA;
+}
+
+.menu-button--secondary:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.01);
+}
+
+.menu-button--secondary:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.99);
+}
+
+/* 幽灵按钮 */
+.menu-button--ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #A1A1AA;
+  font-weight: 400;
+}
+
+.menu-button--ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #FAFAFA;
+}
+
+.menu-button--ghost:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 危险按钮（退出） */
+.menu-button--danger {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #71717A;
+  font-weight: 400;
+}
+
+.menu-button--danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #EF4444;
+}
+
+.menu-button--danger:active {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* 禁用状态 */
+.menu-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.menu-button:disabled:hover {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+/* ==================== 底部信息 ==================== */
+
+.menu-footer {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 32px;
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out 1.5s forwards;
+}
+
+.menu-footer-version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #52525B;
+}
+
+.menu-footer-credits {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: #52525B;
+}
+
+.menu-footer-credits .heart {
+  color: #EF4444;
+  display: inline-block;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+/* ==================== 响应式 ==================== */
+
+@media (max-width: 640px) {
+  .menu-title-main {
+    font-size: 36px;
+    letter-spacing: 0.2em;
+  }
+  
+  .menu-title-sub {
+    font-size: 20px;
+    letter-spacing: 0.3em;
+  }
+  
+  .menu-button {
+    width: 240px;
+    height: 48px;
+    font-size: 14px;
+  }
+  
+  .menu-decorative-line {
+    width: 150px;
+  }
+  
+  .menu-footer {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .menu-title-main {
+    font-size: 28px;
+  }
+  
+  .menu-title-sub {
+    font-size: 16px;
+  }
+  
+  .menu-tagline {
+    font-size: 14px;
+  }
+}

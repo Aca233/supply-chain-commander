@@ -1,14 +1,16 @@
 /**
  * AI调度器
- * 
+ *
  * 统一管理AI公司的决策调度，实现：
  * 1. 分层决策（fast/standard/deep）
  * 2. 批量处理（每tick只处理部分公司）
  * 3. 时间切片（避免单帧卡顿）
- * 
+ * 4. 【新增】Web Worker异步处理（避免主线程阻塞）
+ *
  * 预期效果：
  * - 平均tick耗时从120ms降到15ms以下
  * - 峰值耗时从220ms降到50ms以下
+ * - 【优化】使用Worker后，Deep决策完全不阻塞主线程
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
@@ -16,6 +18,8 @@ import { MAX_COMPANIES, ACTUAL_GOODS_COUNT, GOODS_COUNT } from '@/core/constants
 import { fastDecision, clearFastDecisionCache } from './FastDecision';
 import { indicatorCache } from './IndicatorCache';
 import { runAIDecisionCycle } from './AIDecisionEngine';
+import { aiWorkerManager, AIWorkerManager } from '@/core/workers/AIWorkerManager';
+import type { AIDecisionResult } from '@/core/workers/aiWorkerTypes';
 
 // ==================== 配置 ====================
 
@@ -37,6 +41,10 @@ export interface AISchedulerConfig {
   enableFastDecision: boolean;
   enableStandardDecision: boolean;
   enableDeepDecision: boolean;
+  
+  // 【新增】Worker异步处理配置
+  enableWorkerAsync: boolean;      // 是否启用Worker异步处理
+  workerBatchSize: number;         // Worker批量处理大小
 }
 
 const DEFAULT_CONFIG: AISchedulerConfig = {
@@ -55,6 +63,10 @@ const DEFAULT_CONFIG: AISchedulerConfig = {
   enableFastDecision: true,
   enableStandardDecision: true,
   enableDeepDecision: true,
+  
+  // 【新增】Worker配置
+  enableWorkerAsync: true,   // 默认启用Worker异步处理
+  workerBatchSize: 4,        // Worker每次处理4家公司
 };
 
 // ==================== 决策层级 ====================
@@ -95,6 +107,11 @@ class AISchedulerManager {
   private deepQueue: number[] = [];
   private lastRebuildTick = -1;
   
+  // 【新增】Worker状态
+  private workerInitialized = false;
+  private pendingWorkerResults: AIDecisionResult[] = [];
+  private workerProcessingCount = 0;
+  
   // 统计
   private stats: SchedulerStats = {
     currentTick: 0,
@@ -118,6 +135,38 @@ class AISchedulerManager {
    */
   getConfig(): AISchedulerConfig {
     return { ...this.config };
+  }
+  
+  /**
+   * 【新增】初始化Worker
+   */
+  async initializeWorker(): Promise<boolean> {
+    if (this.workerInitialized) return true;
+    
+    try {
+      const success = await aiWorkerManager.initialize();
+      this.workerInitialized = success;
+      
+      if (success) {
+        console.log('[AIScheduler] Worker异步处理已启用');
+      } else {
+        console.warn('[AIScheduler] Worker初始化失败，使用同步模式');
+      }
+      
+      return success;
+    } catch (error) {
+      console.error('[AIScheduler] Worker初始化异常:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * 【新增】检查Worker是否可用
+   */
+  isWorkerAvailable(): boolean {
+    return this.workerInitialized &&
+           this.config.enableWorkerAsync &&
+           aiWorkerManager.isAvailable();
   }
   
   /**
@@ -203,8 +252,16 @@ class AISchedulerManager {
     
     // 3. Deep决策
     if (config.enableDeepDecision && world.tick % config.deepInterval === 0) {
-      this.processDeepBatch(world, startTime);
+      // 【优化】使用Worker异步处理或同步处理
+      if (this.isWorkerAvailable()) {
+        this.processDeepBatchAsync(world);
+      } else {
+        this.processDeepBatch(world, startTime);
+      }
     }
+    
+    // 4. 【新增】应用Worker返回的结果
+    this.applyPendingWorkerResults(world);
     
     // 更新统计
     this.stats.totalTimeMs = performance.now() - startTime;
@@ -273,7 +330,7 @@ class AISchedulerManager {
   }
   
   /**
-   * 处理Deep批次
+   * 处理Deep批次（同步模式）
    * 【性能优化】添加时间限制，防止单帧卡顿
    */
   private processDeepBatch(world: GameWorld, startTime: number): void {
@@ -287,7 +344,6 @@ class AISchedulerManager {
       const elapsedTime = performance.now() - startTime;
       if (elapsedTime > config.maxTimePerTick) {
         skippedDueToTime = config.deepBatchSize - processed;
-        console.log(`[AIScheduler T${world.tick}] Deep批次时间超限 ${elapsedTime.toFixed(1)}ms，已处理${processed}家，跳过${skippedDueToTime}家`);
         break;
       }
       
@@ -305,11 +361,99 @@ class AISchedulerManager {
     }
     
     this.stats.deepProcessed = processed;
+  }
+  
+  /**
+   * 【新增】处理Deep批次（Worker异步模式）
+   * 将AI决策计算卸载到Worker线程，完全避免主线程阻塞
+   */
+  private processDeepBatchAsync(world: GameWorld): void {
+    const config = this.config;
+    const companyIds: number[] = [];
     
-    // 调试日志：每24tick输出一次
-    if (world.tick % 24 === 0) {
-      const elapsed = performance.now() - startTime;
-      console.log(`[AIScheduler T${world.tick}] Deep批次处理了${processed}家公司，耗时${elapsed.toFixed(1)}ms`);
+    // 收集待处理公司
+    let collected = 0;
+    while (collected < config.workerBatchSize && this.deepQueue.length > 0) {
+      const companyId = this.deepQueue.shift()!;
+      const company = this.companies.get(companyId);
+      
+      if (company) {
+        // 只处理健康公司
+        const healthScore = this.calculateCompanyHealth(world, companyId);
+        const cash = world.companies.cash[companyId];
+        
+        if (healthScore > 0.2 || cash > 100000) {
+          companyIds.push(companyId);
+        }
+        
+        company.lastDeepTick = world.tick;
+        collected++;
+        
+        // 放回队尾
+        this.deepQueue.push(companyId);
+      }
+    }
+    
+    if (companyIds.length === 0) return;
+    
+    // 记录正在处理的数量
+    this.workerProcessingCount += companyIds.length;
+    
+    // 异步发送到Worker
+    aiWorkerManager.requestBatchDecisions(world, companyIds, 'deep')
+      .then(results => {
+        // 将结果加入待处理队列
+        this.pendingWorkerResults.push(...results);
+        this.workerProcessingCount -= companyIds.length;
+        this.stats.deepProcessed += results.length;
+      })
+      .catch(error => {
+        console.warn('[AIScheduler] Worker批量决策失败:', error);
+        this.workerProcessingCount -= companyIds.length;
+        
+        // 降级到同步处理
+        for (const companyId of companyIds) {
+          try {
+            this.processDeepDecision(world, companyId);
+            this.stats.deepProcessed++;
+          } catch (e) {
+            console.error(`[AIScheduler] 同步决策失败 公司${companyId}:`, e);
+          }
+        }
+      });
+  }
+  
+  /**
+   * 【新增】应用待处理的Worker结果
+   */
+  private applyPendingWorkerResults(world: GameWorld): void {
+    if (this.pendingWorkerResults.length === 0) return;
+    
+    const startTime = performance.now();
+    let applied = 0;
+    
+    // 每tick最多应用10个结果，避免堆积
+    const maxApplyPerTick = 10;
+    
+    while (this.pendingWorkerResults.length > 0 && applied < maxApplyPerTick) {
+      const result = this.pendingWorkerResults.shift()!;
+      
+      try {
+        const count = aiWorkerManager.applyDecisions(world, result);
+        applied++;
+        
+        // 调试日志
+        if (result.decisions.length > 0 && world.tick % 50 === 0) {
+          console.log(`[AIScheduler] 应用Worker决策: 公司${result.companyId}, ${result.decisions.length}个决策, ${count}个成功`);
+        }
+      } catch (error) {
+        console.warn(`[AIScheduler] 应用决策失败 公司${result.companyId}:`, error);
+      }
+    }
+    
+    // 如果还有待处理结果，记录一下
+    if (this.pendingWorkerResults.length > 0 && world.tick % 100 === 0) {
+      console.log(`[AIScheduler] 待处理Worker结果: ${this.pendingWorkerResults.length}个`);
     }
   }
   
@@ -421,7 +565,33 @@ class AISchedulerManager {
     this.standardQueue = [];
     this.deepQueue = [];
     this.lastRebuildTick = -1;
+    this.pendingWorkerResults = [];
+    this.workerProcessingCount = 0;
     clearFastDecisionCache();
+  }
+  
+  /**
+   * 【新增】获取Worker状态
+   */
+  getWorkerStatus() {
+    return {
+      initialized: this.workerInitialized,
+      available: this.isWorkerAvailable(),
+      pendingResults: this.pendingWorkerResults.length,
+      processingCount: this.workerProcessingCount,
+      workerStats: aiWorkerManager.getStats(),
+    };
+  }
+  
+  /**
+   * 【新增】销毁调度器
+   */
+  destroy(): void {
+    this.reset();
+    if (this.workerInitialized) {
+      aiWorkerManager.destroy();
+      this.workerInitialized = false;
+    }
   }
 }
 
@@ -443,4 +613,19 @@ export function getAISchedulerStats(): SchedulerStats {
 
 export function resetAIScheduler(): void {
   aiScheduler.reset();
+}
+
+// 【新增】初始化Worker
+export async function initAISchedulerWorker(): Promise<boolean> {
+  return aiScheduler.initializeWorker();
+}
+
+// 【新增】获取Worker状态
+export function getAIWorkerStatus() {
+  return aiScheduler.getWorkerStatus();
+}
+
+// 【新增】销毁调度器
+export function destroyAIScheduler(): void {
+  aiScheduler.destroy();
 }

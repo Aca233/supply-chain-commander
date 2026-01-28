@@ -1554,7 +1554,7 @@ function generateShortageProductionDecisions(
   
   // 3. 为每个短缺商品寻找可建造的建筑
   for (const shortage of shortageGoods.slice(0, 5)) {
-    const { goodsId, shortageRatio, demand, supply } = shortage;
+    const { goodsId, shortageRatio, demand, supply, orderBookDemand } = shortage;
     
     // 找能生产该商品的建筑
     const buildingInfo = findBuildingForGoods(goodsId);
@@ -1566,11 +1566,17 @@ function generateShortageProductionDecisions(
     if (building.buildCost * 1.1 > maxInvestment) continue;
     if (assessment.cash - building.buildCost < minCashAfter) continue;
     
+    // 【关键修复】订单簿短缺检测
+    // 当订单簿显示有大量买单但无供应时，视为"高价值商机"
+    const hasOrderBookShortage = (orderBookDemand || 0) > 100 && supply === 0;
+    
     // 计算优先级（短缺比例越高，优先级越高）
     // 短缺比例2-5: 优先级8-10
     // 短缺比例5+: 优先级10
+    // 订单簿短缺: 优先级+3 (这类商品有真实的市场需求在等待)
     const priorityBonus = Math.min((shortageRatio - 2) * 2, 4);
-    const basePriority = 8 + priorityBonus; // 8-12
+    const orderBookBonus = hasOrderBookShortage ? 3 : 0;
+    const basePriority = 8 + priorityBonus + orderBookBonus; // 8-15
     
     // 检查公司是否已经有该类型建筑（避免过度集中）
     let existingCount = 0;
@@ -1582,12 +1588,21 @@ function generateShortageProductionDecisions(
     }
     
     // 如果已经有3个以上同类建筑，降低优先级
-    const diversityPenalty = existingCount >= 3 ? 3 : existingCount >= 2 ? 1 : 0;
+    // 但如果是订单簿短缺，放宽限制
+    const diversityPenalty = hasOrderBookShortage 
+      ? (existingCount >= 5 ? 2 : 0)  // 订单簿短缺时允许更多同类建筑
+      : (existingCount >= 3 ? 3 : existingCount >= 2 ? 1 : 0);
     
     // 根据人格调整
     const personalityBonus = personality.expansionBias * 2; // 激进型最多+2
     
     const finalPriority = Math.max(6, basePriority + personalityBonus - diversityPenalty);
+    
+    // 记录日志（方便调试）
+    if (hasOrderBookShortage && world.tick % 100 === 0) {
+      const goods = ALL_GOODS.find(g => g.id === goodsId);
+      console.log(`[AI商机检测 T${world.tick}] 公司${companyId}发现${goods?.name || goodsId}订单簿短缺: 买单${orderBookDemand}单位, 无供应, 优先级${finalPriority}`);
+    }
     
     decisions.push({
       type: 'investment',
@@ -1598,14 +1613,15 @@ function generateShortageProductionDecisions(
         recipeId: recipe.id,
         cost: building.buildCost,
         targetGoodsId: goodsId,
-        reason: 'shortage_driven', // 新的原因类型
+        reason: hasOrderBookShortage ? 'orderbook_shortage' : 'shortage_driven',
         shortageRatio,
         demand,
         supply,
+        orderBookDemand: orderBookDemand || 0,
       },
       priority: finalPriority,
-      expectedProfit: building.buildCost * 0.3 * shortageRatio, // 短缺越严重预期利润越高
-      confidence: 0.7 + Math.min(shortageRatio / 20, 0.2), // 最高0.9
+      expectedProfit: building.buildCost * 0.3 * shortageRatio * (hasOrderBookShortage ? 1.5 : 1),
+      confidence: hasOrderBookShortage ? 0.9 : (0.7 + Math.min(shortageRatio / 20, 0.2)),
     });
   }
   
@@ -1619,37 +1635,67 @@ function generateShortageProductionDecisions(
 /**
  * 找出市场上严重短缺的商品
  * 返回需求/供给比 > 2 的商品列表
+ * 
+ * 【关键修复】增加订单簿需求检测
+ * 当订单簿中有大量买单但无供应时，视为"隐性需求短缺"
+ * 这对于水泥、钢材等建造材料尤为重要
  */
 function findShortageGoods(world: GameWorld): Array<{
   goodsId: number;
   shortageRatio: number;
   demand: number;
   supply: number;
+  orderBookDemand?: number; // 订单簿中的买单需求
 }> {
   const shortages: Array<{
     goodsId: number;
     shortageRatio: number;
     demand: number;
     supply: number;
+    orderBookDemand?: number;
   }> = [];
   
   for (let goodsId = 0; goodsId < ACTUAL_GOODS_COUNT; goodsId++) {
     const demand = world.goods.demands[goodsId];
     const supply = world.goods.supplies[goodsId];
     
-    // 跳过没有需求的商品
-    if (demand < 10) continue;
+    // 【关键修复】检测订单簿中的买单总量
+    // 这可以捕获"派生需求"（如建造材料需求）
+    const orderBookView = getOrderBookView(world, goodsId);
+    const orderBookBuyDemand = orderBookView.totalBuyVolume;
+    const orderBookSellSupply = orderBookView.totalSellVolume;
+    
+    // 综合需求 = 统计需求 + 订单簿买单需求
+    const effectiveDemand = Math.max(demand, orderBookBuyDemand);
+    
+    // 跳过没有任何需求的商品
+    if (effectiveDemand < 10) continue;
+    
+    // 【关键逻辑】订单簿信号检测
+    // 如果有大量买单但没有卖单，这是强烈的供应短缺信号
+    const hasOrderBookShortage = orderBookBuyDemand > 100 && orderBookSellSupply === 0;
     
     // 计算短缺比例
-    const shortageRatio = supply > 0 ? demand / supply : (demand > 100 ? 10 : 5);
+    let shortageRatio: number;
     
-    // 只关注短缺比例 > 2 的商品
-    if (shortageRatio > 2) {
+    if (hasOrderBookShortage) {
+      // 订单簿显示严重短缺：买单多但无卖单
+      // 这类商品应该优先建造
+      shortageRatio = Math.max(10, orderBookBuyDemand / 100);
+    } else if (supply > 0) {
+      shortageRatio = effectiveDemand / supply;
+    } else {
+      shortageRatio = effectiveDemand > 100 ? 10 : 5;
+    }
+    
+    // 关注短缺比例 > 2 的商品，或者订单簿显示严重短缺的商品
+    if (shortageRatio > 2 || hasOrderBookShortage) {
       shortages.push({
         goodsId,
         shortageRatio,
-        demand,
+        demand: effectiveDemand,
         supply,
+        orderBookDemand: orderBookBuyDemand,
       });
     }
   }
@@ -3801,4 +3847,186 @@ function getCompanyPersonalityForSubsidiary(companyId: number): AIPersonality {
   ];
   const typeIndex = (companyId - 1) % personalityTypes.length;
   return AI_PERSONALITIES[personalityTypes[typeIndex]];
+}
+
+// ==================== 战略建材监控系统 ====================
+
+/**
+ * 战略物资定义
+ * 这些商品是其他产业链必需的，如果供应中断会导致经济停滞
+ * 
+ * 包含两类：
+ * 1. 建材类：建造建筑所需（钢材、水泥、玻璃、木材等）
+ * 2. 中间品类：生产其他商品所需（橡胶、化学品、塑料等）
+ */
+const STRATEGIC_BUILDING_MATERIALS = [
+  // === 建筑材料 ===
+  { goodsId: 14, name: '钢材', minSupply: 500, buildingTypeId: 8 },      // 钢铁厂
+  { goodsId: 21, name: '水泥', minSupply: 500, buildingTypeId: 14 },     // 水泥厂
+  { goodsId: 17, name: '玻璃', minSupply: 300, buildingTypeId: 11 },     // 玻璃厂
+  { goodsId: 36, name: '建筑材料', minSupply: 200, buildingTypeId: 14 }, // 水泥厂
+  { goodsId: 6, name: '木材', minSupply: 400, buildingTypeId: 5 },       // 伐木场
+  
+  // === 关键中间材料（多产业链依赖）===
+  { goodsId: 11, name: '天然橡胶', minSupply: 300, buildingTypeId: 32 }, // 橡胶园
+  { goodsId: 19, name: '橡胶制品', minSupply: 200, buildingTypeId: 10 }, // 化工厂
+  { goodsId: 20, name: '化学品', minSupply: 300, buildingTypeId: 10 },   // 化工厂
+  { goodsId: 18, name: '塑料', minSupply: 300, buildingTypeId: 10 },     // 化工厂
+  { goodsId: 15, name: '铜材', minSupply: 200, buildingTypeId: 8 },      // 钢铁厂
+  { goodsId: 16, name: '铝材', minSupply: 200, buildingTypeId: 15 },     // 铝冶炼厂
+  
+  // === 原材料（上游供应）===
+  { goodsId: 0, name: '铁矿石', minSupply: 500, buildingTypeId: 0 },     // 铁矿
+  { goodsId: 3, name: '煤炭', minSupply: 500, buildingTypeId: 2 },       // 煤矿
+  { goodsId: 9, name: '硅石', minSupply: 300, buildingTypeId: 7 },       // 矿场
+  { goodsId: 12, name: '化工原料', minSupply: 300, buildingTypeId: 9 },  // 炼油厂（副产品）
+];
+
+/**
+ * 检测战略建材短缺并生成紧急建造决策
+ * 
+ * 功能：
+ * 1. 监控关键建材的供应情况
+ * 2. 当某种建材供应不足且订单簿有大量买单时，生成高优先级建造决策
+ * 3. 防止建材供应链断裂导致经济停滞
+ * 
+ * @param world 游戏世界
+ * @param companyId AI公司ID
+ * @param assessment 公司状态评估
+ * @returns 紧急建造决策列表
+ */
+export function generateStrategicMaterialDecisions(
+  world: GameWorld,
+  companyId: number,
+  assessment: CompanyAssessment
+): AIDecision[] {
+  const decisions: AIDecision[] = [];
+  
+  // 资金门槛：至少需要20万现金才考虑建造
+  if (assessment.cash < 200000) {
+    return decisions;
+  }
+  
+  for (const material of STRATEGIC_BUILDING_MATERIALS) {
+    const { goodsId, name, minSupply, buildingTypeId } = material;
+    
+    // 获取当前供应和订单簿情况
+    const supply = world.goods.supplies[goodsId];
+    const orderBook = getOrderBookView(world, goodsId);
+    const buyDemand = orderBook.totalBuyVolume;
+    const sellSupply = orderBook.totalSellVolume;
+    
+    // 检测是否存在紧急短缺：
+    // 1. 市场供应低于最低水平
+    // 2. 订单簿有大量买单但无卖单
+    const isEmergency = supply < minSupply && buyDemand > 100 && sellSupply === 0;
+    
+    if (!isEmergency) continue;
+    
+    // 检查该公司是否已经有该类型建筑在建或运营
+    let hasExisting = false;
+    for (let i = 0; i < world.buildings.count; i++) {
+      if (world.buildings.owners[i] === companyId &&
+          world.buildings.types[i] === buildingTypeId) {
+        hasExisting = true;
+        break;
+      }
+    }
+    
+    // 获取建筑信息
+    const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+    if (!building) continue;
+    
+    // 检查是否负担得起
+    if (building.buildCost > assessment.cash * 0.5) continue;
+    
+    // 找到对应的配方
+    const recipe = RECIPES.find(r => 
+      r.buildingTypeId === buildingTypeId &&
+      r.outputs.some(o => o.goodsId === goodsId)
+    );
+    if (!recipe) continue;
+    
+    // 生成紧急建造决策
+    // 优先级极高：15+（比普通投资决策的8-12更高）
+    const urgencyLevel = hasExisting ? 12 : 15; // 如果已有同类建筑，稍微降低优先级
+    
+    // 记录日志
+    if (world.tick % 50 === 0) {
+      console.log(`[战略建材紧急 T${world.tick}] 公司${companyId}检测到${name}紧急短缺: 供应${supply}, 买单${buyDemand}, 卖单${sellSupply}`);
+    }
+    
+    decisions.push({
+      type: 'investment',
+      companyId,
+      action: 'build',
+      params: {
+        buildingTypeId,
+        recipeId: recipe.id,
+        cost: building.buildCost,
+        targetGoodsId: goodsId,
+        reason: 'strategic_material_emergency',
+        buyDemand,
+        sellSupply,
+        currentSupply: supply,
+      },
+      priority: urgencyLevel,
+      expectedProfit: building.buildCost * 0.5, // 预期利润较高因为市场急需
+      confidence: 0.95, // 高置信度
+    });
+  }
+  
+  return decisions;
+}
+
+/**
+ * 全局战略建材检查
+ * 在GameLoop中定期调用，确保关键建材供应链不断裂
+ * 
+ * @param world 游戏世界
+ * @returns 触发的紧急决策数量
+ */
+export function runStrategicMaterialCheck(world: GameWorld): number {
+  // 每100tick运行一次（约4游戏小时）
+  if (world.tick % 100 !== 0) {
+    return 0;
+  }
+  
+  let triggeredDecisions = 0;
+  const c = world.companies;
+  
+  // 检查每个AI公司
+  for (let companyId = 1; companyId < c.count; companyId++) {
+    if (!c.isAI[companyId]) continue;
+    if (c.cash[companyId] < 200000) continue; // 资金不足跳过
+    
+    // 简单评估
+    const cash = c.cash[companyId];
+    const simpleAssessment: CompanyAssessment = {
+      cash,
+      cashRatio: 0.3,
+      inventoryValue: 0,
+      buildingCount: 0,
+      profitMargin: 0.1,
+      marketShare: 0.05,
+      productionCapacity: 100,
+      bottlenecks: [],
+      opportunities: [],
+    };
+    
+    const decisions = generateStrategicMaterialDecisions(world, companyId, simpleAssessment);
+    
+    // 执行最高优先级的决策
+    if (decisions.length > 0) {
+      decisions.sort((a, b) => b.priority - a.priority);
+      const topDecision = decisions[0];
+      
+      if (executeDecision(world, topDecision)) {
+        triggeredDecisions++;
+        console.log(`[战略建材 T${world.tick}] 公司${companyId}紧急建造 ${topDecision.params.targetGoodsId}生产设施`);
+      }
+    }
+  }
+  
+  return triggeredDecisions;
 }

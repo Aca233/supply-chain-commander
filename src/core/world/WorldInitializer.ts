@@ -432,6 +432,9 @@ export function addBuilding(
   
   buildingIndex.add(buildingId, companyId, buildingTypeId, recipeId);
   
+  // 【性能优化】更新公司建筑计数
+  world.companies.buildingCounts[companyId]++;
+  
   return buildingId;
 }
 
@@ -611,6 +614,9 @@ function addRetailBuilding(
   for (let i = 0; i < 4; i++) {
     b.outputBuffers[buildingId * 4 + i] = 0;
   }
+  
+  // 【性能优化】更新公司建筑计数
+  world.companies.buildingCounts[companyId]++;
   
   return buildingId;
 }

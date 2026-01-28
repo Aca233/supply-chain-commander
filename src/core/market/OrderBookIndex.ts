@@ -234,21 +234,33 @@ export class OrderBookIndex {
   
   /**
    * 添加订单到索引 O(log n + n)
+   * @returns 是否成功添加
    */
-  addOrder(orderIdx: number, goodsId: number, type: 0 | 1, price: number): void {
+  addOrder(orderIdx: number, goodsId: number, type: 0 | 1, price: number): boolean {
     const idx = this.indices[goodsId];
-    if (!idx) return;
+    if (!idx) {
+      console.warn(`[OrderBookIndex] 商品索引不存在: goodsId=${goodsId}`);
+      return false;
+    }
     
+    let success: boolean;
     if (type === 0) {
-      idx.buyOrders.insert(orderIdx, price);
+      success = idx.buyOrders.insert(orderIdx, price);
     } else {
-      idx.sellOrders.insert(orderIdx, price);
+      success = idx.sellOrders.insert(orderIdx, price);
+    }
+    
+    if (!success) {
+      console.warn(`[OrderBookIndex] 插入订单失败: orderIdx=${orderIdx}, goodsId=${goodsId}, type=${type}`);
+      return false;
     }
     
     // 记录映射
     this.orderToGoods[orderIdx] = goodsId;
     this.orderTypes[orderIdx] = type;
     this.isTracked[orderIdx] = 1;
+    
+    return true;
   }
   
   /**

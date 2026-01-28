@@ -59,6 +59,7 @@ const DialogContent = React.forwardRef<
       <DialogOverlay className="flex items-center justify-center" />
       <DialogPrimitive.Content
         ref={ref}
+        aria-describedby={undefined}
         className={cn(
           'fixed z-50',
           // 使用 inset-0 + margin auto 居中，避免translate被动画覆盖

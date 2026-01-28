@@ -100,11 +100,19 @@ export interface StockMarketState {
   totalVolume: number;
   
   // 公司历史数据（用于计算业绩变化驱动股价）
-  companyHistory: Map<number, CompanyHistoryData>;
-}
-
-// 全局股票市场状态
-let stockMarket: StockMarketState = {
+    companyHistory: Map<number, CompanyHistoryData>;
+    
+    // 估值缓存（避免重复计算）
+    valuationCache: Map<number, {
+      bookValue: number;
+      intrinsicValue: number;
+      marketValue: number;
+      cachedTick: number;
+    }>;
+  }
+  
+  // 全局股票市场状态
+  let stockMarket: StockMarketState = {
   stocks: new Map(),
   orders: [],
   holdings: new Map(),
@@ -116,6 +124,7 @@ let stockMarket: StockMarketState = {
   totalMarketCap: 0,
   totalVolume: 0,
   companyHistory: new Map(),
+  valuationCache: new Map(),
 };
 
 /**
@@ -136,6 +145,7 @@ export function initializeStockMarket(world: GameWorld): void {
     totalMarketCap: 0,
     totalVolume: 0,
     companyHistory: new Map(),
+    valuationCache: new Map(),
   };
   
   // 第一遍：为每个AI公司创建股票
@@ -290,13 +300,25 @@ function generateTicker(name: string): string {
 }
 
 /**
- * 计算公司估值
+ * 计算公司估值（带缓存优化）
+ *
+ * 性能优化：缓存估值结果，同一tick内不重复计算
  */
 export function calculateValuation(world: GameWorld, companyId: number): {
   bookValue: number;
   intrinsicValue: number;
   marketValue: number;
 } {
+  // 检查缓存
+  const cached = stockMarket.valuationCache.get(companyId);
+  if (cached && cached.cachedTick === world.tick) {
+    return {
+      bookValue: cached.bookValue,
+      intrinsicValue: cached.intrinsicValue,
+      marketValue: cached.marketValue,
+    };
+  }
+  
   const cash = world.companies.cash[companyId] || 0;
   
   let inventoryValue = 0;
@@ -332,11 +354,19 @@ export function calculateValuation(world: GameWorld, companyId: number): {
     marketValue = bookValue > 0 ? bookValue : 1000000; // 默认100万
   }
   
-  return {
+  const result = {
     bookValue: isFinite(bookValue) ? bookValue : 0,
     intrinsicValue: isFinite(intrinsicValue) ? intrinsicValue : bookValue,
     marketValue
   };
+  
+  // 更新缓存
+  stockMarket.valuationCache.set(companyId, {
+    ...result,
+    cachedTick: world.tick,
+  });
+  
+  return result;
 }
 
 /**
@@ -1045,22 +1075,39 @@ function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock
 }
 
 /**
- * 更新股票市场（每tick调用）
+ * 更新股票市场（性能优化版：分批处理 + 降低更新频率）
+ *
+ * 优化策略：
+ * 1. 订单撮合：每tick执行（保证交易实时性）
+ * 2. 股价更新：每4个tick执行，每次处理1/4的股票（分批）
+ * 3. 市场指数：每4个tick更新一次
  */
 export function updateStockMarket(world: GameWorld): void {
-  // 撮合交易
+  const currentTick = world.tick;
+  
+  // 1. 订单撮合 - 每tick执行（保证交易实时性）
   matchStockOrders(world);
   
-  // 判断是否是新的一天（每24个tick）
-  const isNewDay = world.tick % 24 === 0;
+  // 2. 股价更新 - 分批处理，降低每tick开销
+  // 每4个tick更新所有股票，每个tick更新1/4
+  const updatePhase = currentTick % 4;
+  const stockArray = Array.from(stockMarket.stocks.entries());
+  const batchSize = Math.ceil(stockArray.length / 4);
+  const startIdx = updatePhase * batchSize;
+  const endIdx = Math.min(startIdx + batchSize, stockArray.length);
   
-  // 更新所有股票
-  for (const [companyId, stock] of stockMarket.stocks) {
-    // 1. 更新估值指标
+  // 判断是否是新的一天（每24个tick）
+  const isNewDay = currentTick % 24 === 0;
+  
+  // 只处理当前批次的股票
+  for (let i = startIdx; i < endIdx; i++) {
+    const [companyId, stock] = stockArray[i];
+    
+    // 更新估值指标（使用缓存）
     const valuation = calculateValuation(world, companyId);
     stock.bookValue = valuation.bookValue;
     
-    // 2. 新的一天：保存昨收价，重置日内数据
+    // 新的一天：保存昨收价，重置日内数据
     if (isNewDay) {
       stock.previousClose = stock.currentPrice;
       stock.openPrice = stock.currentPrice;
@@ -1069,25 +1116,36 @@ export function updateStockMarket(world: GameWorld): void {
       stock.volume = 0;
     }
     
-    // 3. 计算基于业绩的动态价格（核心修复：即使没有交易也更新价格）
+    // 计算基于业绩的动态价格
     const newPrice = calculateDynamicPrice(world, companyId, stock);
     
-    // 4. 更新价格
+    // 更新价格
     stock.currentPrice = newPrice;
     
-    // 5. 更新日内最高最低价
+    // 更新日内最高最低价
     stock.highPrice = Math.max(stock.highPrice, newPrice);
     stock.lowPrice = Math.min(stock.lowPrice, newPrice);
     
-    // 6. 更新市值和市净率
+    // 更新市值和市净率
     stock.marketCap = newPrice * stock.totalShares;
     if (valuation.bookValue > 0) {
       stock.priceToBook = stock.marketCap / valuation.bookValue;
     }
   }
   
-  // 更新市场指数
-  updateMarketIndex();
+  // 3. 每4个tick更新一次市场指数（在第0相位）
+  if (updatePhase === 0) {
+    updateMarketIndex();
+  }
   
-  stockMarket.lastUpdateTick = world.tick;
+  stockMarket.lastUpdateTick = currentTick;
+  
+  // 4. 清理过期的估值缓存（每100个tick清理一次，避免内存泄漏）
+  if (currentTick % 100 === 0) {
+    for (const [companyId, cache] of stockMarket.valuationCache) {
+      if (currentTick - cache.cachedTick > 10) {
+        stockMarket.valuationCache.delete(companyId);
+      }
+    }
+  }
 }

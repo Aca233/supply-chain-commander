@@ -88,6 +88,9 @@ export interface CompaniesSystem {
   totalAssets: Float64Array;
   totalLiabilities: Float64Array;
   
+  // 【性能优化】预计算的建筑数量，避免O(N×M)遍历
+  buildingCounts: Uint16Array;    // [COMPANY_COUNT] 每个公司拥有的建筑数量
+  
   // 公司元数据
   names: string[];
   isPlayer: boolean[];
@@ -347,6 +350,8 @@ export function createCompaniesSystem(): CompaniesSystem {
     qualityScores,
     totalAssets: new Float64Array(MAX_COMPANIES),
     totalLiabilities: new Float64Array(MAX_COMPANIES),
+    // 【性能优化】预计算建筑数量，避免O(N×M)遍历
+    buildingCounts: new Uint16Array(MAX_COMPANIES),
     names: [],
     isPlayer: [],
     isAI: [],
