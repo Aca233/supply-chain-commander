@@ -18,12 +18,28 @@ interface CompanyDetailProps {
 }
 
 /**
+ * 确保数值有效
+ */
+function safeNumber(value: number, defaultValue: number = 0): number {
+  return isFinite(value) ? value : defaultValue;
+}
+
+/**
  * 格式化金额
  */
 function formatMoney(value: number): string {
-  if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-  if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
-  return `¥${value.toFixed(0)}`;
+  const safeValue = safeNumber(value, 0);
+  if (safeValue >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
+  if (safeValue >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+  return `¥${safeValue.toFixed(0)}`;
+}
+
+/**
+ * 安全格式化价格
+ */
+function formatPrice(value: number): string {
+  const safeValue = safeNumber(value, 0);
+  return `¥${safeValue.toFixed(2)}`;
 }
 
 // 人格类型颜色
@@ -152,14 +168,14 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <div className="text-3xl font-bold text-white tabular-nums">
-                        ¥{stock.currentPrice.toFixed(2)}
+                        {formatPrice(stock.currentPrice)}
                       </div>
                       <div className={`text-sm tabular-nums ${
-                        stock.priceChange >= 0 ? 'text-green-400' : 'text-red-400'
+                        safeNumber(stock.priceChange) >= 0 ? 'text-green-400' : 'text-red-400'
                       }`}>
-                        {stock.priceChange >= 0 ? '+' : ''}
-                        {stock.priceChange.toFixed(2)} ({stock.priceChangePercent >= 0 ? '+' : ''}
-                        {stock.priceChangePercent.toFixed(2)}%)
+                        {safeNumber(stock.priceChange) >= 0 ? '+' : ''}
+                        {safeNumber(stock.priceChange).toFixed(2)} ({safeNumber(stock.priceChangePercent) >= 0 ? '+' : ''}
+                        {safeNumber(stock.priceChangePercent).toFixed(2)}%)
                       </div>
                     </div>
                     <div className="text-right text-sm">
@@ -173,39 +189,39 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
                   <div className="grid grid-cols-4 gap-3 text-sm">
                     <div>
                       <div className="text-slate-400">今开</div>
-                      <div className="text-white tabular-nums">¥{stock.openPrice.toFixed(2)}</div>
+                      <div className="text-white tabular-nums">{formatPrice(stock.openPrice)}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">最高</div>
-                      <div className="text-green-400 tabular-nums">¥{stock.highPrice.toFixed(2)}</div>
+                      <div className="text-green-400 tabular-nums">{formatPrice(stock.highPrice)}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">最低</div>
-                      <div className="text-red-400 tabular-nums">¥{stock.lowPrice.toFixed(2)}</div>
+                      <div className="text-red-400 tabular-nums">{formatPrice(stock.lowPrice)}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">昨收</div>
-                      <div className="text-white tabular-nums">¥{stock.previousClose.toFixed(2)}</div>
+                      <div className="text-white tabular-nums">{formatPrice(stock.previousClose)}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">成交量</div>
-                      <div className="text-white tabular-nums">{stock.volume.toLocaleString()}</div>
+                      <div className="text-white tabular-nums">{safeNumber(stock.volume).toLocaleString()}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">累计成交</div>
-                      <div className="text-white tabular-nums">{stock.totalVolume.toLocaleString()}</div>
+                      <div className="text-white tabular-nums">{safeNumber(stock.totalVolume).toLocaleString()}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">换手率</div>
-                      <div className="text-white tabular-nums">{(stock.turnoverRate * 100).toFixed(2)}%</div>
+                      <div className="text-white tabular-nums">{(safeNumber(stock.turnoverRate) * 100).toFixed(2)}%</div>
                     </div>
                     <div>
                       <div className="text-slate-400">市盈率</div>
-                      <div className="text-white tabular-nums">{stock.pe > 0 ? stock.pe.toFixed(1) : '--'}</div>
+                      <div className="text-white tabular-nums">{safeNumber(stock.pe) > 0 ? safeNumber(stock.pe).toFixed(1) : '--'}</div>
                     </div>
                     <div>
                       <div className="text-slate-400">市净率</div>
-                      <div className="text-white tabular-nums">{stock.pb.toFixed(2)}</div>
+                      <div className="text-white tabular-nums">{safeNumber(stock.pb).toFixed(2)}</div>
                     </div>
                   </div>
                 </div>

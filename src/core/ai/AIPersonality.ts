@@ -1,15 +1,21 @@
 /**
  * AI人格差异系统
  * 为每个AI公司定义独特的行为特征和决策偏好
+ *
+ * 【重要更新】v2.0 - 产业偏好权重系统
+ * - 新增 IndustryPreferences 接口定义产业偏好权重
+ * - AI不再完全排除某些产业，而是通过权重调整优先级
+ * - 所有AI都能建造所有类型建筑，但有明显的偏好趋向
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { AIDecision, CompanyAssessment } from './AIDecisionEngine';
+import { ALL_BUILDINGS } from '@/data/buildings';
 
 /**
  * AI人格类型
  */
-export type PersonalityType = 
+export type PersonalityType =
   | 'aggressive'      // 激进型：追求快速扩张
   | 'conservative'    // 保守型：稳健经营
   | 'opportunist'     // 机会型：善于抓住机会
@@ -18,6 +24,48 @@ export type PersonalityType =
   | 'innovator'       // 创新型：追求技术领先
   | 'cost_leader'     // 成本领先：追求最低成本
   | 'premium';        // 高端型：追求高质量高溢价
+
+/**
+ * 产业类别偏好权重
+ *
+ * 权重范围：0.2 - 2.0
+ * - 0.2-0.5: 低偏好（优先级大幅降低，但不排除）
+ * - 0.5-0.8: 中低偏好
+ * - 0.8-1.2: 中等偏好（正常）
+ * - 1.2-1.5: 中高偏好
+ * - 1.5-2.0: 高偏好（优先级大幅提高）
+ */
+export interface IndustryPreferences {
+  // 建筑类别偏好
+  extraction: number;      // 采掘业（矿场、油田、农场等）
+  processing: number;      // 加工业（钢铁厂、炼油厂等）
+  manufacturing: number;   // 制造业（电子厂、汽车厂等）
+  service: number;         // 服务业（物流、仓储等）
+  retail: number;          // 零售业（商店、超市等）
+  
+  // 细分产业偏好
+  agriculture: number;     // 农业产业链
+  pharma: number;          // 医药产业链
+  luxury: number;          // 奢侈品产业链
+  tech: number;            // 高科技产业链
+  basic: number;           // 基础材料产业链
+}
+
+/**
+ * 默认产业偏好（均衡）
+ */
+export const DEFAULT_INDUSTRY_PREFERENCES: IndustryPreferences = {
+  extraction: 1.0,
+  processing: 1.0,
+  manufacturing: 1.0,
+  service: 1.0,
+  retail: 1.0,
+  agriculture: 1.0,
+  pharma: 1.0,
+  luxury: 1.0,
+  tech: 1.0,
+  basic: 1.0,
+};
 
 /**
  * AI人格特征
@@ -60,15 +108,22 @@ export interface AIPersonality {
   // 决策频率调整（基础决策频率的乘数）
   decisionFrequency: number;
   
-  // 偏好的商品类别
+  // 【新增】产业偏好权重
+  industryPreferences: IndustryPreferences;
+  
+  // 偏好的商品类别（保留用于向后兼容）
   preferredCategories: string[];
   
-  // 避免的商品类别
+  // 避免的商品类别（保留用于向后兼容，但不再用于完全过滤）
   avoidedCategories: string[];
 }
 
 /**
  * 预定义AI人格
+ *
+ * 【v2.0更新】每种人格都定义了产业偏好权重
+ * - 所有AI都能建造所有类型建筑
+ * - 但通过权重系统体现明显的偏好趋向
  */
 export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
   aggressive: {
@@ -86,6 +141,18 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.3,
     innovationInvestment: 0.05,
     decisionFrequency: 1.5,
+    industryPreferences: {
+      extraction: 0.6,      // 低偏好但不排除
+      processing: 0.8,      // 中等偏好
+      manufacturing: 1.5,   // 高偏好
+      service: 0.5,         // 低偏好
+      retail: 0.4,          // 低偏好
+      agriculture: 0.5,
+      pharma: 0.7,
+      luxury: 0.8,
+      tech: 1.8,            // 极高偏好
+      basic: 0.4,
+    },
     preferredCategories: ['final', 'intermediate'],
     avoidedCategories: [],
   },
@@ -105,8 +172,20 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.6,
     innovationInvestment: 0.02,
     decisionFrequency: 0.7,
+    industryPreferences: {
+      extraction: 1.5,      // 高偏好
+      processing: 1.2,      // 中高偏好
+      manufacturing: 0.6,   // 低偏好但不排除
+      service: 0.8,
+      retail: 0.5,
+      agriculture: 1.3,
+      pharma: 0.7,
+      luxury: 0.3,          // 很低偏好但不排除
+      tech: 0.4,
+      basic: 1.6,           // 极高偏好
+    },
     preferredCategories: ['basic', 'raw'],
-    avoidedCategories: ['final'],
+    avoidedCategories: [],  // 不再完全排除任何类别
   },
   
   opportunist: {
@@ -124,6 +203,18 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.2,
     innovationInvestment: 0.03,
     decisionFrequency: 1.3,
+    industryPreferences: {
+      extraction: 1.0,      // 均衡
+      processing: 1.0,
+      manufacturing: 1.0,
+      service: 1.2,         // 略高（贸易服务）
+      retail: 0.8,
+      agriculture: 0.8,
+      pharma: 1.0,
+      luxury: 1.0,
+      tech: 1.0,
+      basic: 0.8,
+    },
     preferredCategories: [],
     avoidedCategories: [],
   },
@@ -143,8 +234,20 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.95,
     innovationInvestment: 0.08,
     decisionFrequency: 0.9,
+    industryPreferences: {
+      extraction: 0.7,      // 低偏好但不排除
+      processing: 1.3,      // 中高偏好
+      manufacturing: 1.4,   // 高偏好
+      service: 0.6,
+      retail: 0.4,
+      agriculture: 0.6,
+      pharma: 1.2,
+      luxury: 0.8,
+      tech: 1.3,
+      basic: 0.6,
+    },
     preferredCategories: ['intermediate'],
-    avoidedCategories: ['raw'],
+    avoidedCategories: [],  // 不再完全排除任何类别
   },
   
   diversified: {
@@ -162,6 +265,18 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.1,
     innovationInvestment: 0.04,
     decisionFrequency: 0.85,
+    industryPreferences: {
+      extraction: 1.0,      // 完全均衡
+      processing: 1.0,
+      manufacturing: 1.0,
+      service: 1.0,
+      retail: 1.0,
+      agriculture: 1.0,
+      pharma: 1.0,
+      luxury: 1.0,
+      tech: 1.0,
+      basic: 1.0,
+    },
     preferredCategories: [],
     avoidedCategories: [],
   },
@@ -181,8 +296,20 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.7,
     innovationInvestment: 0.15,
     decisionFrequency: 0.95,
+    industryPreferences: {
+      extraction: 0.5,      // 低偏好但不排除
+      processing: 0.8,
+      manufacturing: 1.3,   // 高偏好
+      service: 0.7,
+      retail: 0.4,
+      agriculture: 0.4,
+      pharma: 1.4,          // 高偏好（医药研发）
+      luxury: 0.6,
+      tech: 2.0,            // 极高偏好
+      basic: 0.3,
+    },
     preferredCategories: ['final', 'intermediate'],
-    avoidedCategories: ['raw'],
+    avoidedCategories: [],  // 不再完全排除任何类别
   },
   
   cost_leader: {
@@ -200,6 +327,18 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.5,
     innovationInvestment: 0.02,
     decisionFrequency: 1.0,
+    industryPreferences: {
+      extraction: 1.3,      // 中高偏好
+      processing: 1.4,      // 高偏好
+      manufacturing: 1.0,
+      service: 0.8,
+      retail: 0.6,
+      agriculture: 1.2,
+      pharma: 0.6,
+      luxury: 0.2,          // 很低偏好但不排除
+      tech: 0.5,
+      basic: 1.5,           // 高偏好
+    },
     preferredCategories: ['basic', 'raw'],
     avoidedCategories: [],
   },
@@ -219,8 +358,20 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     specializationDegree: 0.8,
     innovationInvestment: 0.1,
     decisionFrequency: 0.8,
+    industryPreferences: {
+      extraction: 0.4,      // 低偏好但不排除
+      processing: 0.6,
+      manufacturing: 1.2,   // 中高偏好
+      service: 0.8,
+      retail: 1.0,          // 中等（高端零售）
+      agriculture: 0.5,
+      pharma: 0.8,
+      luxury: 2.0,          // 极高偏好
+      tech: 1.0,
+      basic: 0.3,           // 很低偏好但不排除
+    },
     preferredCategories: ['final'],
-    avoidedCategories: ['raw', 'basic'],
+    avoidedCategories: [],  // 不再完全排除任何类别
   },
 };
 
@@ -232,7 +383,9 @@ export interface AICompanyConfig {
   name: string;
   personality: PersonalityType;
   initialCash: number;
-  focusGoods: number[];       // 专注的商品ID
+  focusGoods: number[];       // 专注的商品ID（用于描述主营业务）
+  category: 'extraction' | 'processing' | 'manufacturing' | 'agriculture' | 'pharma' | 'luxury' | 'energy' | 'retail' | 'diversified';
+  description?: string;       // 公司业务描述
   initialBuildings: Array<{   // 初始建筑配置
     typeId: number;
     recipeId: number;
@@ -242,91 +395,575 @@ export interface AICompanyConfig {
 
 /**
  * 预定义AI公司配置
+ *
+ * 【v3.0更新】统一公司配置
+ * - 包含所有生产类公司（32家）
+ * - 包含所有零售类公司（10家）
+ * - 每家公司都有明确的产业分类和主营业务描述
  */
 export const AI_COMPANIES: AICompanyConfig[] = [
+  // ==================== A. 原材料采掘公司 (7家) ====================
   {
     id: 1,
-    name: '铁拳工业',
-    personality: 'aggressive',
-    initialCash: 5000000,
-    focusGoods: [14, 16, 32], // 钢材、铝材、汽车零部件
+    name: '中钢矿业',
+    personality: 'conservative',
+    initialCash: 50000000,
+    focusGoods: [0],  // 铁矿石
+    category: 'extraction',
+    description: '铁矿开采',
     initialBuildings: [
-      { typeId: 0, recipeId: 0, count: 2 }, // 铁矿场
-      { typeId: 8, recipeId: 10, count: 1 }, // 钢铁厂
+      { typeId: 0, recipeId: 0, count: 4 },
     ],
   },
   {
     id: 2,
-    name: '恒泰资源',
+    name: '神华煤炭',
     personality: 'conservative',
-    initialCash: 8000000,
-    focusGoods: [0, 1, 3, 4], // 铁矿、铜矿、煤炭、原油
+    initialCash: 80000000,
+    focusGoods: [3],  // 煤炭
+    category: 'extraction',
+    description: '煤炭开采',
     initialBuildings: [
-      { typeId: 2, recipeId: 2, count: 3 }, // 煤矿
-      { typeId: 3, recipeId: 3, count: 1 }, // 油田
+      { typeId: 2, recipeId: 2, count: 10 },
     ],
   },
   {
     id: 3,
-    name: '智芯科技',
-    personality: 'innovator',
-    initialCash: 10000000,
-    focusGoods: [27, 38, 39], // 芯片、智能手机、电脑
+    name: '国投煤业',
+    personality: 'conservative',
+    initialCash: 50000000,
+    focusGoods: [3],  // 煤炭
+    category: 'extraction',
+    description: '煤炭开采',
     initialBuildings: [
-      { typeId: 17, recipeId: 24, count: 1 }, // 半导体厂
-      { typeId: 16, recipeId: 21, count: 1 }, // 电子厂
+      { typeId: 2, recipeId: 2, count: 5 },
     ],
   },
   {
     id: 4,
-    name: '鸿运贸易',
-    personality: 'opportunist',
-    initialCash: 6000000,
-    focusGoods: [],
+    name: '五矿铜业',
+    personality: 'conservative',
+    initialCash: 40000000,
+    focusGoods: [1],  // 铜矿石
+    category: 'extraction',
+    description: '铜矿开采',
     initialBuildings: [
-      { typeId: 23, recipeId: -1, count: 2 }, // 仓储中心
+      { typeId: 1, recipeId: 1, count: 3 },
     ],
   },
   {
     id: 5,
-    name: '精密零件',
-    personality: 'specialist',
-    initialCash: 4000000,
-    focusGoods: [31, 32, 29], // 机械部件、汽车零部件、电机
+    name: '中石油',
+    personality: 'conservative',
+    initialCash: 150000000,
+    focusGoods: [4, 5],  // 原油、天然气
+    category: 'extraction',
+    description: '石油天然气开采',
     initialBuildings: [
-      { typeId: 21, recipeId: 29, count: 2 }, // 零部件厂
+      { typeId: 3, recipeId: 3, count: 3 },
+      { typeId: 4, recipeId: 4, count: 2 },
     ],
   },
   {
     id: 6,
-    name: '四海集团',
-    personality: 'diversified',
-    initialCash: 12000000,
-    focusGoods: [],
+    name: '林业集团',
+    personality: 'conservative',
+    initialCash: 25000000,
+    focusGoods: [6],  // 木材
+    category: 'extraction',
+    description: '木材采伐',
     initialBuildings: [
-      { typeId: 6, recipeId: 6, count: 2 }, // 农场
-      { typeId: 12, recipeId: 16, count: 1 }, // 纺织厂
-      { typeId: 13, recipeId: 17, count: 1 }, // 食品厂
+      { typeId: 5, recipeId: 5, count: 4 },
     ],
   },
   {
     id: 7,
-    name: '低价王',
-    personality: 'cost_leader',
-    initialCash: 7000000,
-    focusGoods: [24, 44, 45], // 加工食品、食品、饮料
+    name: '硅海矿业',
+    personality: 'conservative',
+    initialCash: 50000000,
+    focusGoods: [9, 10],  // 硅石、稀土
+    category: 'extraction',
+    description: '硅石稀土开采',
     initialBuildings: [
-      { typeId: 13, recipeId: 17, count: 3 }, // 食品厂
+      { typeId: 7, recipeId: 8, count: 3 },
+      { typeId: 7, recipeId: 9, count: 1 },
+    ],
+  },
+  
+  // ==================== B. 农业公司 (2家) ====================
+  {
+    id: 8,
+    name: '中粮集团',
+    personality: 'diversified',
+    initialCash: 35000000,
+    focusGoods: [7, 8, 58, 59],  // 棉花、粮食、蔬菜、水果
+    category: 'agriculture',
+    description: '粮食蔬果种植',
+    initialBuildings: [
+      { typeId: 6, recipeId: 6, count: 2 },
+      { typeId: 6, recipeId: 7, count: 1 },
+      { typeId: 25, recipeId: 35, count: 1 },
+      { typeId: 25, recipeId: 36, count: 1 },
     ],
   },
   {
-    id: 8,
-    name: '尊享品牌',
-    personality: 'premium',
-    initialCash: 15000000,
-    focusGoods: [53, 54, 55], // 奢侈品、珠宝、高端手机
+    id: 9,
+    name: '新希望牧业',
+    personality: 'specialist',
+    initialCash: 40000000,
+    focusGoods: [60, 61, 62],  // 牲畜、家禽、水产
+    category: 'agriculture',
+    description: '畜牧水产养殖',
     initialBuildings: [
-      { typeId: 16, recipeId: 22, count: 1 }, // 电子厂生产手机
+      { typeId: 26, recipeId: 37, count: 1 },
+      { typeId: 26, recipeId: 38, count: 1 },
+      { typeId: 27, recipeId: 39, count: 2 },
+    ],
+  },
+  
+  // ==================== C. 基础加工公司 (8家) ====================
+  {
+    id: 10,
+    name: '宝钢集团',
+    personality: 'cost_leader',
+    initialCash: 80000000,
+    focusGoods: [14],  // 钢材
+    category: 'processing',
+    description: '钢铁冶炼',
+    initialBuildings: [
+      { typeId: 8, recipeId: 10, count: 3 },
+      { typeId: 8, recipeId: 11, count: 1 },
+    ],
+  },
+  {
+    id: 11,
+    name: '江铜冶炼',
+    personality: 'specialist',
+    initialCash: 50000000,
+    focusGoods: [15],  // 铜材
+    category: 'processing',
+    description: '铜材冶炼',
+    initialBuildings: [
+      { typeId: 8, recipeId: 78, count: 3 },
+    ],
+  },
+  {
+    id: 12,
+    name: '中石化',
+    personality: 'cost_leader',
+    initialCash: 150000000,
+    focusGoods: [25, 12],  // 燃油、化工原料
+    category: 'processing',
+    description: '石油炼化',
+    initialBuildings: [
+      { typeId: 9, recipeId: 12, count: 4 },
+    ],
+  },
+  {
+    id: 13,
+    name: '塑料化工',
+    personality: 'specialist',
+    initialCash: 60000000,
+    focusGoods: [18, 20],  // 塑料、化学品
+    category: 'processing',
+    description: '塑料化工生产',
+    initialBuildings: [
+      { typeId: 10, recipeId: 13, count: 2 },
+      { typeId: 10, recipeId: 14, count: 2 },
+    ],
+  },
+  {
+    id: 14,
+    name: '福耀玻璃',
+    personality: 'specialist',
+    initialCash: 40000000,
+    focusGoods: [17],  // 玻璃
+    category: 'processing',
+    description: '玻璃制造',
+    initialBuildings: [
+      { typeId: 11, recipeId: 15, count: 3 },
+    ],
+  },
+  {
+    id: 15,
+    name: '魏桥纺织',
+    personality: 'cost_leader',
+    initialCash: 35000000,
+    focusGoods: [23],  // 纺织品
+    category: 'processing',
+    description: '纺织加工',
+    initialBuildings: [
+      { typeId: 12, recipeId: 16, count: 3 },
+    ],
+  },
+  {
+    id: 16,
+    name: '海螺水泥',
+    personality: 'cost_leader',
+    initialCash: 50000000,
+    focusGoods: [21],  // 水泥
+    category: 'processing',
+    description: '水泥生产',
+    initialBuildings: [
+      { typeId: 14, recipeId: 19, count: 4 },
+    ],
+  },
+  {
+    id: 17,
+    name: '中铝集团',
+    personality: 'specialist',
+    initialCash: 60000000,
+    focusGoods: [2, 16],  // 铝土矿、铝材
+    category: 'processing',
+    description: '铝材冶炼',
+    initialBuildings: [
+      { typeId: 15, recipeId: 102, count: 1 },
+      { typeId: 15, recipeId: 20, count: 2 },
+    ],
+  },
+  
+  // ==================== D. 食品加工公司 (3家) ====================
+  {
+    id: 18,
+    name: '统一食品',
+    personality: 'cost_leader',
+    initialCash: 40000000,
+    focusGoods: [44, 45],  // 食品、饮料
+    category: 'processing',
+    description: '食品饮料加工',
+    initialBuildings: [
+      { typeId: 13, recipeId: 17, count: 2 },
+      { typeId: 13, recipeId: 18, count: 2 },
+    ],
+  },
+  {
+    id: 19,
+    name: '双汇食品',
+    personality: 'specialist',
+    initialCash: 45000000,
+    focusGoods: [63, 64],  // 肉制品、乳制品
+    category: 'processing',
+    description: '肉类乳品加工',
+    initialBuildings: [
+      { typeId: 28, recipeId: 40, count: 2 },
+      { typeId: 28, recipeId: 41, count: 1 },
+    ],
+  },
+  {
+    id: 20,
+    name: '冷冻零食',
+    personality: 'opportunist',
+    initialCash: 35000000,
+    focusGoods: [65, 67, 69],  // 冷冻食品、零食、即食食品
+    category: 'processing',
+    description: '冷冻零食生产',
+    initialBuildings: [
+      { typeId: 13, recipeId: 42, count: 1 },
+      { typeId: 13, recipeId: 86, count: 1 },
+      { typeId: 13, recipeId: 88, count: 1 },
+    ],
+  },
+  
+  // ==================== E. 电子与制造公司 (6家) ====================
+  {
+    id: 21,
+    name: '立讯精密',
+    personality: 'specialist',
+    initialCash: 70000000,
+    focusGoods: [26],  // 电子元件
+    category: 'manufacturing',
+    description: '电子元件制造',
+    initialBuildings: [
+      { typeId: 16, recipeId: 21, count: 4 },
+    ],
+  },
+  {
+    id: 22,
+    name: '中芯国际',
+    personality: 'innovator',
+    initialCash: 100000000,
+    focusGoods: [27],  // 芯片
+    category: 'manufacturing',
+    description: '半导体芯片制造',
+    initialBuildings: [
+      { typeId: 17, recipeId: 24, count: 3 },
+    ],
+  },
+  {
+    id: 23,
+    name: '华为终端',
+    personality: 'innovator',
+    initialCash: 80000000,
+    focusGoods: [55, 56, 39],  // 高端手机、电脑、消费电子
+    category: 'manufacturing',
+    description: '消费电子产品',
+    initialBuildings: [
+      { typeId: 16, recipeId: 22, count: 2 },
+      { typeId: 16, recipeId: 23, count: 2 },
+    ],
+  },
+  {
+    id: 24,
+    name: '海尔家电',
+    personality: 'diversified',
+    initialCash: 60000000,
+    focusGoods: [40],  // 家电
+    category: 'manufacturing',
+    description: '家用电器制造',
+    initialBuildings: [
+      { typeId: 19, recipeId: 27, count: 3 },
+    ],
+  },
+  {
+    id: 25,
+    name: '宁德时代',
+    personality: 'innovator',
+    initialCash: 90000000,
+    focusGoods: [28],  // 电池
+    category: 'manufacturing',
+    description: '动力电池制造',
+    initialBuildings: [
+      { typeId: 20, recipeId: 28, count: 3 },
+    ],
+  },
+  {
+    id: 26,
+    name: '零部件集团',
+    personality: 'specialist',
+    initialCash: 70000000,
+    focusGoods: [31, 32, 29, 30],  // 机械部件、汽车零部件、电机、发动机
+    category: 'manufacturing',
+    description: '机械零部件制造',
+    initialBuildings: [
+      { typeId: 21, recipeId: 79, count: 2 },
+      { typeId: 21, recipeId: 29, count: 1 },
+      { typeId: 21, recipeId: 30, count: 1 },
+      { typeId: 21, recipeId: 31, count: 1 },
+    ],
+  },
+  
+  // ==================== F. 汽车公司 (2家) ====================
+  {
+    id: 27,
+    name: '比亚迪',
+    personality: 'innovator',
+    initialCash: 100000000,
+    focusGoods: [42],  // 电动汽车
+    category: 'manufacturing',
+    description: '电动汽车制造',
+    initialBuildings: [
+      { typeId: 18, recipeId: 26, count: 2 },
+    ],
+  },
+  {
+    id: 28,
+    name: '吉利汽车',
+    personality: 'aggressive',
+    initialCash: 120000000,
+    focusGoods: [41],  // 燃油汽车
+    category: 'manufacturing',
+    description: '燃油汽车制造',
+    initialBuildings: [
+      { typeId: 18, recipeId: 25, count: 2 },
+    ],
+  },
+  
+  // ==================== G. 医药公司 (3家) ====================
+  {
+    id: 29,
+    name: '同仁堂',
+    personality: 'specialist',
+    initialCash: 80000000,
+    focusGoods: [70, 74],  // 中草药、仿制药
+    category: 'pharma',
+    description: '中药制剂生产',
+    initialBuildings: [
+      { typeId: 29, recipeId: 43, count: 2 },
+      { typeId: 30, recipeId: 44, count: 2 },
+    ],
+  },
+  {
+    id: 30,
+    name: '恒瑞医药',
+    personality: 'innovator',
+    initialCash: 120000000,
+    focusGoods: [71, 73, 75],  // 医药化工、专利药、疫苗
+    category: 'pharma',
+    description: '创新药物研发',
+    initialBuildings: [
+      { typeId: 10, recipeId: 89, count: 1 },
+      { typeId: 30, recipeId: 45, count: 1 },
+      { typeId: 30, recipeId: 46, count: 1 },
+    ],
+  },
+  {
+    id: 31,
+    name: '迈瑞医疗',
+    personality: 'innovator',
+    initialCash: 100000000,
+    focusGoods: [77, 78],  // 医疗设备、医疗耗材
+    category: 'pharma',
+    description: '医疗器械制造',
+    initialBuildings: [
+      { typeId: 31, recipeId: 47, count: 2 },
+      { typeId: 31, recipeId: 48, count: 1 },
+    ],
+  },
+  
+  // ==================== H. 奢侈品公司 (1家) ====================
+  {
+    id: 32,
+    name: '珠宝奢侈',
+    personality: 'premium',
+    initialCash: 120000000,
+    focusGoods: [88, 89, 90, 91, 54, 94],  // 黄金、钻石、金饰、钻戒、珠宝、高级手表
+    category: 'luxury',
+    description: '珠宝奢侈品制造',
+    initialBuildings: [
+      { typeId: 35, recipeId: 54, count: 1 },
+      { typeId: 35, recipeId: 55, count: 1 },
+      { typeId: 35, recipeId: 97, count: 1 },
+      { typeId: 36, recipeId: 98, count: 1 },
+      { typeId: 36, recipeId: 56, count: 1 },
+      { typeId: 36, recipeId: 57, count: 1 },
+    ],
+  },
+  
+  // ==================== I. 发电公司 (1家) ====================
+  {
+    id: 33,
+    name: '华能集团',
+    personality: 'conservative',
+    initialCash: 100000000,
+    focusGoods: [57],  // 电力
+    category: 'energy',
+    description: '电力生产供应',
+    initialBuildings: [
+      { typeId: 24, recipeId: 32, count: 2 },
+      { typeId: 24, recipeId: 33, count: 1 },
+      { typeId: 24, recipeId: 34, count: 1 },
+    ],
+  },
+  
+  // ==================== J. 零售公司 (10家) ====================
+  {
+    id: 34,
+    name: '全家便利',
+    personality: 'opportunist',
+    initialCash: 5000000,
+    focusGoods: [8, 44, 45, 67],  // 粮食、食品、饮料、零食
+    category: 'retail',
+    description: '便利店零售',
+    initialBuildings: [
+      { typeId: 49, recipeId: -1, count: 3 },
+    ],
+  },
+  {
+    id: 35,
+    name: '永辉超市',
+    personality: 'cost_leader',
+    initialCash: 20000000,
+    focusGoods: [44, 45, 58, 59, 63, 64],  // 食品、饮料、蔬菜、水果、肉制品、乳制品
+    category: 'retail',
+    description: '综合超市零售',
+    initialBuildings: [
+      { typeId: 50, recipeId: -1, count: 2 },
+    ],
+  },
+  {
+    id: 36,
+    name: '沃尔玛',
+    personality: 'cost_leader',
+    initialCash: 50000000,
+    focusGoods: [44, 45, 40, 55, 56],  // 食品、饮料、家电、手机、电脑
+    category: 'retail',
+    description: '大型综合零售',
+    initialBuildings: [
+      { typeId: 51, recipeId: -1, count: 1 },
+    ],
+  },
+  {
+    id: 37,
+    name: '苏宁电器',
+    personality: 'specialist',
+    initialCash: 30000000,
+    focusGoods: [39, 40, 55, 56],  // 消费电子、家电、手机、电脑
+    category: 'retail',
+    description: '电子产品零售',
+    initialBuildings: [
+      { typeId: 52, recipeId: -1, count: 2 },
+    ],
+  },
+  {
+    id: 38,
+    name: '广汽4S',
+    personality: 'premium',
+    initialCash: 80000000,
+    focusGoods: [41, 42, 95],  // 燃油车、电动车、豪华车
+    category: 'retail',
+    description: '汽车销售服务',
+    initialBuildings: [
+      { typeId: 53, recipeId: -1, count: 1 },
+    ],
+  },
+  {
+    id: 39,
+    name: '优衣库',
+    personality: 'cost_leader',
+    initialCash: 15000000,
+    focusGoods: [43, 23],  // 服装、纺织品
+    category: 'retail',
+    description: '服装零售',
+    initialBuildings: [
+      { typeId: 54, recipeId: -1, count: 2 },
+    ],
+  },
+  {
+    id: 40,
+    name: '卡地亚精品',
+    personality: 'premium',
+    initialCash: 100000000,
+    focusGoods: [54, 94, 93, 95],  // 珠宝、高级手表、设计师服装、豪华车
+    category: 'retail',
+    description: '奢侈品零售',
+    initialBuildings: [
+      { typeId: 55, recipeId: -1, count: 1 },
+    ],
+  },
+  {
+    id: 41,
+    name: '大参林药房',
+    personality: 'specialist',
+    initialCash: 10000000,
+    focusGoods: [74, 75, 76, 77],  // 仿制药、疫苗、OTC药品、医疗设备
+    category: 'retail',
+    description: '药品零售',
+    initialBuildings: [
+      { typeId: 56, recipeId: -1, count: 2 },
+    ],
+  },
+  {
+    id: 42,
+    name: '中石化加油',
+    personality: 'cost_leader',
+    initialCash: 40000000,
+    focusGoods: [25, 57],  // 燃油、电力
+    category: 'retail',
+    description: '加油站零售',
+    initialBuildings: [
+      { typeId: 57, recipeId: -1, count: 3 },
+    ],
+  },
+  {
+    id: 43,
+    name: '红星美凯龙',
+    personality: 'diversified',
+    initialCash: 60000000,
+    focusGoods: [46, 47, 40],  // 家具、建材成品、家电
+    category: 'retail',
+    description: '家居建材零售',
+    initialBuildings: [
+      { typeId: 58, recipeId: -1, count: 1 },
     ],
   },
 ];
@@ -449,38 +1086,142 @@ export function adjustDecisionByPersonality(
 }
 
 /**
+ * 获取商品类别的偏好权重
+ */
+export function getCategoryWeight(personality: AIPersonality, category: string): number {
+  const prefs = personality.industryPreferences;
+  
+  switch (category) {
+    case 'raw':
+      return prefs.extraction * prefs.basic;
+    case 'basic':
+      return prefs.basic;
+    case 'intermediate':
+      return prefs.processing;
+    case 'final':
+      return prefs.manufacturing;
+    default:
+      return 1.0;
+  }
+}
+
+/**
+ * 判断建筑是否属于农业产业链
+ */
+function isAgricultureBuilding(buildingTypeId: number): boolean {
+  // 农业相关建筑ID: 6(农场), 25(蔬菜农场), 26(畜牧场), 27(渔场), 28(肉类加工厂)
+  return [6, 25, 26, 27, 28].includes(buildingTypeId);
+}
+
+/**
+ * 判断建筑是否属于医药产业链
+ */
+function isPharmaBuilding(buildingTypeId: number): boolean {
+  // 医药相关建筑ID: 29(药材种植园), 30(制药厂), 31(医疗器械厂)
+  return [29, 30, 31].includes(buildingTypeId);
+}
+
+/**
+ * 判断建筑是否属于奢侈品产业链
+ */
+function isLuxuryBuilding(buildingTypeId: number): boolean {
+  // 奢侈品相关建筑ID: 35(金矿), 36(奢侈品工坊), 55(奢侈品店)
+  return [35, 36, 55].includes(buildingTypeId);
+}
+
+/**
+ * 判断建筑是否属于高科技产业链
+ */
+function isTechBuilding(buildingTypeId: number): boolean {
+  // 高科技相关建筑ID: 17(半导体厂), 16(电子厂), 20(电池厂), 52(电子商城)
+  return [16, 17, 20, 52].includes(buildingTypeId);
+}
+
+/**
+ * 获取建筑类型的偏好权重
+ */
+export function getBuildingTypeWeight(personality: AIPersonality, buildingTypeId: number): number {
+  const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+  if (!building) return 1.0;
+  
+  const prefs = personality.industryPreferences;
+  
+  // 基于建筑类别的基础权重
+  let weight = 1.0;
+  switch (building.category) {
+    case 'extraction':
+      weight = prefs.extraction;
+      break;
+    case 'processing':
+      weight = prefs.processing;
+      break;
+    case 'manufacturing':
+      weight = prefs.manufacturing;
+      break;
+    case 'service':
+      weight = prefs.service;
+      break;
+    case 'retail':
+      weight = prefs.retail;
+      break;
+  }
+  
+  // 细分产业加成（使用平均值避免权重过大或过小）
+  if (isAgricultureBuilding(buildingTypeId)) {
+    weight = (weight + prefs.agriculture) / 2;
+  } else if (isPharmaBuilding(buildingTypeId)) {
+    weight = (weight + prefs.pharma) / 2;
+  } else if (isLuxuryBuilding(buildingTypeId)) {
+    weight = (weight + prefs.luxury) / 2;
+  } else if (isTechBuilding(buildingTypeId)) {
+    weight = (weight + prefs.tech) / 2;
+  }
+  
+  // 确保权重在合理范围内
+  return Math.max(0.2, Math.min(2.0, weight));
+}
+
+/**
  * 筛选符合人格偏好的决策
+ *
+ * 【v2.0更新】不再完全过滤任何决策，而是通过权重调整优先级
+ * - 低偏好的决策优先级降低，但仍可能被执行
+ * - 高偏好的决策优先级提高
  */
 export function filterDecisionsByPersonality(
   decisions: AIDecision[],
   personality: AIPersonality,
   world: GameWorld
 ): AIDecision[] {
-  return decisions.filter(d => {
+  return decisions.map(d => {
+    const adjusted = { ...d };
+    
     // 检查商品类别偏好
     if (d.params.goodsId !== undefined) {
       const goodsId = d.params.goodsId as number;
-      const goods = world.goods.categories[goodsId];
+      const category = world.goods.categories[goodsId];
       
-      // 避免的类别
-      if (personality.avoidedCategories.includes(goods)) {
-        return false;
-      }
-      
-      // 非偏好类别降低权重
-      if (personality.preferredCategories.length > 0 && 
-          !personality.preferredCategories.includes(goods)) {
-        d.priority *= 0.6;
-      }
+      // 【新逻辑】使用权重调整优先级，而非完全过滤
+      const categoryWeight = getCategoryWeight(personality, category);
+      adjusted.priority *= categoryWeight;
+      adjusted.confidence *= Math.sqrt(categoryWeight); // 置信度也受轻微影响
     }
     
-    // 风险过滤
-    if (d.confidence < (1 - personality.riskTolerance) * 0.5) {
-      return false;
+    // 检查建筑类型偏好（投资决策）
+    if (d.type === 'investment' && d.params.buildingTypeId !== undefined) {
+      const buildingTypeId = d.params.buildingTypeId as number;
+      const buildingWeight = getBuildingTypeWeight(personality, buildingTypeId);
+      adjusted.priority *= buildingWeight;
     }
     
-    return true;
-  });
+    // 风险过滤 - 不再完全过滤，而是降低优先级
+    const minConfidence = (1 - personality.riskTolerance) * 0.3; // 降低阈值
+    if (adjusted.confidence < minConfidence) {
+      adjusted.priority *= 0.3; // 大幅降低优先级而非完全过滤
+    }
+    
+    return adjusted;
+  }).filter(d => d.priority > 0.05); // 只过滤优先级极低的决策
 }
 
 /**

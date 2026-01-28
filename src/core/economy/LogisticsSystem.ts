@@ -133,7 +133,7 @@ export const TRANSPORT_MODES: Record<TransportMode, TransportModeConfig> = {
     minQuantity: 100,
     maxQuantity: 5000,
     applicableGoods: [],
-    excludedGoods: [24, 25], // 不适合易腐食品
+    excludedGoods: [44, 45], // 不适合易腐食品
     reliability: 0.98,
     damageRisk: 0.01,
   },
@@ -149,7 +149,7 @@ export const TRANSPORT_MODES: Record<TransportMode, TransportModeConfig> = {
     minQuantity: 500,
     maxQuantity: 50000,
     applicableGoods: [],
-    excludedGoods: [24, 25, 37], // 不适合易腐和药品
+    excludedGoods: [44, 45, 74], // 不适合易腐食品和药品（仿制药）
     reliability: 0.92,
     damageRisk: 0.03,
   },
@@ -164,7 +164,7 @@ export const TRANSPORT_MODES: Record<TransportMode, TransportModeConfig> = {
     speedKmPerHour: 500,
     minQuantity: 1,
     maxQuantity: 200,
-    applicableGoods: [27, 35, 36, 37, 38], // 电子、珠宝、奢侈品、医药
+    applicableGoods: [27, 54, 90, 73, 55], // 芯片、珠宝、钻石饰品、专利药、高端手机
     excludedGoods: [3, 4, 14], // 不适合大宗商品
     reliability: 0.99,
     damageRisk: 0.005,
@@ -218,21 +218,21 @@ const GOODS_TRANSPORT_PROPERTIES: Map<number, GoodsTransportProperties> = new Ma
   
   // 食品 - 易腐，需要快速
   [8, { goodsId: 8, weightPerUnit: 30, volumePerUnit: 0.05, fragility: 0.2, perishability: 0.5, hazardLevel: 0, valueDensity: 0.5, preferredModes: [TransportMode.ROAD, TransportMode.RAIL] }],
-  [24, { goodsId: 24, weightPerUnit: 10, volumePerUnit: 0.02, fragility: 0.3, perishability: 0.8, hazardLevel: 0, valueDensity: 2, preferredModes: [TransportMode.ROAD] }],
-  [25, { goodsId: 25, weightPerUnit: 8, volumePerUnit: 0.01, fragility: 0.5, perishability: 0.6, hazardLevel: 0, valueDensity: 3, preferredModes: [TransportMode.ROAD] }],
+  [44, { goodsId: 44, weightPerUnit: 10, volumePerUnit: 0.02, fragility: 0.3, perishability: 0.8, hazardLevel: 0, valueDensity: 2, preferredModes: [TransportMode.ROAD] }],
+  [45, { goodsId: 45, weightPerUnit: 8, volumePerUnit: 0.01, fragility: 0.5, perishability: 0.6, hazardLevel: 0, valueDensity: 3, preferredModes: [TransportMode.ROAD] }],
   
   // 电子产品 - 高价值，易碎
   [27, { goodsId: 27, weightPerUnit: 2, volumePerUnit: 0.01, fragility: 0.7, perishability: 0, hazardLevel: 0, valueDensity: 100, preferredModes: [TransportMode.AIR, TransportMode.ROAD] }],
   
   // 汽车 - 大件
-  [28, { goodsId: 28, weightPerUnit: 1500, volumePerUnit: 10, fragility: 0.3, perishability: 0, hazardLevel: 0, valueDensity: 20, preferredModes: [TransportMode.ROAD, TransportMode.RAIL] }],
+  [41, { goodsId: 41, weightPerUnit: 1500, volumePerUnit: 10, fragility: 0.3, perishability: 0, hazardLevel: 0, valueDensity: 20, preferredModes: [TransportMode.ROAD, TransportMode.RAIL] }],
   
   // 奢侈品/珠宝 - 极高价值
-  [35, { goodsId: 35, weightPerUnit: 0.1, volumePerUnit: 0.0001, fragility: 0.4, perishability: 0, hazardLevel: 0, valueDensity: 10000, preferredModes: [TransportMode.AIR] }],
-  [36, { goodsId: 36, weightPerUnit: 1, volumePerUnit: 0.005, fragility: 0.6, perishability: 0, hazardLevel: 0, valueDensity: 5000, preferredModes: [TransportMode.AIR] }],
+  [54, { goodsId: 54, weightPerUnit: 0.1, volumePerUnit: 0.0001, fragility: 0.4, perishability: 0, hazardLevel: 0, valueDensity: 10000, preferredModes: [TransportMode.AIR] }],
+  [90, { goodsId: 90, weightPerUnit: 1, volumePerUnit: 0.005, fragility: 0.6, perishability: 0, hazardLevel: 0, valueDensity: 5000, preferredModes: [TransportMode.AIR] }],
   
   // 药品 - 需要温控
-  [37, { goodsId: 37, weightPerUnit: 0.5, volumePerUnit: 0.002, fragility: 0.5, perishability: 0.3, hazardLevel: 1, valueDensity: 2000, preferredModes: [TransportMode.AIR, TransportMode.ROAD] }],
+  [73, { goodsId: 73, weightPerUnit: 0.5, volumePerUnit: 0.002, fragility: 0.5, perishability: 0.3, hazardLevel: 1, valueDensity: 2000, preferredModes: [TransportMode.AIR, TransportMode.ROAD] }],
 ]);
 
 // ==================== 物流管理类 ====================

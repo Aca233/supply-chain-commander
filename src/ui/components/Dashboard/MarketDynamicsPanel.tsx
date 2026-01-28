@@ -38,7 +38,12 @@ export const MarketDynamicsPanel: React.FC<MarketDynamicsPanelProps> = ({
 
   // 渲染价格变化项
   const renderPriceItem = (item: PriceChangeItem, isGainer: boolean) => (
-    <div key={item.goodsId} className="flex items-center gap-2 py-1">
+    <div
+      key={item.goodsId}
+      className="flex items-center gap-2 py-1 px-1 rounded hover:bg-background-secondary cursor-pointer transition-colors"
+      onClick={() => onTrade?.(item.goodsId, isGainer ? 'buy' : 'sell')}
+      title={`点击${isGainer ? '买入' : '卖出'} ${item.name}`}
+    >
       <GoodsIcon goodsId={item.goodsId} size={16} autoColor />
       <span className="text-xs text-text-secondary flex-1 truncate">{item.name}</span>
       <span className={`text-xs font-medium tabular-nums ${isGainer ? 'text-chart-up' : 'text-chart-down'}`}>

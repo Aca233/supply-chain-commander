@@ -166,7 +166,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
     maxDailyVolume: 500,
     leadTime: 7,
     priceMultiplier: 1.5,
-    applicableGoods: [24, 25, 26, 27, 28, 29, 30, 35, 36], // 消费品
+    applicableGoods: [44, 45, 40, 55, 56, 43, 54, 41, 42], // 消费品
     minBrandTier: 2,
   },
   [ChannelType.ONLINE]: {

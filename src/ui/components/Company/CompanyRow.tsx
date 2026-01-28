@@ -44,19 +44,30 @@ const trendIcons: Record<string, { icon: string; color: string }> = {
 };
 
 /**
+ * 确保数值有效
+ */
+function safeNumber(value: number | undefined, defaultValue: number = 0): number {
+  if (value === undefined || value === null || !isFinite(value)) {
+    return defaultValue;
+  }
+  return value;
+}
+
+/**
  * 格式化金额
  */
 function formatMoney(value: number): string {
-  if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-  if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
-  return `¥${value.toFixed(0)}`;
+  const safeValue = safeNumber(value, 0);
+  if (safeValue >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
+  if (safeValue >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+  return `¥${safeValue.toFixed(0)}`;
 }
 
 /**
  * 格式化价格
  */
 function formatPrice(value: number | undefined): string {
-  if (value === undefined) return '--';
+  if (value === undefined || value === null || !isFinite(value)) return '--';
   return `¥${value.toFixed(2)}`;
 }
 
@@ -64,7 +75,7 @@ function formatPrice(value: number | undefined): string {
  * 格式化百分比
  */
 function formatPercent(value: number | undefined, showSign: boolean = false): string {
-  if (value === undefined) return '--';
+  if (value === undefined || value === null || !isFinite(value)) return '--';
   const sign = showSign && value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
@@ -78,7 +89,7 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
   onAcquire,
 }) => {
   const stock = profile.stock;
-  const isUp = stock && stock.priceChange >= 0;
+  const isUp = stock && safeNumber(stock.priceChange) >= 0;
   const personalityColor = personalityColors[profile.personality] || 'text-slate-300';
   const threatInfo = threatIcons[profile.competition.threatLevel];
   const trendInfo = trendIcons[profile.competition.trend];
@@ -260,24 +271,24 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
                 <div>
                   <span className="text-slate-400">成本:</span>
                   <span className="text-slate-200 ml-1 tabular-nums">
-                    ¥{playerHolding.avgCost.toFixed(2)}/股
+                    ¥{safeNumber(playerHolding.avgCost).toFixed(2)}/股
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-400">市值:</span>
                   <span className="text-slate-200 ml-1 tabular-nums">
-                    {formatMoney(playerHolding.marketValue)}
+                    {formatMoney(safeNumber(playerHolding.marketValue))}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-400">盈亏:</span>
                   <span className={`ml-1 tabular-nums ${
-                    playerHolding.unrealizedGain >= 0 ? 'text-green-400' : 'text-red-400'
+                    safeNumber(playerHolding.unrealizedGain) >= 0 ? 'text-green-400' : 'text-red-400'
                   }`}>
-                    {playerHolding.unrealizedGain >= 0 ? '+' : ''}
-                    {formatMoney(playerHolding.unrealizedGain)}
-                    ({playerHolding.unrealizedGainPercent >= 0 ? '+' : ''}
-                    {playerHolding.unrealizedGainPercent.toFixed(2)}%)
+                    {safeNumber(playerHolding.unrealizedGain) >= 0 ? '+' : ''}
+                    {formatMoney(safeNumber(playerHolding.unrealizedGain))}
+                    ({safeNumber(playerHolding.unrealizedGainPercent) >= 0 ? '+' : ''}
+                    {safeNumber(playerHolding.unrealizedGainPercent).toFixed(2)}%)
                   </span>
                 </div>
               </div>

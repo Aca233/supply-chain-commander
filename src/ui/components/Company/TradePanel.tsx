@@ -46,18 +46,25 @@ export const TradePanel: React.FC<TradePanelProps> = ({
     return world ? world.companies.cash[0] : playerCash;
   }, [getWorld, playerCash]);
   
+  // 确保价格有效
+  const safeCurrentPrice = isFinite(currentPrice) && currentPrice > 0 ? currentPrice : 10;
+  const safeLimitPrice = isFinite(limitPrice) && limitPrice > 0 ? limitPrice : safeCurrentPrice;
+
   // 计算预估成本/收益
   const estimatedValue = useMemo(() => {
-    const price = orderType === 'limit' ? limitPrice : currentPrice;
-    return quantity * price;
-  }, [quantity, limitPrice, currentPrice, orderType]);
-  
+    const price = orderType === 'limit' ? safeLimitPrice : safeCurrentPrice;
+    const value = quantity * price;
+    return isFinite(value) ? value : 0;
+  }, [quantity, safeLimitPrice, safeCurrentPrice, orderType]);
+
   // 最大可买数量
   const maxBuyQuantity = useMemo(() => {
-    const price = orderType === 'limit' ? limitPrice : currentPrice;
-    if (price <= 0) return 0;
-    return Math.floor(actualCash / price);
-  }, [actualCash, limitPrice, currentPrice, orderType]);
+    const price = orderType === 'limit' ? safeLimitPrice : safeCurrentPrice;
+    if (!isFinite(price) || price <= 0) return 0;
+    if (!isFinite(actualCash) || actualCash <= 0) return 0;
+    const max = Math.floor(actualCash / price);
+    return isFinite(max) ? max : 0;
+  }, [actualCash, safeLimitPrice, safeCurrentPrice, orderType]);
   
   // 检查是否可以交易
   const canTrade = useMemo(() => {
@@ -263,7 +270,7 @@ export const TradePanel: React.FC<TradePanelProps> = ({
             <button
               onClick={() => {
                 setOrderType('limit');
-                setLimitPrice(currentPrice);
+                setLimitPrice(safeCurrentPrice);
               }}
               className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
                 orderType === 'limit'
@@ -323,7 +330,7 @@ export const TradePanel: React.FC<TradePanelProps> = ({
               step="0.1"
             />
             <p className="text-xs text-slate-500 mt-1">
-              当前价: ¥{currentPrice.toFixed(2)}
+              当前价: ¥{safeCurrentPrice.toFixed(2)}
             </p>
           </div>
         )}
@@ -333,7 +340,7 @@ export const TradePanel: React.FC<TradePanelProps> = ({
           <div className="flex justify-between text-sm">
             <span className="text-slate-400">单价:</span>
             <span className="text-white tabular-nums">
-              ¥{(orderType === 'limit' ? limitPrice : currentPrice).toFixed(2)}
+              ¥{(orderType === 'limit' ? safeLimitPrice : safeCurrentPrice).toFixed(2)}
             </span>
           </div>
           <div className="flex justify-between text-sm">
@@ -432,7 +439,7 @@ export const QuickTradeModal: React.FC<{
         <div className="mb-4 bg-slate-700/50 rounded-lg p-3 flex justify-between items-center">
           <span className="text-slate-400">当前股价</span>
           <span className="text-2xl font-bold text-white tabular-nums">
-            ¥{currentPrice.toFixed(2)}
+            ¥{(isFinite(currentPrice) ? currentPrice : 0).toFixed(2)}
           </span>
         </div>
         

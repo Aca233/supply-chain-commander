@@ -60,7 +60,8 @@ import {
   AIPersonality,
   adjustDecisionByPersonality,
   filterDecisionsByPersonality,
-  evaluatePersonalityGoalGap
+  evaluatePersonalityGoalGap,
+  getBuildingTypeWeight
 } from './AIPersonality';
 
 // ==================== 导入6大AI智能模块 ====================
@@ -184,6 +185,227 @@ import {
  * 决策类型
  */
 export type DecisionType = 'production' | 'pricing' | 'trading' | 'investment' | 'expansion' | 'stock' | 'subsidiary';
+
+// ==================== AI建造意向队列系统 ====================
+
+/**
+ * 建造意向 - 跟踪AI公司待建造的建筑
+ */
+interface BuildingIntent {
+  companyId: number;
+  buildingTypeId: number;
+  recipeId: number;
+  cost: number;
+  createdTick: number;
+  attempts: number; // 尝试次数
+  materialsOrdered: boolean; // 是否已下达材料采购单
+}
+
+/**
+ * 建造意向队列 - 每个公司最多保存3个待建意向
+ */
+const buildingIntents = new Map<number, BuildingIntent[]>();
+
+/**
+ * 获取公司的建造意向
+ */
+function getBuildingIntents(companyId: number): BuildingIntent[] {
+  return buildingIntents.get(companyId) || [];
+}
+
+/**
+ * 添加建造意向
+ */
+function addBuildingIntent(intent: BuildingIntent): void {
+  const intents = buildingIntents.get(intent.companyId) || [];
+  
+  // 检查是否已有相同类型的建造意向
+  const exists = intents.some(i =>
+    i.buildingTypeId === intent.buildingTypeId &&
+    i.recipeId === intent.recipeId
+  );
+  
+  if (!exists && intents.length < 3) { // 每个公司最多3个待建意向
+    intents.push(intent);
+    buildingIntents.set(intent.companyId, intents);
+  }
+}
+
+/**
+ * 移除建造意向
+ */
+function removeBuildingIntent(companyId: number, buildingTypeId: number, recipeId: number): void {
+  const intents = buildingIntents.get(companyId) || [];
+  const newIntents = intents.filter(i =>
+    !(i.buildingTypeId === buildingTypeId && i.recipeId === recipeId)
+  );
+  buildingIntents.set(companyId, newIntents);
+}
+
+/**
+ * 处理公司的待建意向
+ * 检查材料是否已到位，如果是则执行建造
+ */
+function processBuildingIntents(world: GameWorld, companyId: number): number {
+  const intents = getBuildingIntents(companyId);
+  if (intents.length === 0) return 0;
+  
+  let built = 0;
+  const remainingIntents: BuildingIntent[] = [];
+  
+  for (const intent of intents) {
+    // 检查意向是否过期（超过500tick未完成）
+    if (world.tick - intent.createdTick > 500) {
+      console.log(`[AI建造意向] 公司${companyId}的${intent.buildingTypeId}建造意向过期`);
+      continue; // 放弃这个意向
+    }
+    
+    // 尝试执行建造
+    const success = tryExecuteBuild(world, intent);
+    
+    if (success) {
+      built++;
+      console.log(`[AI建造成功] 公司${companyId}完成了待建项目 buildingType=${intent.buildingTypeId}`);
+    } else {
+      // 更新尝试次数
+      intent.attempts++;
+      
+      // 如果尝试次数过多，放弃
+      if (intent.attempts > 50) {
+        console.log(`[AI建造意向] 公司${companyId}的${intent.buildingTypeId}建造意向因尝试次数过多放弃`);
+        continue;
+      }
+      
+      remainingIntents.push(intent);
+    }
+  }
+  
+  buildingIntents.set(companyId, remainingIntents);
+  return built;
+}
+
+/**
+ * 尝试执行建造（从意向队列调用）
+ */
+function tryExecuteBuild(world: GameWorld, intent: BuildingIntent): boolean {
+  const { companyId, buildingTypeId, recipeId, cost } = intent;
+  
+  // 检查资金
+  const currentCash = world.companies.cash[companyId];
+  if (currentCash < cost) {
+    return false;
+  }
+  
+  // 获取建筑定义
+  const buildingDef = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+  if (!buildingDef) {
+    return false;
+  }
+  
+  // 检查建筑数量限制
+  if (world.buildings.count >= world.buildings.maxCount) {
+    return false;
+  }
+  
+  // 获取建造所需材料
+  const materials = getBaseMaterials(buildingTypeId);
+  
+  // 检查材料是否充足
+  let canBuild = true;
+  for (const mat of materials) {
+    const idx = companyId * GOODS_COUNT + mat.goodsId;
+    const available = world.companies.inventories[idx] - world.companies.inventoryReserved[idx];
+    if (available < mat.amount) {
+      canBuild = false;
+      
+      // 确保有采购单
+      ensureMaterialPurchaseOrder(world, companyId, mat.goodsId, mat.amount - available);
+      break;
+    }
+  }
+  
+  if (!canBuild) {
+    return false;
+  }
+  
+  // 材料充足，执行建造
+  try {
+    // 1. 扣除建造费用
+    world.companies.cash[companyId] -= cost;
+    
+    // 2. 消耗建造材料
+    for (const mat of materials) {
+      const idx = companyId * GOODS_COUNT + mat.goodsId;
+      world.companies.inventories[idx] -= mat.amount;
+    }
+    
+    // 3. 创建建筑
+    const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
+    
+    // 4. 更新公司资产
+    const priceGetter = (goodsId: number) => world.goods.prices[goodsId];
+    const materialsValue = calculateMaterialsValue(materials, priceGetter);
+    world.companies.totalAssets[companyId] += (cost + materialsValue) * 0.8;
+    
+    console.log(`[AI建造] 公司 ${world.companies.names[companyId]} 建造了 ${buildingDef.name}, 花费 ¥${cost} + 材料`);
+    return true;
+  } catch (e) {
+    // 建造失败，退还资金和材料
+    world.companies.cash[companyId] += cost;
+    for (const mat of materials) {
+      const idx = companyId * GOODS_COUNT + mat.goodsId;
+      world.companies.inventories[idx] += mat.amount;
+    }
+    console.error('[AI建造] 异常:', e);
+    return false;
+  }
+}
+
+/**
+ * 确保有材料采购单
+ */
+function ensureMaterialPurchaseOrder(
+  world: GameWorld,
+  companyId: number,
+  goodsId: number,
+  neededAmount: number
+): void {
+  const goods = ALL_GOODS.find(g => g.id === goodsId);
+  if (!goods) return;
+  
+  // 检查是否已有足够买单
+  let existingBuyQty = 0;
+  const activeIndices = getActiveOrderIndices();
+  for (const j of activeIndices) {
+    if (world.orders.companyIds[j] === companyId &&
+        world.orders.goodsIds[j] === goodsId &&
+        world.orders.types[j] === 0) {
+      existingBuyQty += world.orders.remainings[j];
+    }
+  }
+  
+  // 如果已有足够买单，跳过
+  if (existingBuyQty >= neededAmount) return;
+  
+  // 计算购买数量和价格
+  const buyQty = Math.min(neededAmount - existingBuyQty + 50, 500); // 多买一点余量
+  const basePrice = goods.basePrice;
+  const marketPrice = world.goods.prices[goodsId];
+  const buyPrice = Math.max(basePrice, marketPrice) * 1.5; // 愿意支付1.5倍价格
+  
+  // 检查资金
+  const availableCash = world.companies.cash[companyId] * 0.5;
+  if (buyQty * buyPrice <= availableCash) {
+    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+  }
+}
+
+/**
+ * 清除公司的建造意向（用于游戏重置）
+ */
+export function clearBuildingIntents(): void {
+  buildingIntents.clear();
+}
 
 /**
  * AI决策结果
@@ -874,6 +1096,10 @@ export function generateInvestmentDecisions(
           // 【优化2】提高优先级，根据供需缺口调整（优先级范围提高）
           const basePriority = 7 + Math.min(gapRatio * 4, 3); // 7-10
           
+          // 【新增】应用建筑类型偏好权重
+          const buildingWeight = getBuildingTypeWeight(personality, building.id);
+          const adjustedPriority = basePriority * buildingWeight;
+          
           decisions.push({
             type: 'investment',
             companyId,
@@ -885,7 +1111,7 @@ export function generateInvestmentDecisions(
               targetGoodsId: opportunity,
               reason: 'market_opportunity',
             },
-            priority: basePriority,
+            priority: adjustedPriority,
             expectedProfit: building.buildCost * 0.2 * (1 + gapRatio),  // 提高预期利润
             confidence: 0.65 + gapRatio * 0.2,  // 提高置信度
           });
@@ -907,6 +1133,10 @@ export function generateInvestmentDecisions(
         );
         
         if (recipe && assessment.cash >= building.buildCost * 1.2) {  // 降低资金要求从1.5到1.2
+          // 【新增】应用建筑类型偏好权重
+          const buildingWeight = getBuildingTypeWeight(personality, building.id);
+          const basePriority = 8 + Math.min(shortageRatio, 2); // 8-10 (提高)
+          
           decisions.push({
             type: 'investment',
             companyId,
@@ -918,7 +1148,7 @@ export function generateInvestmentDecisions(
               targetGoodsId: goodsId,
               reason: 'supply_chain',
             },
-            priority: 8 + Math.min(shortageRatio, 2), // 8-10 (提高)
+            priority: basePriority * buildingWeight,
             expectedProfit: building.buildCost * 0.25,  // 提高预期利润
             confidence: 0.75,  // 提高置信度
           });
@@ -935,6 +1165,10 @@ export function generateInvestmentDecisions(
       const building = ALL_BUILDINGS.find(b => b.id === typeId);
       
       if (building && assessment.cash >= building.buildCost * 1.1) {  // 降低资金要求从1.3到1.1
+        // 【新增】应用建筑类型偏好权重
+        const buildingWeight = getBuildingTypeWeight(personality, typeId);
+        const basePriority = 7 + Math.min(profitMargin * 10, 3); // 7-10 (提高)
+        
         decisions.push({
           type: 'investment',
           companyId,
@@ -945,7 +1179,7 @@ export function generateInvestmentDecisions(
             cost: building.buildCost,
             reason: 'scale_expansion',
           },
-          priority: 7 + Math.min(profitMargin * 10, 3), // 7-10 (提高)
+          priority: basePriority * buildingWeight,
           expectedProfit: building.buildCost * profitMargin * 1.2,  // 提高预期利润
           confidence: 0.7,  // 提高置信度
         });
@@ -958,6 +1192,10 @@ export function generateInvestmentDecisions(
       for (const opp of newOpportunities.slice(0, 3)) {  // 增加候选数量
         const building = ALL_BUILDINGS.find(b => b.id === opp.buildingTypeId);
         if (building && assessment.cash >= building.buildCost * 1.2) {  // 降低资金要求
+          // 【新增】应用建筑类型偏好权重
+          const buildingWeight = getBuildingTypeWeight(personality, opp.buildingTypeId);
+          const basePriority = 6 + opp.attractiveness; // 6-9 (提高)
+          
           decisions.push({
             type: 'investment',
             companyId,
@@ -968,7 +1206,7 @@ export function generateInvestmentDecisions(
               cost: building.buildCost,
               reason: 'diversification',
             },
-            priority: 6 + opp.attractiveness, // 6-9 (提高)
+            priority: basePriority * buildingWeight,
             expectedProfit: building.buildCost * 0.15,  // 提高预期利润
             confidence: 0.55,  // 提高置信度
           });
@@ -1814,11 +2052,22 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       }
     }
     
-    // 如果材料不足，为缺少的材料下买单
+    // 如果材料不足，将建造意向加入队列并下买单
     if (!canBuild) {
-      // 主动为缺少的建筑材料下买单
+      // 【关键修复】将建造意向加入队列，等待材料到位后执行
+      addBuildingIntent({
+        companyId,
+        buildingTypeId,
+        recipeId,
+        cost,
+        createdTick: world.tick,
+        attempts: 0,
+        materialsOrdered: true,
+      });
+      
+      // 为缺少的材料下买单
       let ordersCreated = 0;
-      for (const missing of missingMaterials.slice(0, 5)) { // 每次最多处理5种材料
+      for (const missing of missingMaterials.slice(0, 5)) {
         const goods = ALL_GOODS.find(g => g.id === missing.goodsId);
         if (!goods) continue;
         
@@ -1837,10 +2086,10 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
         if (existingBuyQty >= missing.amount) continue;
         
         // 计算购买数量和价格（愿意支付高价以获得建材）
-        const buyQty = Math.min(missing.amount - existingBuyQty, 500);
+        const buyQty = Math.min(missing.amount - existingBuyQty + 50, 500); // 多买一点余量
         const basePrice = goods.basePrice;
         const marketPrice = world.goods.prices[missing.goodsId];
-        const buyPrice = Math.max(basePrice, marketPrice) * 1.5; // 愿意支付1.5倍价格
+        const buyPrice = Math.max(basePrice, marketPrice) * 1.5;
         
         // 检查资金（保留至少一半现金）
         const availableCash = world.companies.cash[companyId] * 0.5;
@@ -1853,9 +2102,11 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       }
       
       if (ordersCreated > 0 && world.tick % 50 === 0) {
-        console.log(`[AI建材采购] 公司${companyId}为建造${buildingDef.name}下了${ordersCreated}个建材采购单`);
+        console.log(`[AI建材采购] 公司${companyId}为建造${buildingDef.name}下了${ordersCreated}个建材采购单，已加入待建队列`);
       }
-      return false;
+      
+      // 返回true表示决策已被记录（虽然建造尚未完成，但意向已保存）
+      return true;
     }
     
     // 材料充足，执行建造
@@ -1871,6 +2122,9 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       
       // 3. 直接创建建筑
       const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
+      
+      // 4. 从待建队列中移除（如果存在）
+      removeBuildingIntent(companyId, buildingTypeId, recipeId);
       
       // 更新公司资产
       const materialsValue = calculateMaterialsValue(materials, priceGetter);
@@ -2128,6 +2382,12 @@ export function runAIDecisionCycle(world: GameWorld, companyId: number): AIDecis
       // 22. 【Phase 2】记录决策到历史学习系统
       recordDecision(world, companyId, decision);
     }
+  }
+  
+  // 22.5 【关键】处理待建意向队列 - 检查材料是否到位
+  const builtFromQueue = processBuildingIntents(world, companyId);
+  if (builtFromQueue > 0) {
+    console.log(`[AI建造队列 T${world.tick}] 公司${companyId}从待建队列完成了${builtFromQueue}个建筑`);
   }
   
   // 23. 【Phase 2】定期执行学习周期

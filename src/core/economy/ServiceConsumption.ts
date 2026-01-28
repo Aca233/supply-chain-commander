@@ -51,60 +51,16 @@ export interface ServiceConsumptionResult {
 
 /**
  * 建筑类型 → 服务商品映射
- * 
+ *
  * 建筑ID对应 buildings.ts 中的定义
  * 服务商品ID对应 goods.ts 中的定义
+ *
+ * 注意：服务业建筑已在精简中删除，此配置暂时为空
+ * 保留结构以便未来扩展
  */
 const SERVICE_BUILDING_CONFIGS: ServiceFacilityConfig[] = [
-  // 学校 (ID 88) → 教育服务 (ID 196)
-  {
-    buildingTypeId: 88,
-    serviceGoodsId: 196,
-    capacityPerTick: 100,
-    basePriceMultiplier: 1.0,
-  },
-  // 医院 (ID 89) → 医疗服务 (ID 197)
-  {
-    buildingTypeId: 89,
-    serviceGoodsId: 197,
-    capacityPerTick: 80,
-    basePriceMultiplier: 1.2,
-  },
-  // 银行 (ID 90) → 金融服务 (ID 198)
-  {
-    buildingTypeId: 90,
-    serviceGoodsId: 198,
-    capacityPerTick: 200,
-    basePriceMultiplier: 0.8,
-  },
-  // 酒店 (ID 91) → 住宿服务 (ID 201) + 餐饮服务 (ID 200) + 娱乐服务 (ID 199)
-  {
-    buildingTypeId: 91,
-    serviceGoodsId: 201,  // 住宿
-    capacityPerTick: 50,
-    basePriceMultiplier: 1.0,
-  },
-  // 运输公司 (ID 92) → 运输服务 (ID 202)
-  {
-    buildingTypeId: 92,
-    serviceGoodsId: 202,
-    capacityPerTick: 500,
-    basePriceMultiplier: 0.6,
-  },
-  // 咨询公司 (ID 93) → 咨询服务 (ID 207)
-  {
-    buildingTypeId: 93,
-    serviceGoodsId: 207,
-    capacityPerTick: 20,
-    basePriceMultiplier: 2.0,
-  },
-  // 影视制作中心 (ID 95) → 娱乐服务 (ID 199)
-  {
-    buildingTypeId: 95,
-    serviceGoodsId: 199,
-    capacityPerTick: 1000,
-    basePriceMultiplier: 0.5,
-  },
+  // 服务业建筑已删除，此配置为空
+  // 未来可在此添加新的服务设施配置
 ];
 
 // 建立建筑类型到配置的映射

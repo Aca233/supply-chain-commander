@@ -538,9 +538,14 @@ function cleanupBuyOrderCache(currentTick: number): void {
 }
 
 /** 进货间隔控制 - 使用更高效的Uint32Array */
-const RESTOCK_INTERVAL = 24;  // 每24 tick检查一次进货（一天一次）
+// 【P1修复】将进货间隔从24tick降低到6tick（每6小时检查一次）
+const RESTOCK_INTERVAL = 6;  // 每6 tick检查一次进货（原为24，一天4次）
 const RESTOCK_BATCH_SIZE = 10;  // 每tick最多处理10个零售店
 let restockBatchIndex = 0;
+
+// 【P1修复】紧急进货阈值 - 库存低于10%时触发紧急进货
+const EMERGENCY_RESTOCK_THRESHOLD = 0.1;  // 10%库存触发紧急进货
+const EMERGENCY_RESTOCK_INTERVAL = 2;  // 紧急进货间隔仅2tick
 
 // 使用TypedArray替代Map，更高效
 let lastRestockTicks: Uint32Array | null = null;
@@ -603,11 +608,21 @@ function processRestocking(world: GameWorld): number {
       const stockRatio = capacity > 0 ? currentStock / capacity : 0;
       const restockThreshold = 0.5;  // 50%以下就进货（从60%调整）
       
+      // 【P1修复】紧急进货检查 - 库存极低时使用更短的进货间隔
+      const isEmergency = stockRatio < EMERGENCY_RESTOCK_THRESHOLD;
+      const effectiveInterval = isEmergency ? EMERGENCY_RESTOCK_INTERVAL : RESTOCK_INTERVAL;
+      
       if (stockRatio < restockThreshold) {
         // ============ 进货间隔检查（使用TypedArray）============
         const lastRestock = getLastRestockTick(retailId, goodsId);
-        if (world.tick - lastRestock < RESTOCK_INTERVAL) {
+        if (world.tick - lastRestock < effectiveInterval) {
           continue;  // 还没到进货间隔时间
+        }
+        
+        // 【P1修复】紧急进货时打印调试日志
+        if (isEmergency && world.tick % 100 === 0) {
+          const goods = ALL_GOODS.find(g => g.id === goodsId);
+          console.log(`[紧急进货 T${world.tick}] 零售店#${retailId} ${goods?.name || goodsId} 库存:${(stockRatio * 100).toFixed(1)}%`);
         }
         
         const targetStock = capacity * 0.9;
@@ -650,25 +665,35 @@ function processRestocking(world: GameWorld): number {
           
           // 更新进货成本
           retail.purchaseCosts[idx] = purchaseResult.spent / purchaseResult.purchased;
+          
+          // 【P1修复】紧急进货成功时，记录购买数量以便调试
+          if (isEmergency) {
+            console.log(`[紧急采购成功] 零售店#${retailId} 商品${goodsId} 采购量:${purchaseResult.purchased.toFixed(0)}`);
+          }
         }
         
         // ============ 如果还需要更多，挂买单 ============
         const stillNeeded = orderQuantity - purchaseResult.purchased;
-        if (stillNeeded >= 20) {  // 从10提高到20，减少小额订单
+        // 【P1修复】紧急进货时降低最小订单量阈值
+        const minOrderQty = isEmergency ? 10 : 20;
+        if (stillNeeded >= minOrderQty) {
           // 再次检查，确保不会过量下单
           const updatedExistingOrders = countExistingBuyOrders(world, ownerId, goodsId);
           const updatedCompanyInv = c.inventories[ownerId * GOODS_COUNT + goodsId] || 0;
           const finalNeeded = targetStock - currentStock - updatedExistingOrders - updatedCompanyInv;
           
-          if (finalNeeded <= 20) {
+          if (finalNeeded <= minOrderQty) {
             continue;  // 已经有足够的订单在进行中
           }
           
           const actualOrderQty = Math.min(stillNeeded, Math.floor(finalNeeded));
-          if (actualOrderQty < 20) continue;
+          if (actualOrderQty < minOrderQty) continue;
+          
+          // 【P1修复】紧急进货时愿意支付更高价格
+          const priceMultiplier = isEmergency ? 1.15 : 1.0;
           
           const currentCash = c.cash[ownerId];
-          const buyPrice = Math.max(basePrice, currentMarketPrice) * (1.0 + Math.random() * 0.1);
+          const buyPrice = Math.max(basePrice, currentMarketPrice) * priceMultiplier * (1.0 + Math.random() * 0.1);
           
           if (currentCash >= actualOrderQty * buyPrice) {
             const orderId = createBuyOrder(world, ownerId, goodsId, actualOrderQty, buyPrice);

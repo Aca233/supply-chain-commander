@@ -92,48 +92,107 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
   const priceHistoryData = useMemo(() => {
     if (!world) return [];
     
-    const data: PriceDataPoint[] = [];
-    const historyLength = Math.min(HISTORY_SIZE, 200);
+    const t = world.trades;
+    const maxTrades = t.maxTrades;
     
-    const volumeByTick = new Map<number, number>();
-    const tradeSearchLimit = Math.min(world.trades.count, 500);
+    // 从成交记录中提取该商品的所有成交数据
+    // 按tick聚合，计算OHLCV
+    interface TickData {
+      prices: number[];
+      volumes: number[];
+      firstPrice: number;
+      lastPrice: number;
+    }
     
-    for (let t = 0; t < tradeSearchLimit; t++) {
-      const tradeIdx = (world.trades.count - 1 - t) % world.trades.maxTrades;
-      if (world.trades.goodsIds[tradeIdx] === selectedGoodsId) {
-        const tradeTick = world.trades.ticks[tradeIdx];
-        volumeByTick.set(tradeTick, (volumeByTick.get(tradeTick) || 0) + world.trades.quantities[tradeIdx]);
+    const tickDataMap = new Map<number, TickData>();
+    const searchLimit = Math.min(t.count, 50000); // 搜索最近5万条记录
+    
+    for (let i = 0; i < searchLimit; i++) {
+      const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
+      if (t.goodsIds[tradeIdx] === selectedGoodsId) {
+        const tradeTick = t.ticks[tradeIdx];
+        const tradePrice = t.prices[tradeIdx];
+        const tradeQty = t.quantities[tradeIdx];
+        
+        if (tradePrice > 0 && tradeQty > 0) {
+          let data = tickDataMap.get(tradeTick);
+          if (!data) {
+            data = { prices: [], volumes: [], firstPrice: tradePrice, lastPrice: tradePrice };
+            tickDataMap.set(tradeTick, data);
+          }
+          data.prices.push(tradePrice);
+          data.volumes.push(tradeQty);
+          // 因为我们是从最新向后遍历，所以先遇到的是"最后"的交易
+          // lastPrice 已在第一次设置，firstPrice 需要更新为最早的
+          data.firstPrice = tradePrice;
+        }
       }
     }
     
-    const currentHistoryIndex = historyIndex;
-    
-    for (let i = 0; i < historyLength; i++) {
-      const historyIdx = (currentHistoryIndex - historyLength + i + HISTORY_SIZE) % HISTORY_SIZE;
-      const price = world.goods.priceHistory[selectedGoodsId * HISTORY_SIZE + historyIdx];
-      
-      if (price > 0) {
-        const ticksAgo = historyLength - i;
-        const tickTime = tick - ticksAgo;
-        
-        const seed = (selectedGoodsId * 1000 + i) % 1000 / 1000;
-        const volatility = price * 0.02;
-        const open = price + (seed - 0.5) * volatility;
-        const close = price;
-        const high = Math.max(open, close) + seed * volatility * 0.5;
-        const low = Math.min(open, close) - (1 - seed) * volatility * 0.5;
-        
-        const volume = volumeByTick.get(tickTime) || 0;
-        
-        const date = tickToDate(tickTime);
+    if (tickDataMap.size === 0) {
+      // 如果没有成交记录，使用均衡价格作为fallback
+      const basePrice = selectedGoods?.basePrice || world.goods.prices[selectedGoodsId];
+      if (basePrice > 0) {
+        const date = tickToDate(tick);
         const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
-        
-        data.push({ time: timeStr, price, open, high, low, close, volume });
+        return [{
+          time: timeStr,
+          price: basePrice,
+          open: basePrice,
+          high: basePrice,
+          low: basePrice,
+          close: basePrice,
+          volume: 0,
+        }];
       }
+      return [];
+    }
+    
+    // 将Map转换为有序数组，按tick排序
+    const sortedTicks = Array.from(tickDataMap.keys()).sort((a, b) => a - b);
+    
+    // 只取最近200个时间点
+    const recentTicks = sortedTicks.slice(-200);
+    
+    const data: PriceDataPoint[] = [];
+    
+    for (const tickTime of recentTicks) {
+      const tickData = tickDataMap.get(tickTime)!;
+      const prices = tickData.prices;
+      const volumes = tickData.volumes;
+      
+      // 计算OHLCV
+      const open = tickData.firstPrice;  // 该tick的第一笔成交价
+      const close = tickData.lastPrice;  // 该tick的最后一笔成交价
+      const high = Math.max(...prices);
+      const low = Math.min(...prices);
+      const volume = volumes.reduce((sum, v) => sum + v, 0);
+      
+      // 加权平均价格
+      let totalValue = 0;
+      let totalQty = 0;
+      for (let j = 0; j < prices.length; j++) {
+        totalValue += prices[j] * volumes[j];
+        totalQty += volumes[j];
+      }
+      const avgPrice = totalQty > 0 ? totalValue / totalQty : close;
+      
+      const date = tickToDate(tickTime);
+      const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
+      
+      data.push({
+        time: timeStr,
+        price: avgPrice,  // 使用加权平均价作为主价格
+        open,
+        high,
+        low,
+        close,
+        volume,
+      });
     }
     
     return data;
-  }, [world, tick, historyIndex, tradesCount, selectedGoodsId]);
+  }, [world, tick, tradesCount, selectedGoodsId, selectedGoods]);
   
   if (!world || priceHistoryData.length === 0) {
     return (
@@ -1019,6 +1078,54 @@ export const Market: React.FC = () => {
           
           {/* 订单内容区域 - 可滚动 */}
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-3">
+            {/* 我的挂单 - 蓝色主题 */}
+            {playerOrders.length > 0 && (
+              <div className="p-2.5 rounded-xl bg-[var(--accent)]/5 border border-[var(--accent)]/30">
+                <p className="text-xs text-[var(--accent)] mb-2 font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse"></span>
+                  我的挂单
+                  <Badge variant="primary" size="sm" className="ml-auto">{playerOrders.length}</Badge>
+                </p>
+                <div className="space-y-1.5">
+                  {playerOrders.map((order) => (
+                    <div
+                      key={order.index}
+                      className={`flex items-center justify-between text-xs p-2 rounded-lg tabular-nums transition-all border ${
+                        order.type === 'buy'
+                          ? 'bg-[var(--success)]/10 border-[var(--success)]/20 hover:border-[var(--success)]/40'
+                          : 'bg-[var(--error)]/10 border-[var(--error)]/20 hover:border-[var(--error)]/40'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={order.type === 'buy' ? 'success' : 'error'}
+                          size="sm"
+                          className="text-[10px] px-1.5"
+                        >
+                          {order.type === 'buy' ? '买入' : '卖出'}
+                        </Badge>
+                        <span className={`font-semibold ${
+                          order.type === 'buy' ? 'text-[var(--success)]' : 'text-[var(--error)]'
+                        }`}>
+                          ¥{order.price.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{order.quantity.toFixed(0)}</span>
+                        <button
+                          className="w-5 h-5 rounded-lg bg-[var(--bg-muted)] hover:bg-[var(--error)]/20 text-[var(--text-muted)] hover:text-[var(--error)] transition-colors flex items-center justify-center text-xs"
+                          onClick={() => cancelPlayerOrder(order.index)}
+                          title="取消订单"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             {/* 卖方报价 - 红色主题 */}
             <div className="p-2.5 rounded-xl bg-[var(--error)]/5 border border-[var(--error)]/20">
               <p className="text-xs text-[var(--error)] mb-2 font-semibold flex items-center gap-1.5">

@@ -852,6 +852,151 @@ export function performMarketMaking(
   return { buyOrderId, sellOrderId };
 }
 
+// ==================== 吃买单功能 ====================
+
+/**
+ * AI公司"吃买单"功能 - 主动卖给市场上出价高的买家
+ *
+ * 只处理传入的targetGoods列表（AI公司生产的产品）
+ */
+export function executeTakeBuyOrders(
+  world: GameWorld,
+  companyId: number,
+  targetGoods: number[]
+): number {
+  const c = world.companies;
+  let ordersPlaced = 0;
+  
+  // 只遍历目标商品（AI公司生产的产品）
+  for (const goodsId of targetGoods) {
+    const inventory = c.inventories[companyId * GOODS_COUNT + goodsId];
+    const reserved = c.inventoryReserved[companyId * GOODS_COUNT + goodsId];
+    
+    // 计算可卖数量（保留10%用于生产）
+    const productionReserve = inventory * 0.1;
+    let available = inventory - reserved - productionReserve;
+    
+    // 如果库存很大（>1000），强制可卖一部分
+    if (inventory > 1000 && available < inventory * 0.3) {
+      available = Math.floor(inventory * 0.3);
+    }
+    
+    // 至少有10个可卖才处理
+    if (available < 10) continue;
+    
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    
+    // 获取订单簿
+    const orderBookView = getOrderBookView(world, goodsId);
+    
+    // 遍历买单（已按价格降序排列）
+    for (const buyOrder of orderBookView.buyOrders) {
+      // 跳过自己的买单
+      if (buyOrder.companyId === companyId) continue;
+      
+      // 检查价格是否可接受（至少基准价的50%）
+      if (buyOrder.price < basePrice * 0.5) {
+        break; // 买单是降序的，后面的价格更低，不用继续了
+      }
+      
+      // 计算可卖数量（不超过可用库存和买单需求量）
+      const sellQuantity = Math.min(available, buyOrder.remaining, 500);
+      
+      if (sellQuantity < 1) continue;
+      
+      // 以买单价格挂卖单（确保立即成交）
+      const orderId = createSellOrder(
+        world,
+        companyId,
+        goodsId,
+        sellQuantity,
+        buyOrder.price, // 使用买方价格，确保立即成交
+        24 * 3
+      );
+      
+      if (orderId !== null) {
+        ordersPlaced++;
+        // 每种商品每次只吃一个买单
+        break;
+      }
+    }
+  }
+  
+  return ordersPlaced;
+}
+
+/**
+ * AI公司"吃卖单"功能 - 主动购买市场上价格低的卖家货物
+ *
+ * 只处理传入的neededGoods列表（AI公司需要的原材料）
+ */
+export function executeTakeSellOrders(
+  world: GameWorld,
+  companyId: number,
+  neededGoods: number[]
+): number {
+  const c = world.companies;
+  let ordersPlaced = 0;
+  
+  // 只遍历需要的商品
+  for (const goodsId of neededGoods) {
+    const inventory = c.inventories[companyId * GOODS_COUNT + goodsId];
+    const cash = c.cash[companyId];
+    
+    // 目标库存（暂定500）
+    const targetInventory = 500;
+    const shortage = targetInventory - inventory;
+    
+    if (shortage < 10) continue;
+    
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    
+    // 获取订单簿
+    const orderBookView = getOrderBookView(world, goodsId);
+    
+    // 遍历卖单（已按价格升序排列）
+    for (const sellOrder of orderBookView.sellOrders) {
+      // 跳过自己的卖单
+      if (sellOrder.companyId === companyId) continue;
+      
+      // 检查价格是否可接受（不超过基准价的150%）
+      if (sellOrder.price > basePrice * 1.5) {
+        break;
+      }
+      
+      // 计算可买数量
+      const maxAffordable = Math.floor(cash * 0.3 / sellOrder.price);
+      const buyQuantity = Math.min(shortage, sellOrder.remaining, maxAffordable, 500);
+      
+      if (buyQuantity < 1) continue;
+      
+      // 以卖单价格挂买单（确保立即成交）
+      const orderId = createBuyOrder(
+        world,
+        companyId,
+        goodsId,
+        buyQuantity,
+        sellOrder.price, // 使用卖方价格，确保立即成交
+        24 * 3
+      );
+      
+      if (orderId !== null) {
+        ordersPlaced++;
+        // 每种商品每次只吃一个卖单
+        break;
+      }
+    }
+  }
+  
+  return ordersPlaced;
+}
+
 // ==================== 交易系统主循环 ====================
 
 /**
@@ -864,6 +1009,11 @@ export function runAdvancedTradingCycle(
 ): void {
   let session = tradingSessions.get(companyId);
   if (!session) return;
+  
+  // 0. 【新增】先执行吃单操作（优先立即成交）
+  // 只处理targetGoods列表，不遍历所有商品
+  executeTakeBuyOrders(world, companyId, targetGoods);
+  executeTakeSellOrders(world, companyId, targetGoods);
   
   // 1. 处理待处理的信号
   const validPendingSignals = session.pendingSignals.filter(

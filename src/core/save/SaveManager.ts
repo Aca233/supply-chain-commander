@@ -5,6 +5,7 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT } from '@/core/constants';
+import { BUILDINGS_BY_ID } from '@/data/buildings';
 
 export interface SaveMetadata {
   id: string;
@@ -121,6 +122,9 @@ export class SaveManager {
     world.buildings.efficiencies.set(data.buildings.efficiencies);
     world.buildings.recipeIds.set(data.buildings.recipeIds);
     
+    // 验证并修复建筑配方（解决旧存档配方不匹配问题）
+    this.validateAndFixBuildingRecipes(world);
+    
     // 恢复建筑激活状态（修复建筑暂停问题）
     if (data.buildings.isActive) {
       world.buildings.isActive.set(data.buildings.isActive);
@@ -140,6 +144,42 @@ export class SaveManager {
       for (let j = 0; j < inv.length; j++) {
         world.companies.inventories[i * GOODS_COUNT + j] = inv[j];
       }
+    }
+  }
+  
+  /**
+   * 验证并修复建筑配方
+   * 解决旧存档中建筑配方ID与当前数据定义不匹配的问题
+   */
+  private validateAndFixBuildingRecipes(world: GameWorld): void {
+    let fixedCount = 0;
+    
+    for (let i = 0; i < world.buildings.count; i++) {
+      const buildingTypeId = world.buildings.types[i];
+      const currentRecipeId = world.buildings.recipeIds[i];
+      
+      const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
+      if (!buildingDef) {
+        console.warn(`[存档修复] 未知建筑类型: ${buildingTypeId}`);
+        continue;
+      }
+      
+      // 零售建筑和服务建筑没有配方，跳过
+      if (buildingDef.category === 'retail' || buildingDef.defaultRecipeId === -1) {
+        continue;
+      }
+      
+      // 检查当前配方是否在该建筑的可用配方列表中
+      if (!buildingDef.availableRecipes.includes(currentRecipeId)) {
+        const correctRecipeId = buildingDef.defaultRecipeId;
+        world.buildings.recipeIds[i] = correctRecipeId;
+        fixedCount++;
+        console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 配方从 ${currentRecipeId} 修复为 ${correctRecipeId}`);
+      }
+    }
+    
+    if (fixedCount > 0) {
+      console.log(`[存档修复] 共修复了 ${fixedCount} 个建筑的配方分配`);
     }
   }
   

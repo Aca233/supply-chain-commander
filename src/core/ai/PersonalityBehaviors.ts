@@ -11,7 +11,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { PersonalityType, AIPersonality, AI_PERSONALITIES } from './AIPersonality';
+import { PersonalityType, AIPersonality, AI_PERSONALITIES, getCategoryWeight } from './AIPersonality';
 import { CompanyAssessment, AIDecision } from './AIDecisionEngine';
 import { 
   GoodsProfitAnalysis, 
@@ -886,6 +886,9 @@ export function optimizeTradingWithPrediction(
 
 /**
  * 获取人格的目标商品列表
+ *
+ * 使用产业偏好权重系统，包含所有商品但按偏好权重和利润率排序
+ * 权重高的商品优先级更高，但不会完全排除低权重商品
  */
 export function getPersonalityTargetGoods(
   world: GameWorld,
@@ -893,30 +896,34 @@ export function getPersonalityTargetGoods(
   companyId: number
 ): number[] {
   const pattern = BEHAVIOR_PATTERNS[personality.type];
-  const targetGoods: number[] = [];
   
-  // 基于类别偏好
+  // 收集所有商品及其评分
+  const goodsWithScores: { goodsId: number; score: number }[] = [];
+  
   for (let goodsId = 0; goodsId < ACTUAL_GOODS_COUNT; goodsId++) {
     const category = world.goods.categories[goodsId];
     
-    if (personality.preferredCategories.length > 0) {
-      if (personality.preferredCategories.includes(category)) {
-        targetGoods.push(goodsId);
-      }
-    } else if (!personality.avoidedCategories.includes(category)) {
-      targetGoods.push(goodsId);
-    }
+    // 获取产业偏好权重 (0.2-2.0)
+    const categoryWeight = getCategoryWeight(personality, category);
+    
+    // 获取利润率
+    const profitMargin = getGoodsProfitMargin(world, companyId, goodsId);
+    
+    // 计算综合评分：产业偏好权重 * 利润率调整
+    // 权重范围 0.2-2.0，利润率可能为负
+    // 即使利润率为负，高偏好商品仍有较高优先级
+    const profitScore = Math.max(0.1, profitMargin + 0.5); // 调整为正数
+    const score = categoryWeight * profitScore;
+    
+    goodsWithScores.push({ goodsId, score });
   }
   
-  // 基于利润率排序
-  targetGoods.sort((a, b) => {
-    const profitA = getGoodsProfitMargin(world, companyId, a);
-    const profitB = getGoodsProfitMargin(world, companyId, b);
-    return profitB - profitA;
-  });
+  // 按综合评分排序（高分优先）
+  goodsWithScores.sort((a, b) => b.score - a.score);
   
   // 根据专业化程度限制数量
+  // 专业化程度高 = 更少商品，专业化程度低 = 更多商品
   const maxGoods = Math.ceil((1 - personality.specializationDegree) * 20 + 5);
   
-  return targetGoods.slice(0, maxGoods);
+  return goodsWithScores.slice(0, maxGoods).map(g => g.goodsId);
 }

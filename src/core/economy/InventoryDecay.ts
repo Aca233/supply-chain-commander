@@ -112,10 +112,10 @@ const SHELF_LIFE_CONFIGS: ShelfLifeConfig[] = [
   
   // 短期保存 - 部分食品
   { goodsId: 8, type: ShelfLifeType.SHORT_TERM, shelfLifeDays: 90, decayRate: 0.005, storageCondition: StorageCondition.COOL }, // 粮食
-  { goodsId: 25, type: ShelfLifeType.MEDIUM_TERM, shelfLifeDays: 180, decayRate: 0.002, storageCondition: StorageCondition.COOL }, // 饮料
+  { goodsId: 45, type: ShelfLifeType.MEDIUM_TERM, shelfLifeDays: 180, decayRate: 0.002, storageCondition: StorageCondition.COOL }, // 饮料
   
   // 易腐烂 - 生鲜食品
-  { goodsId: 24, type: ShelfLifeType.PERISHABLE, shelfLifeDays: 14, decayRate: 0.03, storageCondition: StorageCondition.REFRIGERATED }, // 加工食品
+  { goodsId: 44, type: ShelfLifeType.PERISHABLE, shelfLifeDays: 14, decayRate: 0.03, storageCondition: StorageCondition.REFRIGERATED }, // 食品
   
   // 药品 - 需要严格存储
   { goodsId: 37, type: ShelfLifeType.MEDIUM_TERM, shelfLifeDays: 365, decayRate: 0.001, storageCondition: StorageCondition.CLIMATE_CONTROLLED },

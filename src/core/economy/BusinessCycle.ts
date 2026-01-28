@@ -119,7 +119,7 @@ const ECONOMIC_EVENTS: EconomicEvent[] = [
       duration: 480,
       goodsEffects: [
         { goodsId: 27, demandMultiplier: 1.3, priceMultiplier: 0.9 }, // 芯片
-        { goodsId: 38, demandMultiplier: 1.2, priceMultiplier: 0.95 }, // 智能手机
+        { goodsId: 56, demandMultiplier: 1.2, priceMultiplier: 0.95 }, // 平价手机
       ],
     },
     probability: 0.0002,
@@ -158,7 +158,7 @@ const ECONOMIC_EVENTS: EconomicEvent[] = [
       goodsEffects: [
         { goodsId: 40, demandMultiplier: 1.4, priceMultiplier: 1.05 }, // 家电
         { goodsId: 43, demandMultiplier: 1.5, priceMultiplier: 1.1 }, // 服装
-        { goodsId: 53, demandMultiplier: 1.6, priceMultiplier: 1.1 }, // 奢侈品
+        { goodsId: 54, demandMultiplier: 1.6, priceMultiplier: 1.1 }, // 珠宝
       ],
     },
     probability: 0.0005,

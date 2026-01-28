@@ -189,6 +189,7 @@ export interface ConstructionQueueSystem {
   startTicks: Uint32Array;              // 开始时间
   estimatedEndTicks: Uint32Array;       // 预计完成时间
   materialReserveIds: Uint32Array;      // 预留材料池的起始索引
+  recipeIds: Uint8Array;                // 新建建筑使用的配方ID
   
   // 已有建筑升级专用 (新建时为-1)
   existingBuildingIds: Int16Array;      // 正在升级的建筑ID，-1表示新建
@@ -441,6 +442,7 @@ export function createConstructionQueueSystem(): ConstructionQueueSystem {
     startTicks: new Uint32Array(size),
     estimatedEndTicks: new Uint32Array(size),
     materialReserveIds: new Uint32Array(size),
+    recipeIds: new Uint8Array(size),
     existingBuildingIds: new Int16Array(size).fill(-1),
     isActive: new Uint8Array(size),
     nextQueueId: 1,

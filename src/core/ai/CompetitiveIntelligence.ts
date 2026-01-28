@@ -195,6 +195,20 @@ export function updateCompetitorProfiles(
       decisionFrequency: 1,
       preferredCategories: [],
       avoidedCategories: [],
+      industryPreferences: {
+        extraction: 1.0,
+        processing: 1.0,
+        manufacturing: 1.0,
+        agriculture: 1.0,
+        service: 1.0,
+        retail: 1.0,
+        tech: 1.0,
+        luxury: 1.0,
+        consumer: 1.0,
+        defense: 1.0,
+        pharma: 1.0,
+        transport: 1.0,
+      },
     });
   }
   

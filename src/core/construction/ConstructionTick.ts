@@ -7,7 +7,7 @@ import { GameWorld } from '../world/GameWorld';
 import { ConstructionStatus, DemolitionStatus } from '../world/GameWorld';
 import { GOODS_COUNT, MAX_CONCURRENT_CONSTRUCTIONS, MAX_CONCURRENT_DEMOLITIONS } from '../constants';
 import { getBuildingConstructionConfig, MaterialRequirement, getBaseMaterials, getBuildTime } from '../../data/buildingMaterials';
-import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '../../data/buildings';
+import { ALL_BUILDINGS, BUILDINGS_BY_ID, BuildingTypeDefinition, isRetailBuilding } from '../../data/buildings';
 import { registerRetailStore } from '../economy/RetailSystem';
 
 /**
@@ -226,8 +226,16 @@ function processConstructionTick(world: GameWorld): {
               buildingsData.isActive[newBuildingId] = 1;
               buildingsData.progress[newBuildingId] = 0;
               
-              // 初始化槽位和缓冲区
-              // (使用零值初始化，由其他系统设置)
+              // 设置配方ID - 优先使用建造时指定的配方，否则使用默认配方
+              let recipeId = construction.recipeIds[queueIdx];
+              if (recipeId === 0) {
+                // 没有指定配方，使用建筑类型的默认配方
+                const buildingType = BUILDINGS_BY_ID.get(buildingTypeId);
+                if (buildingType) {
+                  recipeId = buildingType.defaultRecipeId;
+                }
+              }
+              buildingsData.recipeIds[newBuildingId] = recipeId;
               
               newBuildings.push(newBuildingId);
             }
@@ -709,6 +717,12 @@ export function startConstruction(
   const config = getBuildingConstructionConfig(buildingTypeId);
   const buildTime = config?.buildTime || getBuildTime(buildingTypeId);
   
+  // 获取默认配方ID（如果未指定）
+  let finalRecipeId = recipeId;
+  if (finalRecipeId === 0) {
+    finalRecipeId = buildingDef.defaultRecipeId;
+  }
+  
   // 添加到队列
   construction.isActive[freeSlot] = 1;
   construction.companyIds[freeSlot] = companyId;
@@ -719,8 +733,7 @@ export function startConstruction(
   construction.progress[freeSlot] = 0;
   construction.startTicks[freeSlot] = world.tick;
   construction.estimatedEndTicks[freeSlot] = world.tick + buildTime;
-  // recipeId 暂存在 targetLevels 的高位，后续创建建筑时使用
-  // 或者需要添加 recipeIds 数组到 ConstructionQueueSystem
+  construction.recipeIds[freeSlot] = finalRecipeId; // 存储配方ID
   
   return { success: true, queueIdx: freeSlot };
 }

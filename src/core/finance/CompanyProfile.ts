@@ -1,11 +1,15 @@
 /**
  * 统一公司数据模型
  * 整合基础信息 + 股票信息 + 竞争分析 + 持股关系
+ *
+ * 【v3.0更新】使用统一的AI_COMPANIES配置
+ * - 公司专业化描述优先使用配置中的description字段
+ * - 确保公司名称与产业类型的一致性
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT } from '@/core/constants';
-import { PersonalityType, AI_COMPANIES, AI_PERSONALITIES } from '@/core/ai/AIPersonality';
+import { PersonalityType, AI_COMPANIES, AI_PERSONALITIES, AICompanyConfig } from '@/core/ai/AIPersonality';
 import { getStock, getHoldings, Holding, Stock, StockMarketState, getMarketState } from './StockMarket';
 
 /**
@@ -157,12 +161,38 @@ const personalityTypes: PersonalityType[] = [
 ];
 
 /**
+ * 根据公司名称查找配置（用于处理ID不匹配的情况）
+ */
+function findCompanyConfigByName(companyName: string): AICompanyConfig | undefined {
+  return AI_COMPANIES.find(c => c.name === companyName);
+}
+
+/**
  * 获取公司的人格类型
  */
 export function getCompanyPersonality(companyId: number): PersonalityType {
+  // 首先尝试通过ID查找
   const config = AI_COMPANIES.find(c => c.id === companyId);
   if (config) return config.personality;
   return personalityTypes[(companyId - 1) % personalityTypes.length];
+}
+
+/**
+ * 获取公司配置（通过ID或名称）
+ */
+function getCompanyConfig(world: GameWorld, companyId: number): AICompanyConfig | undefined {
+  // 首先尝试通过ID查找
+  let config = AI_COMPANIES.find(c => c.id === companyId);
+  if (config) return config;
+  
+  // 如果ID没找到，尝试通过公司名称查找
+  const companyName = world.companies.names[companyId];
+  if (companyName) {
+    config = findCompanyConfigByName(companyName);
+    if (config) return config;
+  }
+  
+  return undefined;
 }
 
 /**
@@ -189,14 +219,50 @@ function getGoodsName(world: GameWorld, goodsId: number): string {
 }
 
 /**
+ * 获取产业类别的中文描述
+ */
+function getCategoryDescription(category: AICompanyConfig['category']): string {
+  switch (category) {
+    case 'extraction': return '原材料开采';
+    case 'processing': return '加工制造';
+    case 'manufacturing': return '高端制造';
+    case 'agriculture': return '农业种植养殖';
+    case 'pharma': return '医药健康';
+    case 'luxury': return '奢侈品';
+    case 'energy': return '能源电力';
+    case 'retail': return '零售服务';
+    case 'diversified': return '多元化经营';
+    default: return '综合业务';
+  }
+}
+
+/**
  * 获取公司主营业务描述
+ *
+ * 【v3.0更新】优先使用统一配置中的description字段
+ * 1. 首先检查配置中的description字段
+ * 2. 然后检查focusGoods生成描述
+ * 3. 最后基于category或personality生成默认描述
  */
 function getCompanySpecialization(world: GameWorld, companyId: number): string {
-  const config = AI_COMPANIES.find(c => c.id === companyId);
-  if (config && config.focusGoods.length > 0) {
-    return config.focusGoods.slice(0, 2).map(g => getGoodsName(world, g)).join('、');
+  const config = getCompanyConfig(world, companyId);
+  
+  if (config) {
+    // 优先使用description字段
+    if (config.description) {
+      return config.description;
+    }
+    
+    // 其次使用focusGoods
+    if (config.focusGoods.length > 0) {
+      return config.focusGoods.slice(0, 2).map(g => getGoodsName(world, g)).join('、');
+    }
+    
+    // 最后使用category
+    return getCategoryDescription(config.category);
   }
   
+  // 回退到基于人格的描述
   const personality = getCompanyPersonality(companyId);
   switch (personality) {
     case 'aggressive': return '工业品、建材';
@@ -214,42 +280,51 @@ function getCompanySpecialization(world: GameWorld, companyId: number): string {
 /**
  * 获取公司主营商品ID列表
  */
-function getMainProducts(companyId: number): number[] {
-  const config = AI_COMPANIES.find(c => c.id === companyId);
+function getMainProducts(world: GameWorld, companyId: number): number[] {
+  const config = getCompanyConfig(world, companyId);
   if (config) return config.focusGoods;
   return [];
+}
+
+/**
+ * 确保数值有效，NaN替换为默认值
+ */
+function safeNumber(value: number, defaultValue: number = 0): number {
+  return isFinite(value) ? value : defaultValue;
 }
 
 /**
  * 转换Stock为StockView
  */
 function stockToView(stock: Stock): StockView {
-  const priceChange = stock.currentPrice - stock.previousClose;
-  const priceChangePercent = stock.previousClose > 0
-    ? (priceChange / stock.previousClose) * 100
+  const currentPrice = safeNumber(stock.currentPrice, 10);
+  const previousClose = safeNumber(stock.previousClose, currentPrice);
+  const priceChange = currentPrice - previousClose;
+  const priceChangePercent = previousClose > 0
+    ? safeNumber((priceChange / previousClose) * 100, 0)
     : 0;
     
   return {
-    ticker: stock.ticker,
-    currentPrice: stock.currentPrice,
-    previousClose: stock.previousClose,
-    priceChange,
+    ticker: stock.ticker || '----',
+    currentPrice,
+    previousClose,
+    priceChange: safeNumber(priceChange, 0),
     priceChangePercent,
-    openPrice: stock.openPrice,
-    highPrice: stock.highPrice,
-    lowPrice: stock.lowPrice,
-    marketCap: stock.marketCap,
-    volume: stock.volume,
-    totalVolume: stock.totalVolume,
-    turnoverRate: stock.turnoverRate,
-    pe: stock.priceToEarnings,
-    pb: stock.priceToBook,
-    eps: stock.earningsPerShare,
-    dividendYield: stock.dividendYield,
+    openPrice: safeNumber(stock.openPrice, currentPrice),
+    highPrice: safeNumber(stock.highPrice, currentPrice),
+    lowPrice: safeNumber(stock.lowPrice, currentPrice),
+    marketCap: safeNumber(stock.marketCap, 0),
+    volume: safeNumber(stock.volume, 0),
+    totalVolume: safeNumber(stock.totalVolume, 0),
+    turnoverRate: safeNumber(stock.turnoverRate, 0),
+    pe: safeNumber(stock.priceToEarnings, 0),
+    pb: safeNumber(stock.priceToBook, 0),
+    eps: safeNumber(stock.earningsPerShare, 0),
+    dividendYield: safeNumber(stock.dividendYield, 0),
     isListed: stock.isListed,
     isTradable: stock.isTradable,
-    totalShares: stock.totalShares,
-    outstandingShares: stock.outstandingShares,
+    totalShares: safeNumber(stock.totalShares, 1000000),
+    outstandingShares: safeNumber(stock.outstandingShares, 400000),
   };
 }
 
@@ -397,7 +472,7 @@ function getCompetitionInfo(world: GameWorld, companyId: number, marketShare: nu
     specialization: getCompanySpecialization(world, companyId),
     threatLevel: calculateThreatLevel(world, companyId, marketShare),
     relationType: 'competitor', // 简化处理，后续可以基于供应链分析
-    mainProducts: getMainProducts(companyId),
+    mainProducts: getMainProducts(world, companyId),
   };
 }
 

@@ -20,7 +20,7 @@ import {
 } from '@/ui/components/Dashboard';
 
 export const Dashboard: React.FC = () => {
-  const { tick, performance, setCurrentPage } = useGameStore();
+  const { tick, performance, setCurrentPage, setSelectedGoods } = useGameStore();
 
   // 获取聚合的仪表盘数据
   const {
@@ -38,17 +38,17 @@ export const Dashboard: React.FC = () => {
     setCurrentPage(view as any);
   }, [setCurrentPage]);
 
-  // 交易处理
+  // 交易处理 - 跳转到市场并选中指定商品
   const handleTrade = useCallback((goodsId: number, _type: 'buy' | 'sell') => {
+    setSelectedGoods(goodsId);
     setCurrentPage('market');
-    // TODO: 打开交易面板并选中商品
-  }, [setCurrentPage]);
+  }, [setCurrentPage, setSelectedGoods]);
 
-  // 商品点击处理
-  const handleGoodsClick = useCallback((_goodsId: number) => {
+  // 商品点击处理 - 跳转到市场并选中指定商品
+  const handleGoodsClick = useCallback((goodsId: number) => {
+    setSelectedGoods(goodsId);
     setCurrentPage('market');
-    // TODO: 打开市场并选中商品
-  }, [setCurrentPage]);
+  }, [setCurrentPage, setSelectedGoods]);
 
   // 查看公司
   const handleViewCompany = useCallback((_companyId: number) => {

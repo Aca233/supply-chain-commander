@@ -218,11 +218,15 @@ function createStock(world: GameWorld, companyId: number): Stock {
   const name = world.companies.names[companyId] || `公司#${companyId}`;
   const ticker = generateTicker(name);
   
-  // 计算公司价值
-  const cash = world.companies.cash[companyId];
+  // 计算公司价值（确保数值有效）
+  const cash = world.companies.cash[companyId] || 0;
   let inventoryValue = 0;
   for (let i = 0; i < GOODS_COUNT; i++) {
-    inventoryValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
+    const invQty = world.companies.inventories[companyId * GOODS_COUNT + i] || 0;
+    const price = world.goods.prices[i] || 0;
+    if (isFinite(invQty) && isFinite(price)) {
+      inventoryValue += invQty * price;
+    }
   }
   
   // 统计建筑资产
@@ -233,14 +237,21 @@ function createStock(world: GameWorld, companyId: number): Stock {
     }
   }
   
-  const bookValue = cash + inventoryValue + buildingValue;
+  // 确保所有值有效
+  const validCash = isFinite(cash) ? cash : 0;
+  const validInventory = isFinite(inventoryValue) ? inventoryValue : 0;
+  const validBuilding = isFinite(buildingValue) ? buildingValue : 0;
+  const bookValue = validCash + validInventory + validBuilding;
   
   // 股本设计
   const totalShares = 1000000; // 100万股
   const outstandingShares = totalShares * 0.4; // 40%流通
   
-  // 初始定价
-  const initialPrice = bookValue / totalShares * 1.5; // 1.5倍市净率
+  // 初始定价（确保最低价格为1）
+  let initialPrice = bookValue / totalShares * 1.5; // 1.5倍市净率
+  if (!isFinite(initialPrice) || initialPrice <= 0) {
+    initialPrice = 10; // 默认价格10元
+  }
   
   return {
     companyId,
@@ -286,11 +297,15 @@ export function calculateValuation(world: GameWorld, companyId: number): {
   intrinsicValue: number;
   marketValue: number;
 } {
-  const cash = world.companies.cash[companyId];
+  const cash = world.companies.cash[companyId] || 0;
   
   let inventoryValue = 0;
   for (let i = 0; i < GOODS_COUNT; i++) {
-    inventoryValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
+    const qty = world.companies.inventories[companyId * GOODS_COUNT + i] || 0;
+    const price = world.goods.prices[i] || 0;
+    if (isFinite(qty) && isFinite(price)) {
+      inventoryValue += qty * price;
+    }
   }
   
   let buildingValue = 0;
@@ -300,18 +315,28 @@ export function calculateValuation(world: GameWorld, companyId: number): {
     }
   }
   
-  const bookValue = cash + inventoryValue + buildingValue;
+  // 确保所有值有效
+  const validCash = isFinite(cash) ? cash : 0;
+  const validInventory = isFinite(inventoryValue) ? inventoryValue : 0;
+  const validBuilding = isFinite(buildingValue) ? buildingValue : 0;
+  const bookValue = validCash + validInventory + validBuilding;
   
   // 内在价值 = 账面价值 + 未来盈利折现
   const estimatedEarnings = bookValue * 0.1; // 假设10%ROE
-  const discountRate = 0.1;
   const intrinsicValue = bookValue + estimatedEarnings * 10; // 10年DCF简化
   
   // 市场价值
   const stock = stockMarket.stocks.get(companyId);
-  const marketValue = stock ? stock.marketCap : bookValue;
+  let marketValue = stock ? stock.marketCap : bookValue;
+  if (!isFinite(marketValue) || marketValue <= 0) {
+    marketValue = bookValue > 0 ? bookValue : 1000000; // 默认100万
+  }
   
-  return { bookValue, intrinsicValue, marketValue };
+  return {
+    bookValue: isFinite(bookValue) ? bookValue : 0,
+    intrinsicValue: isFinite(intrinsicValue) ? intrinsicValue : bookValue,
+    marketValue
+  };
 }
 
 /**
@@ -882,47 +907,61 @@ export function payDividend(world: GameWorld, companyId: number, dividendPerShar
  * @returns 新的股价
  */
 function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock): number {
+  // 确保当前价格有效
+  let currentPrice = stock.currentPrice;
+  if (!isFinite(currentPrice) || currentPrice <= 0) {
+    currentPrice = 10; // 默认价格
+  }
+  
   const history = stockMarket.companyHistory.get(companyId);
-  const currentCash = world.companies.cash[companyId];
+  const currentCash = world.companies.cash[companyId] || 0;
   const valuation = calculateValuation(world, companyId);
-  const currentNetWorth = valuation.bookValue;
+  const currentNetWorth = valuation.bookValue || 0;
   
   // 如果没有历史数据，初始化并返回当前价格
   if (!history) {
     stockMarket.companyHistory.set(companyId, {
-      lastCash: currentCash,
-      lastNetWorth: currentNetWorth,
+      lastCash: isFinite(currentCash) ? currentCash : 0,
+      lastNetWorth: isFinite(currentNetWorth) ? currentNetWorth : 0,
       lastUpdateTick: world.tick,
     });
-    return stock.currentPrice;
+    return currentPrice;
   }
   
   // 计算业绩变化率
   // 1. 净资产变化率（公司整体价值变化）
   let netWorthChangeRate = 0;
-  if (history.lastNetWorth > 0) {
+  if (history.lastNetWorth > 0 && isFinite(currentNetWorth)) {
     netWorthChangeRate = (currentNetWorth - history.lastNetWorth) / history.lastNetWorth;
-    // 限制极端值
+    // 限制极端值并确保有效
+    if (!isFinite(netWorthChangeRate)) netWorthChangeRate = 0;
     netWorthChangeRate = Math.max(-0.3, Math.min(0.3, netWorthChangeRate));
   }
   
   // 2. 现金变化率（盈利能力指标）
   let cashChangeRate = 0;
-  if (history.lastCash > 0) {
+  if (history.lastCash > 0 && isFinite(currentCash)) {
     cashChangeRate = (currentCash - history.lastCash) / history.lastCash;
-    // 限制极端值
+    // 限制极端值并确保有效
+    if (!isFinite(cashChangeRate)) cashChangeRate = 0;
     cashChangeRate = Math.max(-0.3, Math.min(0.3, cashChangeRate));
   }
   
   // 3. 估值回归因子（价格向内在价值靠拢）
   // 如果当前价格低于内在价值，有上涨压力；反之有下跌压力
-  const intrinsicPricePerShare = valuation.intrinsicValue / stock.totalShares;
+  let intrinsicPricePerShare = valuation.intrinsicValue / stock.totalShares;
+  if (!isFinite(intrinsicPricePerShare) || intrinsicPricePerShare <= 0) {
+    intrinsicPricePerShare = currentPrice; // 使用当前价格作为内在价值
+  }
+  
   let valuationGap = 0;
-  if (intrinsicPricePerShare > 0) {
+  if (intrinsicPricePerShare > 0 && currentPrice > 0) {
     // 计算当前价格与内在价值的偏离比例
-    const deviation = (intrinsicPricePerShare - stock.currentPrice) / intrinsicPricePerShare;
-    // 限制回归速度（每次最多回归5%的偏离）
-    valuationGap = Math.max(-0.05, Math.min(0.05, deviation * 0.1));
+    const deviation = (intrinsicPricePerShare - currentPrice) / intrinsicPricePerShare;
+    if (isFinite(deviation)) {
+      // 限制回归速度（每次最多回归5%的偏离）
+      valuationGap = Math.max(-0.05, Math.min(0.05, deviation * 0.1));
+    }
   }
   
   // 4. 市场情绪随机波动（降低到±0.75%）
@@ -944,6 +983,11 @@ function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock
     valuationGap * 0.20 +
     randomVolatility * 0.15;
   
+  // 确保变化率有效
+  if (!isFinite(priceChangeRate)) {
+    priceChangeRate = 0;
+  }
+  
   // 应用交易量稳定因子
   priceChangeRate *= volumeStabilizer;
   
@@ -951,38 +995,49 @@ function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock
   priceChangeRate = Math.max(-0.03, Math.min(0.03, priceChangeRate));
   
   // 计算新价格
-  let newPrice = stock.currentPrice * (1 + priceChangeRate);
+  let newPrice = currentPrice * (1 + priceChangeRate);
+  
+  // 确保新价格有效
+  if (!isFinite(newPrice) || newPrice <= 0) {
+    newPrice = currentPrice > 0 ? currentPrice : 10;
+  }
   
   // 价格下限保护（不低于账面价值的50%或1元）
-  const minPrice = Math.max(1, stock.bookValue / stock.totalShares * 0.5);
+  const bookValuePerShare = stock.bookValue / stock.totalShares;
+  const minPrice = Math.max(1, isFinite(bookValuePerShare) ? bookValuePerShare * 0.5 : 1);
   newPrice = Math.max(minPrice, newPrice);
   
   // 价格上限保护（不超过内在价值的3倍）
   const maxPrice = intrinsicPricePerShare * 3;
-  if (maxPrice > 0) {
+  if (isFinite(maxPrice) && maxPrice > 0) {
     newPrice = Math.min(newPrice, maxPrice);
   }
   
   // 更新历史数据
   stockMarket.companyHistory.set(companyId, {
-    lastCash: currentCash,
-    lastNetWorth: currentNetWorth,
+    lastCash: isFinite(currentCash) ? currentCash : 0,
+    lastNetWorth: isFinite(currentNetWorth) ? currentNetWorth : 0,
     lastUpdateTick: world.tick,
   });
   
   // 更新每股收益（EPS）
   const ticksSinceUpdate = world.tick - history.lastUpdateTick;
-  if (ticksSinceUpdate > 0) {
+  if (ticksSinceUpdate > 0 && isFinite(currentCash) && isFinite(history.lastCash)) {
     const earningsThisPeriod = currentCash - history.lastCash;
     // 年化每股收益
     const annualizedEarnings = (earningsThisPeriod / ticksSinceUpdate) * (365 * 24);
-    stock.earningsPerShare = annualizedEarnings / stock.totalShares;
-    
-    // 更新市盈率
-    if (stock.earningsPerShare > 0) {
-      stock.priceToEarnings = newPrice / stock.earningsPerShare;
-    } else {
-      stock.priceToEarnings = 0; // 亏损时不显示PE
+    if (isFinite(annualizedEarnings)) {
+      stock.earningsPerShare = annualizedEarnings / stock.totalShares;
+      
+      // 更新市盈率
+      if (stock.earningsPerShare > 0 && isFinite(stock.earningsPerShare)) {
+        stock.priceToEarnings = newPrice / stock.earningsPerShare;
+        if (!isFinite(stock.priceToEarnings)) {
+          stock.priceToEarnings = 0;
+        }
+      } else {
+        stock.priceToEarnings = 0; // 亏损时不显示PE
+      }
     }
   }
   

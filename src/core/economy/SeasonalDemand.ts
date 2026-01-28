@@ -170,18 +170,18 @@ const GOODS_SEASONAL_CONFIGS: GoodsSeasonalConfig[] = [
   { goodsId: 26, seasonalPattern: SeasonalPattern.YEAR_END, peakSeason: Season.WINTER, peakMultiplier: 1.4, troughMultiplier: 0.8, priceVolatility: 0.18 },   // 家电
   
   // 服装 - 春秋换季
-  { goodsId: 29, seasonalPattern: SeasonalPattern.SPRING_AUTUMN, peakSeason: Season.AUTUMN, peakMultiplier: 1.35, troughMultiplier: 0.75, priceVolatility: 0.15 }, // 服装
+  { goodsId: 43, seasonalPattern: SeasonalPattern.SPRING_AUTUMN, peakSeason: Season.AUTUMN, peakMultiplier: 1.35, troughMultiplier: 0.75, priceVolatility: 0.15 }, // 服装
   
   // 食品饮料 - 夏季高峰
-  { goodsId: 25, seasonalPattern: SeasonalPattern.SUMMER_PEAK, peakSeason: Season.SUMMER, peakMultiplier: 1.5, troughMultiplier: 0.7, priceVolatility: 0.1 },  // 饮料
-  { goodsId: 24, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.3, troughMultiplier: 0.85, priceVolatility: 0.08 },    // 加工食品
+  { goodsId: 45, seasonalPattern: SeasonalPattern.SUMMER_PEAK, peakSeason: Season.SUMMER, peakMultiplier: 1.5, troughMultiplier: 0.7, priceVolatility: 0.1 },  // 饮料
+  { goodsId: 44, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.3, troughMultiplier: 0.85, priceVolatility: 0.08 },    // 食品
   
   // 汽车 - 年末促销
-  { goodsId: 28, seasonalPattern: SeasonalPattern.YEAR_END, peakSeason: Season.WINTER, peakMultiplier: 1.25, troughMultiplier: 0.85, priceVolatility: 0.1 },   // 汽车
+  { goodsId: 41, seasonalPattern: SeasonalPattern.YEAR_END, peakSeason: Season.WINTER, peakMultiplier: 1.25, troughMultiplier: 0.85, priceVolatility: 0.1 },   // 汽车
   
   // 奢侈品 - 假日高峰
-  { goodsId: 35, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.6, troughMultiplier: 0.7, priceVolatility: 0.2 },      // 珠宝
-  { goodsId: 36, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.5, troughMultiplier: 0.75, priceVolatility: 0.18 },    // 奢侈品
+  { goodsId: 54, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.6, troughMultiplier: 0.7, priceVolatility: 0.2 },      // 珠宝
+  { goodsId: 90, seasonalPattern: SeasonalPattern.HOLIDAY, peakSeason: Season.WINTER, peakMultiplier: 1.5, troughMultiplier: 0.75, priceVolatility: 0.18 },    // 钻石饰品
   
   // 学习用品/电子 - 开学季
   // (这里假设有相关商品ID)
@@ -343,7 +343,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     description: '传统佳节，消费需求激增',
     month: 2,
     duration: 14,
-    affectedGoods: [24, 25, 35, 36, 29], // 食品、饮料、珠宝、奢侈品、服装
+    affectedGoods: [44, 45, 54, 90, 43], // 食品、饮料、珠宝、钻石饰品、服装
     demandBoost: 0.5,
   },
   {
@@ -351,7 +351,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     description: '劳动节假期，旅游消费高峰',
     month: 5,
     duration: 7,
-    affectedGoods: [25, 24, 27], // 饮料、食品、电子
+    affectedGoods: [45, 44, 26], // 饮料、食品、电子元件
     demandBoost: 0.3,
   },
   {
@@ -359,7 +359,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     description: '电商大促，各类商品销量激增',
     month: 11,
     duration: 3,
-    affectedGoods: [26, 27, 29, 36], // 家电、电子、服装、奢侈品
+    affectedGoods: [40, 55, 43, 54], // 家电、高端手机、服装、珠宝
     demandBoost: 0.8,
   },
   {
@@ -367,7 +367,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     description: '年末节日消费高峰',
     month: 12,
     duration: 14,
-    affectedGoods: [35, 36, 27, 26, 24], // 珠宝、奢侈品、电子、家电、食品
+    affectedGoods: [54, 90, 55, 40, 44], // 珠宝、钻石饰品、高端手机、家电、食品
     demandBoost: 0.4,
   },
   {
@@ -375,7 +375,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
     description: '学生返校，文具电子需求上升',
     month: 9,
     duration: 10,
-    affectedGoods: [27, 29], // 电子、服装
+    affectedGoods: [56, 43], // 平价手机、服装
     demandBoost: 0.35,
   },
 ];

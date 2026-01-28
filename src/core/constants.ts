@@ -1,16 +1,16 @@
 /**
  * 游戏核心常量定义
  * 这些常量用于SoA数据结构的大小分配和游戏规则配置
- * 产业链全覆盖版本：230种商品、107种建筑、232种配方
+ * 精简版本：约88种商品、44种建筑、60种配方
  */
 
 // ==================== 数据规模常量 ====================
 
-/** 商品种类数（实际230种，预留空间至256） */
-export const GOODS_COUNT = 256;
+/** 商品种类数（实际88种，预留空间至128） */
+export const GOODS_COUNT = 128;
 
 /** 实际商品数量（用于遍历时的精确计数） */
-export const ACTUAL_GOODS_COUNT = 230;
+export const ACTUAL_GOODS_COUNT = 88;
 
 /** 最大建筑数量（增加以支持更多产业链） */
 export const MAX_BUILDINGS = 3000;
@@ -39,14 +39,14 @@ export const HISTORY_SIZE = 365;
 /** 人口分层数量（8个收入层级） */
 export const POPS_GROUPS = 8;
 
-/** 消费品种类数（实际约80种，根据goods.ts中isConsumerGood统计） */
-export const CONSUMER_GOODS_COUNT = 80;
+/** 消费品种类数（实际约45种，根据goods.ts中isConsumerGood统计） */
+export const CONSUMER_GOODS_COUNT = 45;
 
-/** 建筑类型数量（107种建筑，包含所有产业链建筑） */
-export const BUILDING_TYPES_COUNT = 107;
+/** 建筑类型数量（44种建筑，精简版产业链） */
+export const BUILDING_TYPES_COUNT = 44;
 
-/** 配方数量（232个配方，包含完整产业链） */
-export const RECIPE_COUNT = 232;
+/** 配方数量（60个配方，精简版产业链） */
+export const RECIPE_COUNT = 60;
 
 // ==================== 时间常量 ====================
 
@@ -56,8 +56,8 @@ export const TICKS_PER_DAY = 24;
 /** 每年tick数 */
 export const TICKS_PER_YEAR = 8760;
 
-/** 默认tick间隔（毫秒）- 400ms作为1x基础，8x时为50ms */
-export const DEFAULT_TICK_INTERVAL = 400;
+/** 默认tick间隔（毫秒）- 100ms作为1x基础(10 ticks/秒)，8x时为12.5ms */
+export const DEFAULT_TICK_INTERVAL = 100;
 
 // ==================== 经济常量 ====================
 
@@ -159,8 +159,8 @@ export const MAX_RETAIL_STORES = 500;
 /** 零售建筑类型起始ID */
 export const RETAIL_BUILDING_START_ID = 49;
 
-/** 零售建筑类型数量（包含新增的日化店、书店、酒类店、体育用品店、玩具店、乐器店） */
-export const RETAIL_BUILDING_COUNT = 16;
+/** 零售建筑类型数量（精简版保留核心零售店） */
+export const RETAIL_BUILDING_COUNT = 10;
 
 /** 零售进货触发阈值（库存低于此比例时触发进货） */
 export const RETAIL_RESTOCK_THRESHOLD = 0.3;

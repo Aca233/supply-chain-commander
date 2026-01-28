@@ -171,6 +171,9 @@ export function executePlayerAutoTrade(world: GameWorld): {
   // 0. 先调整长期未成交的订单价格
   adjustStaleOrderPrices(world, playerId);
   
+  // 0.5 【新增】撤销库存已充足的买单
+  cancelUnnecessaryBuyOrders(world, playerId, config);
+  
   // 1. 执行自动销售
   if (config.autoSell.enabled) {
     sellOrders = executeAutoSell(world, playerId, config);
@@ -198,6 +201,9 @@ function executeAutoSell(
   const c = world.companies;
   const b = world.buildings;
   let ordersPlaced = 0;
+  
+  // 【新增】先检查市场上是否有高价买单可以"吃"（即时成交）
+  ordersPlaced += executeTakeBuyOrders(world, playerId, config);
   
   // 收集建造队列中需要保留的材料（不应该自动卖出）
   const reservedForConstruction = new Map<number, number>();
@@ -227,8 +233,9 @@ function executeAutoSell(
     }
   }
   
-  // 收集生产配方需要的原材料（这些也不应该自动卖出！）
-  const productionInputs = new Set<number>();
+  // 收集生产配方需要的原材料及其每日需求量
+  // 【修复】不再完全跳过原材料，而是计算需求量，只保留足够用的
+  const productionInputNeeds = new Map<number, number>(); // goodsId -> 每日需求量
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
     
@@ -236,9 +243,11 @@ function executeAutoSell(
     const recipe = RECIPES.find(r => r.id === recipeId);
     if (!recipe) continue;
     
-    // 记录所有输入材料
+    // 计算每种输入材料的每日需求（每tick消耗 × 24tick/天）
+    const efficiency = b.efficiencies[buildingId] || 1;
     for (const input of recipe.inputs) {
-      productionInputs.add(input.goodsId);
+      const current = productionInputNeeds.get(input.goodsId) || 0;
+      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
     }
   }
   
@@ -257,21 +266,31 @@ function executeAutoSell(
   }
   
   // 同时也检查所有有库存的商品（不仅是建筑产出）
-  // 这样可以自动卖出多余的原材料，降低门槛到10个单位
-  // 但排除建造队列需要的材料和生产需要的原材料
+  // 【修复】原材料也可以卖出，只要库存超过生产所需
   for (let goodsId = 0; goodsId < GOODS_COUNT; goodsId++) {
     // 跳过建造队列需要的材料
     if (reservedForConstruction.has(goodsId)) {
       continue;
     }
     
-    // 跳过生产需要的原材料（避免自己买自己卖）
-    if (productionInputs.has(goodsId)) {
-      continue;
+    const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
+    
+    // 如果是生产所需原材料，检查是否有多余库存
+    const dailyNeed = productionInputNeeds.get(goodsId) || 0;
+    if (dailyNeed > 0) {
+      // 保留1天生产用量（从3天降到1天，更积极卖出）
+      const reserveForProduction = dailyNeed * 1;
+      const excessInventory = inventory - reserveForProduction;
+      
+      // 多余库存>10 或者 库存超过1000绝对值时可以卖（降低门槛）
+      if (excessInventory > 10 || inventory > 1000) {
+        // 有多余库存，加入可销售列表
+        outputGoods.add(goodsId);
+      }
+      continue; // 已处理，跳过下面的通用逻辑
     }
     
-    const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
-    // 如果库存超过10，也加入可销售列表（从100降低到10）
+    // 非生产原材料：如果库存超过10，也加入可销售列表
     if (inventory > 10) {
       outputGoods.add(goodsId);
     }
@@ -279,26 +298,35 @@ function executeAutoSell(
   
   // 为每种产出商品检查是否需要挂卖单
   for (const goodsId of outputGoods) {
-    // 再次检查：如果这个商品是生产需要的原材料，不要卖出
-    if (productionInputs.has(goodsId)) {
-      continue;
-    }
-    
-    // 检查是否已经有买单（避免同时买卖同一商品）
-    const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
-    if (existingBuyOrders > 0) {
-      continue; // 已有买单，不要卖
-    }
-    
     const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
     const reserved = c.inventoryReserved[playerId * GOODS_COUNT + goodsId];
     
-    // 额外保留建造队列需要的材料
+    // 保留建造队列需要的材料
     const constructionReserved = reservedForConstruction.get(goodsId) || 0;
-    const available = inventory - reserved - constructionReserved;
+    
+    // 保留生产所需的原材料（1天用量，更积极卖出）
+    const dailyProductionNeed = productionInputNeeds.get(goodsId) || 0;
+    const productionReserve = dailyProductionNeed * 1;
+    
+    // 计算总需保留量
+    const totalReserve = reserved + constructionReserved + productionReserve;
+    
+    // 计算真正可卖的数量
+    let available = inventory - totalReserve;
+    
+    // 【关键修复】如果库存很大（>1000），强制可卖一部分
+    if (inventory > 1000 && available < inventory * 0.5) {
+      available = Math.floor(inventory * 0.5); // 至少卖50%
+    }
+    
+    // 如果玩家自己有买单，且可用量很少，跳过
+    const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
+    if (existingBuyOrders > 0 && available <= 100) {
+      continue;
+    }
     
     // 保留一定比例
-    const reserveAmount = inventory * config.autoSell.reserveRatio;
+    const reserveAmount = Math.max(0, available) * config.autoSell.reserveRatio;
     const sellableAmount = Math.floor(available - reserveAmount);
     
     // 降低最小卖出门槛到1个单位
@@ -332,9 +360,9 @@ function executeAutoSell(
     // 确保价格不低于基础价的20%
     sellPrice = Math.max(sellPrice, basePrice * 0.2);
     
-    // 检查是否已有足够的卖单（放宽到5个）
+    // 检查是否已有足够的卖单（放宽到10个，且只检查普通挂单）
     const existingSellOrders = countExistingOrders(world, playerId, goodsId, 'sell');
-    if (existingSellOrders >= 5) continue;
+    if (existingSellOrders >= 10) continue;
     
     // 分批挂单（每次挂可售数量的50%，最少1个）
     const batchSize = Math.max(1, Math.min(sellableAmount, Math.floor(sellableAmount * 0.5)));
@@ -354,6 +382,141 @@ function executeAutoSell(
       
       // 调试日志（可选）
       // console.log(`[自动卖出] 商品${goodsId} 数量${batchSize} 价格${sellPrice.toFixed(2)}`);
+    }
+  }
+  
+  return ordersPlaced;
+}
+
+/**
+ * 【新增】吃买单功能 - 主动卖给市场上出价高的买家
+ *
+ * 核心逻辑：
+ * 1. 遍历所有有库存的商品
+ * 2. 检查订单簿中是否有其他公司的买单
+ * 3. 如果买单价格合适（>=基准价的80%），直接以买单价格挂卖单
+ * 4. 这样可以立即成交，不需要等待
+ */
+function executeTakeBuyOrders(
+  world: GameWorld,
+  playerId: number,
+  config: PlayerAutoTradeConfig
+): number {
+  const c = world.companies;
+  let ordersPlaced = 0;
+  
+  // 【关键修复】收集建造队列中需要保留的材料
+  const reservedForConstruction = new Map<number, number>();
+  const constructionQueue = getCompanyConstructionQueue(world, playerId);
+  for (const task of constructionQueue) {
+    // 只关注未完成的任务
+    if (task.status < 2) { // WAITING=0, IN_PROGRESS=1
+      let materials;
+      if (task.isUpgrade) {
+        const cfg = getBuildingConstructionConfig(task.buildingTypeId);
+        const upgradeMats = cfg?.upgradeMaterials?.[task.targetLevel - 2];
+        if (upgradeMats && upgradeMats.length > 0) {
+          materials = upgradeMats;
+        } else {
+          materials = getBaseMaterials(task.buildingTypeId).map(mat => ({
+            goodsId: mat.goodsId,
+            amount: Math.ceil(mat.amount * 0.5),
+          }));
+        }
+      } else {
+        materials = getBaseMaterials(task.buildingTypeId);
+      }
+      for (const mat of materials) {
+        const current = reservedForConstruction.get(mat.goodsId) || 0;
+        reservedForConstruction.set(mat.goodsId, current + mat.amount);
+      }
+    }
+  }
+  
+  // 收集生产所需原材料的每日需求量
+  const productionInputNeeds = new Map<number, number>();
+  const b = world.buildings;
+  for (let buildingId = 0; buildingId < b.count; buildingId++) {
+    if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
+    const recipeId = b.recipeIds[buildingId];
+    const recipe = RECIPES.find(r => r.id === recipeId);
+    if (!recipe) continue;
+    const efficiency = b.efficiencies[buildingId] || 1;
+    for (const input of recipe.inputs) {
+      const current = productionInputNeeds.get(input.goodsId) || 0;
+      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
+    }
+  }
+  
+  // 遍历所有商品
+  for (let goodsId = 0; goodsId < GOODS_COUNT; goodsId++) {
+    const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
+    const reserved = c.inventoryReserved[playerId * GOODS_COUNT + goodsId];
+    
+    // 保留建造队列需要的材料
+    const constructionReserve = reservedForConstruction.get(goodsId) || 0;
+    
+    // 保留生产所需的1天用量（从3天降到1天，更积极卖出）
+    const dailyNeed = productionInputNeeds.get(goodsId) || 0;
+    const productionReserve = dailyNeed * 1;
+    
+    // 总可用 = 库存 - 已预留 - 建造保留 - 生产保留
+    let available = inventory - reserved - constructionReserve - productionReserve;
+    
+    // 【关键修复】如果库存很大（>5000），强制可卖一部分
+    if (inventory > 5000 && available < inventory * 0.3) {
+      available = Math.floor(inventory * 0.3); // 至少卖30%
+    }
+    
+    // 如果玩家自己有买单，且可用量不多，跳过
+    const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
+    if (existingBuyOrders > 0 && available <= 100) {
+      continue;
+    }
+    
+    // 至少有5个可卖才处理
+    if (available < 5) continue;
+    
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    const basePrice = goods.basePrice;
+    
+    // 获取订单簿
+    const orderBookView = getOrderBookView(world, goodsId);
+    
+    // 遍历买单（已按价格降序排列）
+    for (const buyOrder of orderBookView.buyOrders) {
+      // 跳过自己的买单
+      if (buyOrder.companyId === playerId) continue;
+      
+      // 检查价格是否可接受（至少基准价的50%，从80%降低到50%更积极）
+      if (buyOrder.price < basePrice * 0.5) {
+        break; // 买单是降序的，后面的价格更低，不用继续了
+      }
+      
+      // 计算可卖数量（不超过可用库存和买单需求量）
+      const sellQuantity = Math.min(available, buyOrder.remaining, 1000);
+      
+      if (sellQuantity < 1) continue;
+      
+      // 【修复】吃买单是立即成交的，不应该受卖单数量限制
+      // 以买单价格挂卖单（确保立即成交）
+      const orderId = createSellOrder(
+        world,
+        playerId,
+        goodsId,
+        sellQuantity,
+        buyOrder.price, // 使用买方价格，确保立即成交
+        24 * 5
+      );
+      
+      if (orderId !== null) {
+        ordersPlaced++;
+        playerAutoTradeState.totalSold += sellQuantity;
+        // 每种商品每次只吃一个买单
+        break;
+      }
     }
   }
   
@@ -512,14 +675,26 @@ function executeAutoBuy(
   for (const [goodsId, neededPerCycle] of materialNeeds) {
     const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
     
-    // 检查是否低于阈值
-    if (inventory >= neededPerCycle * config.autoBuy.lowStockThreshold) {
-      continue; // 库存充足
+    // 【关键修复】先检查现有买单数量，避免重复下单
+    const existingBuyQuantity = countExistingOrderQuantity(world, playerId, goodsId, 'buy');
+    const totalPending = inventory + existingBuyQuantity;
+    
+    // 计算目标库存
+    const targetStock = neededPerCycle * config.autoBuy.targetStockCycles;
+    const lowThreshold = neededPerCycle * config.autoBuy.lowStockThreshold;
+    
+    // 如果库存+现有买单已经达到目标，跳过
+    if (totalPending >= targetStock) {
+      continue; // 已经有足够的库存或待购
     }
     
-    // 计算采购量
-    const targetStock = neededPerCycle * config.autoBuy.targetStockCycles;
-    const buyQuantity = Math.ceil(targetStock - inventory);
+    // 如果库存+现有买单高于低库存阈值，也跳过（不急着补货）
+    if (totalPending >= lowThreshold) {
+      continue;
+    }
+    
+    // 计算还需要采购多少（目标 - 已有 - 待购）
+    const buyQuantity = Math.ceil(targetStock - totalPending);
     
     if (buyQuantity < 5) continue;
     
@@ -569,9 +744,9 @@ function executeAutoBuy(
       if (affordableQty < 5) continue;
     }
     
-    // 检查是否已有足够的买单
+    // 检查是否已有足够的买单数量（订单个数限制）
     const existingBuyOrders = countExistingOrders(world, playerId, goodsId, 'buy');
-    if (existingBuyOrders >= 3) continue; // 最多3个买单
+    if (existingBuyOrders >= 2) continue; // 最多2个买单（从3降到2，更保守）
     
     // 一次性买够需要的数量（不再分批）
     const orderId = createBuyOrder(
@@ -750,6 +925,85 @@ function adjustStaleOrderPrices(world: GameWorld, playerId: number): void {
         if (orderId !== null) {
           // console.log(`[价格调整] 买单 商品${order.goodsId} 涨价 ${order.price.toFixed(2)} -> ${newPrice.toFixed(2)}`);
         }
+      }
+    }
+  }
+}
+
+/**
+ * 【新增】撤销库存已充足的买单
+ * 当库存已经超过目标时，撤销多余的买单
+ */
+function cancelUnnecessaryBuyOrders(
+  world: GameWorld,
+  playerId: number,
+  config: PlayerAutoTradeConfig
+): void {
+  const c = world.companies;
+  const o = world.orders;
+  const b = world.buildings;
+  
+  // 计算每种原材料的每周期需求量
+  const materialNeeds = new Map<number, number>();
+  for (let buildingId = 0; buildingId < b.count; buildingId++) {
+    if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
+    const recipeId = b.recipeIds[buildingId];
+    const recipe = RECIPES.find(r => r.id === recipeId);
+    if (!recipe) continue;
+    for (const input of recipe.inputs) {
+      const current = materialNeeds.get(input.goodsId) || 0;
+      materialNeeds.set(input.goodsId, current + input.amount);
+    }
+  }
+  
+  // 收集建造队列需要的材料
+  const constructionNeeds = new Map<number, number>();
+  const constructionQueue = getCompanyConstructionQueue(world, playerId);
+  for (const task of constructionQueue) {
+    if (task.status < 2) {
+      let materials;
+      if (task.isUpgrade) {
+        const cfg = getBuildingConstructionConfig(task.buildingTypeId);
+        const upgradeMats = cfg?.upgradeMaterials?.[task.targetLevel - 2];
+        if (upgradeMats && upgradeMats.length > 0) {
+          materials = upgradeMats;
+        } else {
+          materials = getBaseMaterials(task.buildingTypeId).map(mat => ({
+            goodsId: mat.goodsId,
+            amount: Math.ceil(mat.amount * 0.5),
+          }));
+        }
+      } else {
+        materials = getBaseMaterials(task.buildingTypeId);
+      }
+      for (const mat of materials) {
+        const current = constructionNeeds.get(mat.goodsId) || 0;
+        constructionNeeds.set(mat.goodsId, current + mat.amount);
+      }
+    }
+  }
+  
+  // 遍历玩家的所有买单
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (o.companyIds[i] !== playerId) continue;
+    if (o.types[i] !== 0) continue; // 只处理买单
+    
+    const goodsId = o.goodsIds[i];
+    const inventory = c.inventories[playerId * GOODS_COUNT + goodsId];
+    
+    // 计算这个商品的目标库存
+    const neededPerCycle = materialNeeds.get(goodsId) || 0;
+    const constructionNeed = constructionNeeds.get(goodsId) || 0;
+    
+    // 目标库存 = 生产需求 × 目标周期 + 建造需求
+    const targetStock = neededPerCycle * config.autoBuy.targetStockCycles + constructionNeed;
+    
+    // 如果当前库存已经超过目标的150%，撤销买单
+    if (inventory > targetStock * 1.5 && inventory > 100) {
+      if (cancelOrder(world, i)) {
+        const goods = ALL_GOODS.find(g => g.id === goodsId);
+        console.log(`[撤销多余买单] 商品${goodsId}(${goods?.name}) 库存${inventory} > 目标${targetStock.toFixed(0)}×1.5`);
       }
     }
   }

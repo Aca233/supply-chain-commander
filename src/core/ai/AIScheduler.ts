@@ -15,6 +15,7 @@ import { GameWorld } from '@/core/world/GameWorld';
 import { MAX_COMPANIES, ACTUAL_GOODS_COUNT, GOODS_COUNT } from '@/core/constants';
 import { fastDecision, clearFastDecisionCache } from './FastDecision';
 import { indicatorCache } from './IndicatorCache';
+import { runAIDecisionCycle } from './AIDecisionEngine';
 
 // ==================== 配置 ====================
 
@@ -47,7 +48,7 @@ const DEFAULT_CONFIG: AISchedulerConfig = {
   // 性能优化：进一步增加决策间隔
   fastInterval: 6,           // 从4改为每6tick执行
   standardInterval: 72,      // 从48改为每72tick执行
-  deepInterval: 240,         // 从180改为每240tick执行
+  deepInterval: 48,          // 从240改为每48tick执行（每2游戏天，确保AI能建造建筑）
   
   maxTimePerTick: 2,         // 从3ms降到2ms（更严格的时间预算）
   
@@ -335,27 +336,32 @@ class AISchedulerManager {
   
   /**
    * Deep层级决策
-   * 包含：竞争分析、风险评估、战略规划
+   * 包含：竞争分析、风险评估、战略规划、投资建造
+   *
+   * 【关键修复】调用完整的AIDecisionEngine，执行投资决策（包括建造建筑）
    */
   private processDeepDecision(world: GameWorld, companyId: number): void {
-    // Deep决策目前使用简化版本
-    // TODO: 集成完整的AIDecisionEngine模块（使用缓存）
-    
-    // 战略评估
-    const cash = world.companies.cash[companyId];
-    const totalAssets = world.companies.totalAssets[companyId];
-    
     // 计算公司健康状况
     const healthScore = this.calculateCompanyHealth(world, companyId);
     
-    // 根据健康状况调整策略
-    if (healthScore < 0.3) {
-      // 公司状况不佳，采取保守策略
-      // 可以在这里触发清库存、降低风险敞口等操作
-    } else if (healthScore > 0.7) {
-      // 公司状况良好，可以扩张
-      // 可以在这里触发投资、扩张等操作
+    // 只有健康的公司才执行完整决策周期（包括投资建造）
+    // 健康分数>0.3的公司执行完整决策
+    if (healthScore > 0.3) {
+      try {
+        // 【关键】调用完整的AI决策周期，包括：
+        // - 生产决策
+        // - 定价决策
+        // - 交易决策
+        // - 投资决策（建造建筑！）
+        // - 股票交易决策
+        // - 附属建筑决策
+        runAIDecisionCycle(world, companyId);
+      } catch (e) {
+        // 捕获异常避免单个公司的错误影响其他公司
+        console.error(`[AIScheduler] 公司${companyId}决策周期异常:`, e);
+      }
     }
+    // 健康状况不佳的公司采取保守策略，不执行扩张性决策
   }
   
   /**
