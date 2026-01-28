@@ -9,6 +9,7 @@ import { Finance } from '@/ui/pages/Finance';
 import { CompetitorsAndInvestment } from '@/ui/pages/CompetitorsAndInvestment';
 import { Settings } from '@/ui/pages/Settings';
 import Retail from '@/ui/pages/Retail';
+import { SupplyChainPage } from '@/ui/pages/SupplyChain';
 import { ToastProvider } from '@/ui/components/Toast/ToastContext';
 import { soundManager } from '@/core/sound';
 
@@ -127,6 +128,8 @@ const App: React.FC = () => {
         return <Dashboard />;
       case 'production':
         return <Production />;
+      case 'supplychain':
+        return <SupplyChainPage />;
       case 'market':
         return <Market />;
       case 'finance':

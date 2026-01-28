@@ -5,12 +5,13 @@ interface NavItem {
   id: string;
   label: string;
   icon: string;
-  page: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'settings';
+  page: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings';
 }
 
 const navItems: NavItem[] = [
   { id: 'dashboard', label: '仪表盘', icon: '📊', page: 'dashboard' },
   { id: 'production', label: '生产管理', icon: '🏭', page: 'production' },
+  { id: 'supplychain', label: '产业链', icon: '🔗', page: 'supplychain' },
   { id: 'market', label: '市场交易', icon: '💹', page: 'market' },
   { id: 'retail', label: '零售管理', icon: '🏪', page: 'retail' },
   { id: 'finance', label: '财务报表', icon: '📈', page: 'finance' },
@@ -38,12 +39,13 @@ export const Sidebar: React.FC = () => {
             <button
               key={item.id}
               onClick={() => setCurrentPage(item.page)}
+              title={sidebarCollapsed ? item.label : undefined}
               className={`
                 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
-                text-left transition-colors
+                text-left transition-all duration-200
                 ${currentPage === item.page
-                  ? 'bg-brand-primary/10 text-brand-primary'
-                  : 'text-text-secondary hover:bg-background-secondary hover:text-text-primary'
+                  ? 'bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm border-l-2 border-[var(--accent)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-primary)]'
                 }
               `}
             >

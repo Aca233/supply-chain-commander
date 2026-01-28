@@ -341,11 +341,20 @@ export class GameLoop {
                         aiSchedulerStats.deepProcessed;
     
     // 8.5. AI自动挂单（确保市场有流动性）
-    const aiSellOrders = autoPostSellOrders(this.world);
-    const aiBuyOrders = autoPostBuyOrders(this.world);
+    // 性能优化：降低执行频率，每6tick执行一次（原来是每tick）
+    let aiSellOrders = 0;
+    let aiBuyOrders = 0;
+    if (currentTick % 6 === 0) {
+      aiSellOrders = autoPostSellOrders(this.world);
+    }
+    // 买单和卖单错峰执行
+    if (currentTick % 6 === 3) {
+      aiBuyOrders = autoPostBuyOrders(this.world);
+    }
     
     // 8.6. AI订单价格自动调整（长期未成交订单降价/涨价）
-    if (currentTick % 6 === 0) {
+    // 性能优化：降低频率，从每6tick改为每12tick
+    if (currentTick % 12 === 0) {
       adjustAllAIOrderPrices(this.world);
     }
     endAI();

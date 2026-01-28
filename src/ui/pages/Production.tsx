@@ -1,3 +1,9 @@
+/**
+ * 生产管理页面
+ * 建筑管理、配方设置、建造队列
+ * 使用新设计系统组件重构
+ */
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
@@ -10,6 +16,15 @@ import {
   BuildingDetailPanel,
   ConstructionQueuePanel,
 } from '@/ui/components/Production';
+
+// 设计系统组件
+import {
+  Button,
+  Badge,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/ui/design-system';
 
 // 视图模式
 type ViewMode = 'grid' | 'list';
@@ -25,20 +40,17 @@ export const Production: React.FC = () => {
   const [showCatalog, setShowCatalog] = useState(true);
   const [showConstructionQueue, setShowConstructionQueue] = useState(true);
   
-  // 用于跟踪是否已经处理过从 store 传入的 selectedBuildingId
   const processedStoreSelectionRef = useRef<number | null>(null);
   
-  // 当从 store 收到 selectedBuildingId 时，同步到本地状态
   useEffect(() => {
     if (ui.selectedBuildingId !== null && ui.selectedBuildingId !== processedStoreSelectionRef.current) {
       setSelectedBuilding(ui.selectedBuildingId);
       processedStoreSelectionRef.current = ui.selectedBuildingId;
-      // 清除 store 中的选择，避免重复触发
       setStoreSelectedBuilding(null);
     }
   }, [ui.selectedBuildingId, setStoreSelectedBuilding]);
 
-  // 获取玩家的建筑列表（按建筑类型分组排序，同类型建筑排在一起）
+  // 获取玩家的建筑列表
   const playerBuildingList = useMemo(() => {
     if (!world) return [];
     const buildings: number[] = [];
@@ -49,14 +61,10 @@ export const Production: React.FC = () => {
       }
     }
     
-    // 按建筑类型ID排序，同类型的建筑会排在一起
     buildings.sort((a, b) => {
       const typeA = world.buildings.types[a];
       const typeB = world.buildings.types[b];
-      if (typeA !== typeB) {
-        return typeA - typeB;
-      }
-      // 同类型建筑按索引排序（先建造的在前）
+      if (typeA !== typeB) return typeA - typeB;
       return a - b;
     });
     
@@ -68,7 +76,6 @@ export const Production: React.FC = () => {
     const buildingId = buildBuilding(buildingTypeId, recipeId);
     if (buildingId !== null) {
       setBuildModalTypeId(null);
-      // 选中新建造的建筑
       setSelectedBuilding(buildingId);
     }
   }, [buildBuilding]);
@@ -95,86 +102,68 @@ export const Production: React.FC = () => {
       {/* 主内容区 */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-900/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-muted)] bg-[var(--bg-surface)]">
           <div className="flex items-center gap-4">
-            <button
+            <Button
+              variant={showCatalog ? 'primary' : 'ghost'}
+              size="sm"
               onClick={() => setShowCatalog(!showCatalog)}
-              className={`p-2 rounded-lg transition-colors ${
-                showCatalog ? 'bg-blue-600/20 text-blue-400' : 'bg-white/5 text-text-tertiary hover:bg-white/10'
-              }`}
-              title={showCatalog ? '隐藏建筑目录' : '显示建筑目录'}
             >
               {showCatalog ? '◀' : '▶'}
-            </button>
+            </Button>
             <div>
-              <h2 className="text-lg font-semibold text-text-primary">生产管理</h2>
-              <p className="text-xs text-text-tertiary">
-                建筑: {playerBuildings}/100 · 资金: <span className="text-green-400">¥{playerCash.toLocaleString()}</span>
-              </p>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                🏭 生产管理
+              </h2>
+              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                <Badge variant="outline" size="sm">
+                  建筑: {playerBuildings}/100
+                </Badge>
+                <Badge variant="success" size="sm">
+                  ¥{playerCash.toLocaleString()}
+                </Badge>
+              </div>
             </div>
           </div>
           
           {/* 视图切换和队列按钮 */}
           <div className="flex items-center gap-3">
             {/* 建造队列按钮 */}
-            <button
+            <Button
+              variant={showConstructionQueue ? 'primary' : 'ghost'}
+              size="sm"
               onClick={() => setShowConstructionQueue(!showConstructionQueue)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                showConstructionQueue
-                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                  : 'bg-white/5 text-text-tertiary hover:bg-white/10'
-              }`}
-              title="显示/隐藏建造队列"
             >
               🏗️ 建造队列
-            </button>
+            </Button>
             
             {/* 视图切换 */}
-            <div className="flex bg-white/5 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                  viewMode === 'grid'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-text-tertiary hover:text-text-primary'
-                }`}
-              >
-                网格
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-text-tertiary hover:text-text-primary'
-                }`}
-              >
-                列表
-              </button>
-            </div>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+              <TabsList variant="default" size="sm">
+                <TabsTrigger value="grid">网格</TabsTrigger>
+                <TabsTrigger value="list">列表</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
         </div>
 
         {/* 内容区域 */}
         <div className="flex-1 overflow-hidden flex">
           {/* 建筑展示区 */}
-          <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+          <div className="flex-1 overflow-y-auto p-6">
             {/* 生产概览 */}
             <ProductionOverview />
 
             {/* 建筑列表 */}
             {playerBuildingList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
+              <div className="flex flex-col items-center justify-center py-16 text-[var(--text-muted)]">
                 <div className="text-6xl mb-4">🏗️</div>
-                <h3 className="text-lg font-medium text-text-secondary mb-2">还没有建筑</h3>
+                <h3 className="text-lg font-medium text-[var(--text-secondary)] mb-2">还没有建筑</h3>
                 <p className="text-sm mb-4">从左侧目录选择建筑开始建造吧</p>
                 {!showCatalog && (
-                  <button
-                    onClick={() => setShowCatalog(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-                  >
-                    打开建筑目录
-                  </button>
+                  <Button onClick={() => setShowCatalog(true)}>
+                    📋 打开建筑目录
+                  </Button>
                 )}
               </div>
             ) : viewMode === 'grid' ? (
@@ -207,7 +196,7 @@ export const Production: React.FC = () => {
 
           {/* 右侧详情面板 */}
           {selectedBuilding !== null && (
-            <div className="w-80 flex-shrink-0 h-full border-l border-white/10 animate-slide-in-right">
+            <div className="w-80 flex-shrink-0 h-full border-l border-[var(--border-muted)] animate-slide-in-right">
               <BuildingDetailPanel
                 buildingIndex={selectedBuilding}
                 onClose={() => setSelectedBuilding(null)}
@@ -226,7 +215,7 @@ export const Production: React.FC = () => {
         />
       )}
 
-      {/* 建造队列悬浮面板 - 当有详情面板时向左偏移 */}
+      {/* 建造队列悬浮面板 */}
       {showConstructionQueue && (
         <div
           className={`fixed bottom-4 w-80 z-40 transition-all duration-300 ${
@@ -240,17 +229,11 @@ export const Production: React.FC = () => {
         </div>
       )}
 
-      {/* 自定义动画样式 */}
+      {/* 动画样式 */}
       <style>{`
         @keyframes slideInRight {
-          from {
-            opacity: 0;
-            transform: translateX(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         .animate-slide-in-right {
           animation: slideInRight 0.2s ease-out;

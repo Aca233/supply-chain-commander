@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { ALL_GOODS } from '@/data/goods';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
 
@@ -184,8 +185,9 @@ export function useAlerts(): UseAlertsResult {
 
       // 挂单过多
       let pendingOrders = 0;
-      for (let i = 0; i < world.orders.maxOrders; i++) {
-        if (world.orders.isActive[i] && world.orders.companyIds[i] === 0) {
+      const activeIndices = getActiveOrderIndices();
+      for (const i of activeIndices) {
+        if (world.orders.companyIds[i] === 0) {
           pendingOrders++;
         }
       }

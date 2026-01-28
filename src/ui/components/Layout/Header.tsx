@@ -57,8 +57,8 @@ export const Header: React.FC = () => {
                 className={`
                   w-8 h-8 rounded text-sm font-medium transition-colors
                   ${speed === s
-                    ? 'bg-brand-primary text-white'
-                    : 'bg-background-secondary text-text-secondary hover:bg-background-tertiary'
+                    ? 'bg-[var(--accent)] text-white shadow-md shadow-[var(--accent)]/30'
+                    : 'bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
                   }
                 `}
               >

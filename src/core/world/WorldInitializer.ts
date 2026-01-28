@@ -61,11 +61,6 @@ function recordRecipeAssignment(tracker: RecipeSupplyTracker, recipeId: number):
 
 /**
  * 计算配方的供应得分（越低表示越需要生产）
- *
- * 得分计算考虑：
- * 1. 产出商品当前的生产者数量（越少分数越低）
- * 2. 商品是否为消费品（消费品优先）
- * 3. 配方的产出数量（高产出优先）
  */
 function calculateRecipeSupplyScore(
   tracker: RecipeSupplyTracker,
@@ -77,20 +72,16 @@ function calculateRecipeSupplyScore(
     const producerCount = tracker.goodsProducerCount.get(output.goodsId) || 0;
     const goods = ALL_GOODS.find(g => g.id === output.goodsId);
     
-    // 基础分数：生产者数量
     let outputScore = producerCount * 100;
     
-    // 消费品加权：消费品更需要供应
     if (goods?.isConsumerGood) {
-      outputScore -= 50;  // 降低分数表示更需要
+      outputScore -= 50;
     }
     
-    // 高层级商品通常更稀缺
     if (goods?.tier && goods.tier >= 3) {
       outputScore -= 20;
     }
     
-    // 产出数量加权：高产出配方略优
     outputScore -= Math.min(output.amount / 10, 10);
     
     score += outputScore;
@@ -101,13 +92,6 @@ function calculateRecipeSupplyScore(
 
 /**
  * 智能选择配方
- *
- * 对于拥有多个可用配方的建筑，选择当前供应最少的商品对应的配方
- *
- * @param buildingTypeId 建筑类型ID
- * @param tracker 供应追踪器
- * @param preferredOutputGoods 优先产出的商品ID列表（来自AI公司配置）
- * @returns 选择的配方ID
  */
 function selectOptimalRecipe(
   buildingTypeId: number,
@@ -121,7 +105,6 @@ function selectOptimalRecipe(
   if (availableRecipes.length === 0) return building.defaultRecipeId;
   if (availableRecipes.length === 1) return availableRecipes[0];
   
-  // 收集该建筑可用的配方
   const candidateRecipes: Array<{ recipe: RecipeDefinition; score: number }> = [];
   
   for (const recipeId of availableRecipes) {
@@ -130,10 +113,9 @@ function selectOptimalRecipe(
     
     let score = calculateRecipeSupplyScore(tracker, recipe);
     
-    // 如果配方产出优先商品，降低分数（优先选择）
     for (const output of recipe.outputs) {
       if (preferredOutputGoods.includes(output.goodsId)) {
-        score -= 200;  // 大幅降低分数
+        score -= 200;
       }
     }
     
@@ -142,7 +124,6 @@ function selectOptimalRecipe(
   
   if (candidateRecipes.length === 0) return building.defaultRecipeId;
   
-  // 按分数排序，选择分数最低的（最需要生产的）
   candidateRecipes.sort((a, b) => a.score - b.score);
   
   return candidateRecipes[0].recipe.id;
@@ -150,11 +131,6 @@ function selectOptimalRecipe(
 
 /**
  * 智能分配建筑配方
- *
- * 确保：
- * 1. 每种可生产的商品都有至少一个生产者
- * 2. 供应分布均衡
- * 3. 优先满足消费品需求
  */
 function assignBuildingRecipesIntelligently(
   buildingTypeId: number,
@@ -168,7 +144,6 @@ function assignBuildingRecipesIntelligently(
   const availableRecipes = building.availableRecipes;
   const assignedRecipes: number[] = [];
   
-  // 如果只有一个配方或没有配方，直接返回默认
   if (availableRecipes.length <= 1) {
     const defaultRecipe = availableRecipes[0] || building.defaultRecipeId;
     for (let i = 0; i < buildingCount; i++) {
@@ -180,14 +155,8 @@ function assignBuildingRecipesIntelligently(
     return assignedRecipes;
   }
   
-  // 多个配方：智能分配
-  // 策略1: 首先确保每种配方至少有一个建筑（如果建筑数量足够）
-  // 策略2: 剩余建筑分配给供应最少的配方
-  
-  // 第一轮：每种配方分配一个（如果建筑足够）
   const recipesToDistribute = Math.min(availableRecipes.length, buildingCount);
   
-  // 按当前供应得分排序配方
   const sortedRecipes = availableRecipes
     .map(recipeId => {
       const recipe = RECIPES.find(r => r.id === recipeId);
@@ -203,7 +172,6 @@ function assignBuildingRecipesIntelligently(
     recordRecipeAssignment(tracker, recipeId);
   }
   
-  // 第二轮：剩余建筑分配给供应最少的配方
   for (let i = recipesToDistribute; i < buildingCount; i++) {
     const optimalRecipe = selectOptimalRecipe(buildingTypeId, tracker, preferredOutputGoods);
     assignedRecipes.push(optimalRecipe);
@@ -215,9 +183,6 @@ function assignBuildingRecipesIntelligently(
   return assignedRecipes;
 }
 
-/**
- * 初始化全局配方追踪器（在游戏开始时调用）
- */
 let globalRecipeTracker: RecipeSupplyTracker | null = null;
 
 function getGlobalRecipeTracker(): RecipeSupplyTracker {
@@ -237,37 +202,17 @@ function resetGlobalRecipeTracker(): void {
 export function initializeWorld(): GameWorld {
   const world = createGameWorld();
   
-  // 重置性能索引
   resetAllIndices();
-  
-  // 初始化建筑专属生产方式系统（必须在创建建筑之前）
   initializeBuildingProductionMethods();
-  
-  // 初始化附属建筑系统
   initializeSubsidiaries();
-  
-  // 重置配方追踪器
   resetGlobalRecipeTracker();
   
-  // 初始化商品数据
   initializeGoods(world);
-  
-  // 初始化玩家公司
   initializePlayerCompany(world);
-  
-  // 初始化AI公司
   initializeAICompanies(world);
-  
-  // 初始化初始市场状态
   initializeMarketState(world);
-  
-  // 初始化订单池
   initOrderPool();
-  
-  // 生成AI初始订单（让市场一开始就有交易）
   generateInitialMarketOrders(world);
-  
-  // 初始化零售系统（Pop只能在零售建筑消费）
   initializeRetailStores(world);
   
   return world;
@@ -288,7 +233,6 @@ function initializeGoods(world: GameWorld): void {
     g.names.push(goods.name);
     g.categories.push(goods.category);
     
-    // 初始化价格历史为基准价格
     for (let h = 0; h < 365; h++) {
       g.priceHistory[goods.id * 365 + h] = goods.basePrice;
     }
@@ -310,18 +254,16 @@ function initializePlayerCompany(world: GameWorld): void {
   c.isPlayer.push(true);
   c.isAI.push(false);
   
-  // 玩家初始库存 - 给一些基础原材料
   for (let i = 0; i < ALL_GOODS.length; i++) {
     setInventory(world, playerId, i, 0);
   }
   
-  // 初始原材料：给玩家一些基础资源（参照goods.ts定义）
   const starterGoods = [
-    { id: 0, amount: 1000 },  // 铁矿石
-    { id: 3, amount: 500 },   // 煤炭 (ID 3)
-    { id: 1, amount: 300 },   // 铜矿石 (ID 1)
-    { id: 6, amount: 200 },   // 木材 (ID 6)
-    { id: 8, amount: 500 },   // 粮食 (ID 8)
+    { id: 0, amount: 1000 },
+    { id: 3, amount: 500 },
+    { id: 1, amount: 300 },
+    { id: 6, amount: 200 },
+    { id: 8, amount: 500 },
   ];
   
   for (const item of starterGoods) {
@@ -330,7 +272,6 @@ function initializePlayerCompany(world: GameWorld): void {
     }
   }
   
-  // 给玩家初始建筑
   initializePlayerBuildings(world);
 }
 
@@ -340,16 +281,13 @@ function initializePlayerCompany(world: GameWorld): void {
 function initializePlayerBuildings(world: GameWorld): void {
   const playerId = 0;
   
-  // 玩家初始建筑配置（确保buildingTypeId与recipeId匹配）
-  // 参照: buildings.ts的建筑定义 和 recipes.ts的配方定义
   const starterBuildings = [
-    { buildingTypeId: 0, recipeId: 0 },   // 铁矿场(ID 0) - 铁矿开采(recipeId 0, buildingTypeId 0)
-    { buildingTypeId: 8, recipeId: 10 },  // 钢铁厂(ID 8) - 钢铁冶炼(recipeId 10, buildingTypeId 8)
-    { buildingTypeId: 6, recipeId: 6 },   // 农场(ID 6) - 粮食种植(recipeId 6, buildingTypeId 6)
+    { buildingTypeId: 0, recipeId: 0 },
+    { buildingTypeId: 8, recipeId: 10 },
+    { buildingTypeId: 6, recipeId: 6 },
   ];
   
   for (const config of starterBuildings) {
-    // 检查建筑类型和配方是否存在
     const building = ALL_BUILDINGS.find(b => b.id === config.buildingTypeId);
     const recipe = RECIPES.find(r => r.id === config.recipeId);
     
@@ -364,872 +302,1283 @@ function initializePlayerBuildings(world: GameWorld): void {
 }
 
 /**
- * 初始化AI公司
+ * 初始化AI公司 - 产业链平衡优化版
+ * 
+ * 设计原则：
+ * 1. 上游产能 ≥ 下游消耗 × 1.5（安全余量）
+ * 2. 每个建筑明确指定配方（recipeId）
+ * 3. 关键消费品优先保障
+ * 4. 建材产能充足支撑AI建造
  */
 function initializeAICompanies(world: GameWorld): void {
   const c = world.companies;
   
-  /**
-   * 完整的AI公司配置 - 覆盖所有49种建筑类型
-   *
-   * 建筑类型参照 buildings.ts:
-   * - 采掘类(0-7): 铁矿场、铜矿场、煤矿、油田、气田、伐木场、农场、硅石矿场
-   * - 加工类(8-15): 钢铁厂、炼油厂、化工厂、玻璃厂、纺织厂、食品厂、水泥厂、铝冶炼厂
-   * - 制造类(16-21): 电子厂、半导体厂、汽车工厂、家电厂、电池厂、零部件厂
-   * - 服务类(22-24): 物流中心、仓储中心、发电厂
-   * - 农业扩展(25-28): 蔬菜农场、畜牧场、渔场、肉类加工厂
-   * - 医药(29-31): 药材种植园、制药厂、医疗器械厂
-   * - 军工(32-34): 特钢厂、武器工厂、航空航天厂
-   * - 奢侈品(35-36): 金矿、奢侈品工坊
-   * - 科技(37-39): AI芯片厂、量子实验室、生物实验室
-   * - 扩展(40-48): 橡胶园、锂矿场、造纸厂、橡胶厂、服装厂、家具厂、建材厂、机器人厂、新能源设备厂
-   */
   const aiCompanies = [
-    // ==================== 原材料采掘公司 (8家) ====================
+    // ==================== A. 原材料采掘公司 (10家) ====================
+    
+    // 1. 中钢矿业 - 铁矿专业
     {
-      name: '铁龙矿业',
-      cash: 30000000,
+      name: '中钢矿业',
+      cash: 50000000,
       buildings: [
-        { typeId: 0 },  // 铁矿场
-        { typeId: 0 },  // 铁矿场
-        { typeId: 2 },  // 煤矿
+        { typeId: 0, recipeId: 0 },   // 铁矿场-铁矿开采
+        { typeId: 0, recipeId: 0 },
+        { typeId: 0, recipeId: 0 },
+        { typeId: 0, recipeId: 0 },
+        { typeId: 0, recipeId: 0 },
       ],
-      starterGoods: [0, 3],  // 铁矿石、煤炭
-      outputGoods: [0, 3],   // 铁矿石、煤炭
+      starterGoods: [0],
+      outputGoods: [0],
     },
+    
+    // 1.5 神华煤炭 - 煤炭专业 ★关键：煤炭是钢铁、水泥、发电的核心原料
     {
-      name: '铜都资源',
-      cash: 25000000,
-      buildings: [
-        { typeId: 1 },  // 铜矿场
-        { typeId: 1 },  // 铜矿场
-      ],
-      starterGoods: [1],     // 铜矿石
-      outputGoods: [1],      // 铜矿石
-    },
-    {
-      name: '黑金能源',
+      name: '神华煤炭',
       cash: 80000000,
       buildings: [
-        { typeId: 3 },  // 油田
-        { typeId: 4 },  // 气田
-        { typeId: 4 },  // 气田
+        { typeId: 2, recipeId: 2 },   // 煤矿-煤炭开采
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
       ],
-      starterGoods: [4, 5],  // 原油、天然气
-      outputGoods: [4, 5],   // 原油、天然气
+      starterGoods: [3],
+      outputGoods: [3],
     },
+    
+    // 1.6 兖矿集团 - 煤炭补充
     {
-      name: '森林木业',
-      cash: 15000000,
+      name: '兖矿集团',
+      cash: 60000000,
       buildings: [
-        { typeId: 5 },  // 伐木场
-        { typeId: 5 },  // 伐木场
-        { typeId: 5 },  // 伐木场
+        { typeId: 2, recipeId: 2 },   // 煤矿-煤炭开采
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
+        { typeId: 2, recipeId: 2 },
       ],
-      starterGoods: [6],     // 木材
-      outputGoods: [6],      // 木材
+      starterGoods: [3],
+      outputGoods: [3],
     },
+    
+    // 2. 五矿铜业 - 铜矿专业
     {
-      name: '丰收农业',
-      cash: 20000000,
+      name: '五矿铜业',
+      cash: 40000000,
       buildings: [
-        { typeId: 6 },   // 农场
-        { typeId: 6 },   // 农场
-        { typeId: 25 },  // 蔬菜农场
+        { typeId: 1, recipeId: 1 },   // 铜矿场-铜矿开采
+        { typeId: 1, recipeId: 1 },
+        { typeId: 1, recipeId: 1 },
+        { typeId: 1, recipeId: 1 },
       ],
-      starterGoods: [7, 8],  // 棉花、粮食
-      outputGoods: [7, 8, 58, 59], // 棉花、粮食、蔬菜、水果
+      starterGoods: [1],
+      outputGoods: [1],
     },
+    
+    // 3. 中石油 - 油气开采 ★关键：原油是化工原料的来源
+    {
+      name: '中石油',
+      cash: 200000000,
+      buildings: [
+        { typeId: 3, recipeId: 3 },   // 油田-原油开采
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+        { typeId: 4, recipeId: 4 },   // 气田-天然气开采
+        { typeId: 4, recipeId: 4 },
+        { typeId: 4, recipeId: 4 },
+      ],
+      starterGoods: [4, 5],
+      outputGoods: [4, 5],
+    },
+    
+    // 3.5 延长石油 - 原油补充
+    {
+      name: '延长石油',
+      cash: 100000000,
+      buildings: [
+        { typeId: 3, recipeId: 3 },   // 油田-原油开采
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+        { typeId: 3, recipeId: 3 },
+      ],
+      starterGoods: [4],
+      outputGoods: [4],
+    },
+    
+    // 4. 林业集团 - 木材
+    {
+      name: '林业集团',
+      cash: 25000000,
+      buildings: [
+        { typeId: 5, recipeId: 5 },   // 伐木场-木材采伐
+        { typeId: 5, recipeId: 5 },
+        { typeId: 5, recipeId: 5 },
+        { typeId: 5, recipeId: 5 },
+        { typeId: 5, recipeId: 5 },
+      ],
+      starterGoods: [6],
+      outputGoods: [6],
+    },
+    
+    // 5. 中粮集团 - 农业综合
+    {
+      name: '中粮集团',
+      cash: 35000000,
+      buildings: [
+        { typeId: 6, recipeId: 6 },   // 农场-粮食种植
+        { typeId: 6, recipeId: 6 },
+        { typeId: 6, recipeId: 6 },
+        { typeId: 6, recipeId: 7 },   // 农场-棉花种植
+        { typeId: 25, recipeId: 35 }, // 蔬菜农场-蔬菜种植
+        { typeId: 25, recipeId: 36 }, // 蔬菜农场-水果种植
+      ],
+      starterGoods: [7, 8],
+      outputGoods: [7, 8, 58, 59],
+    },
+    
+    // 6. 硅海矿业 - 硅石专业 ★关键：硅石是玻璃、水泥、芯片的核心原料
     {
       name: '硅海矿业',
-      cash: 35000000,
+      cash: 60000000,
       buildings: [
-        { typeId: 7 },  // 硅石矿场
-        { typeId: 7 },  // 硅石矿场
+        { typeId: 7, recipeId: 8 },   // 硅石矿场-硅石开采
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
       ],
-      starterGoods: [9, 10], // 硅石、稀土
-      outputGoods: [9, 10],  // 硅石、稀土
-    },
-    {
-      name: '牧场集团',
-      cash: 25000000,
-      buildings: [
-        { typeId: 26 },  // 畜牧场
-        { typeId: 26 },  // 畜牧场
-        { typeId: 27 },  // 渔场
-      ],
-      starterGoods: [8],     // 粮食（饲料）
-      outputGoods: [60, 61, 62], // 牲畜、家禽、水产
-    },
-    {
-      name: '橡胶林业',
-      cash: 18000000,
-      buildings: [
-        { typeId: 40 },  // 橡胶园
-        { typeId: 40 },  // 橡胶园
-      ],
-      starterGoods: [],      // 无需原材料
-      outputGoods: [11],     // 天然橡胶
+      starterGoods: [9],
+      outputGoods: [9],
     },
     
-    // ==================== 基础加工公司 (10家) ====================
+    // 6.5 稀土集团 - 稀土专业
     {
-      name: '铁拳重工',
+      name: '稀土集团',
       cash: 50000000,
       buildings: [
-        { typeId: 8 },  // 钢铁厂
-        { typeId: 8 },  // 钢铁厂
-        { typeId: 8 },  // 钢铁厂
+        { typeId: 7, recipeId: 9 },   // 硅石矿场-稀土开采
+        { typeId: 7, recipeId: 9 },
+        { typeId: 7, recipeId: 9 },
+        { typeId: 7, recipeId: 9 },
       ],
-      starterGoods: [0, 3, 1], // 铁矿石、煤炭、铜矿石
-      outputGoods: [14, 15], // 钢材、铜材
+      starterGoods: [10],
+      outputGoods: [10],
     },
+    
+    // 6.6 硅砂矿业 - 硅石补充
     {
-      name: '绿叶能源',
-      cash: 100000000,
-      buildings: [
-        { typeId: 9 },   // 炼油厂
-        { typeId: 9 },   // 炼油厂
-        { typeId: 24 },  // 发电厂
-      ],
-      starterGoods: [4, 5, 3], // 原油、天然气、煤炭
-      outputGoods: [25, 12, 57], // 燃油、化工原料、电力
-    },
-    {
-      name: '蓝天化工',
-      cash: 40000000,
-      buildings: [
-        { typeId: 10 },  // 化工厂
-        { typeId: 10 },  // 化工厂
-      ],
-      starterGoods: [12, 5, 70, 177], // 化工原料、天然气、药材、生物质
-      outputGoods: [18, 20, 71, 81], // 塑料、化学品、医药化工品、炸药
-    },
-    {
-      name: '晶华玻璃',
-      cash: 25000000,
-      buildings: [
-        { typeId: 11 },  // 玻璃厂
-        { typeId: 11 },  // 玻璃厂
-      ],
-      starterGoods: [9],     // 硅石
-      outputGoods: [17],     // 玻璃
-    },
-    {
-      name: '锦绣纺织',
-      cash: 20000000,
-      buildings: [
-        { typeId: 12 },  // 纺织厂
-        { typeId: 12 },  // 纺织厂
-      ],
-      starterGoods: [7],     // 棉花
-      outputGoods: [23, 92], // 纺织品、丝绸
-    },
-    {
-      name: '坚固水泥',
-      cash: 30000000,
-      buildings: [
-        { typeId: 14 },  // 水泥厂
-        { typeId: 14 },  // 水泥厂
-      ],
-      starterGoods: [9, 3],  // 硅石、煤炭
-      outputGoods: [21],     // 水泥
-    },
-    {
-      name: '轻盈铝业',
+      name: '硅砂矿业',
       cash: 45000000,
       buildings: [
-        { typeId: 15 },  // 铝冶炼厂
-        { typeId: 15 },  // 铝冶炼厂
+        { typeId: 7, recipeId: 8 },   // 硅石矿场-硅石开采
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
+        { typeId: 7, recipeId: 8 },
       ],
-      starterGoods: [],      // 自产铝土矿
-      outputGoods: [2, 16],  // 铝土矿、铝材
-    },
-    {
-      name: '肉联集团',
-      cash: 28000000,
-      buildings: [
-        { typeId: 28 },  // 肉类加工厂
-        { typeId: 28 },  // 肉类加工厂
-      ],
-      starterGoods: [60, 61, 62], // 牲畜、家禽、水产
-      outputGoods: [63, 64], // 肉类、乳制品
-    },
-    {
-      name: '造纸龙头',
-      cash: 22000000,
-      buildings: [
-        { typeId: 42 },  // 造纸厂
-        { typeId: 42 },  // 造纸厂
-      ],
-      starterGoods: [6],     // 木材
-      outputGoods: [22, 37], // 纸张、包装材料
-    },
-    {
-      name: '橡胶加工',
-      cash: 25000000,
-      buildings: [
-        { typeId: 43 },  // 橡胶厂
-        { typeId: 43 },  // 橡胶厂
-      ],
-      starterGoods: [11, 20], // 天然橡胶、化学品
-      outputGoods: [19],     // 橡胶制品
+      starterGoods: [9],
+      outputGoods: [9],
     },
     
-    // ==================== 高端制造公司 (12家) ====================
+    // 7. 新希望牧业 - 畜牧+水产
     {
-      name: '智联电子',
-      cash: 60000000,
-      buildings: [
-        { typeId: 16 },  // 电子厂
-        { typeId: 16 },  // 电子厂
-        { typeId: 16 },  // 电子厂
-      ],
-      starterGoods: [15, 18, 27, 28, 30], // 铜材、塑料、芯片、电池、屏幕
-      outputGoods: [26, 38, 39, 40, 52, 55, 56, 83, 103], // 电子元件、手机、电脑、家电、无人机、高端手机、平价手机、军用电子、VR设备
-    },
-    {
-      name: '星辰科技',
-      cash: 80000000,
-      buildings: [
-        { typeId: 17 },  // 半导体厂
-        { typeId: 17 },  // 半导体厂
-      ],
-      starterGoods: [9, 10, 20], // 硅石、稀土、化学品
-      outputGoods: [27],     // 芯片
-    },
-    {
-      name: '东方汽车',
-      cash: 70000000,
-      buildings: [
-        { typeId: 18 },  // 汽车工厂
-        { typeId: 18 },  // 汽车工厂
-      ],
-      starterGoods: [32, 26, 19, 17, 28, 29, 90], // 汽车零部件、电子元件、橡胶制品、玻璃、电池、电机、黄金
-      outputGoods: [41, 42, 95], // 汽车、电动汽车、豪华汽车
-    },
-    {
-      name: '海尔家电',
-      cash: 55000000,
-      buildings: [
-        { typeId: 19 },  // 家电厂
-        { typeId: 19 },  // 家电厂
-      ],
-      starterGoods: [14, 26, 18], // 钢材、电子元件、塑料
-      outputGoods: [40],     // 家电
-    },
-    {
-      name: '宁德电池',
-      cash: 65000000,
-      buildings: [
-        { typeId: 20 },  // 电池厂
-        { typeId: 20 },  // 电池厂
-      ],
-      starterGoods: [13, 15, 20], // 锂矿、铜材、化学品
-      outputGoods: [28, 50], // 电池、储能系统
-    },
-    {
-      name: '精工制造',
-      cash: 45000000,
-      buildings: [
-        { typeId: 21 },  // 零部件厂
-        { typeId: 21 },  // 零部件厂
-        { typeId: 21 },  // 零部件厂
-      ],
-      starterGoods: [14, 15, 16, 17, 18, 26, 10, 80], // 钢材、铜材、铝材、玻璃、塑料、电子元件、稀土、特种钢
-      outputGoods: [29, 30, 31, 32, 33], // 电机、屏幕、机械部件、汽车零部件、航空部件
-    },
-    // 【重要修复】四海食品：明确指定不同配方，确保饮料生产
-    {
-      name: '四海食品',
-      cash: 30000000,
-      buildings: [
-        { typeId: 13, recipeId: 17 },  // 食品厂 - 食品加工(产出加工食品24)
-        { typeId: 13, recipeId: 18 },  // 食品厂 - 饮料生产(产出饮料45) ★关键修复
-        { typeId: 13, recipeId: 42 },  // 食品厂 - 高级食品(产出食品44)
-      ],
-      starterGoods: [8, 63, 58, 62, 59, 24, 37], // 粮食、肉类、蔬菜、水产、水果、加工食品、包装材料
-      outputGoods: [24, 44, 45, 65, 66, 67, 68, 69], // 加工食品、食品、饮料、冷冻食品、罐头、零食、有机食品、宠物食品
-    },
-    // 【新增】饮料专业生产商 - 确保饮料产业链有足够产能
-    {
-      name: '可口饮品',
-      cash: 25000000,
-      buildings: [
-        { typeId: 13, recipeId: 18 },  // 食品厂 - 饮料生产
-        { typeId: 13, recipeId: 18 },  // 食品厂 - 饮料生产
-        { typeId: 13, recipeId: 18 },  // 食品厂 - 饮料生产
-      ],
-      starterGoods: [8],     // 粮食（饮料原料）
-      outputGoods: [45],     // 饮料
-    },
-    {
-      name: '康美制药',
-      cash: 80000000,
-      buildings: [
-        { typeId: 29 },  // 药材园
-        { typeId: 29 },  // 药材园
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-      ],
-      starterGoods: [20, 12, 37, 70, 71], // 化学品、化工原料、包装材料、药材、医药化工品
-      outputGoods: [70, 71, 72, 73, 74, 75, 76], // 药材、医药化工品、抗生素、疫苗、仿制药、专利药、非处方药
-    },
-    {
-      name: '辉瑞中国',
-      cash: 120000000,
-      buildings: [
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-      ],
-      starterGoods: [70, 71, 20, 12], // 药材、医药化工品、化学品、化工原料
-      outputGoods: [75, 73], // 专利药、疫苗
-    },
-    {
-      name: '华海药业',
-      cash: 60000000,
-      buildings: [
-        { typeId: 30 },  // 制药厂
-        { typeId: 30 },  // 制药厂
-      ],
-      starterGoods: [70, 71, 20],
-      outputGoods: [74, 76], // 仿制药、非处方药
-    },
-    {
-      name: '医疗器械',
-      cash: 60000000,
-      buildings: [
-        { typeId: 31 },  // 医疗器械厂
-        { typeId: 31 },  // 医疗器械厂
-      ],
-      starterGoods: [18, 23, 26, 27, 14], // 塑料、纺织品、电子元件、芯片、钢材
-      outputGoods: [48, 77, 78, 79], // 医疗设备、医用耗材、诊断设备、手术设备
-    },
-    {
-      name: '时尚服装',
-      cash: 25000000,
-      buildings: [
-        { typeId: 44 },  // 服装厂
-        { typeId: 44 },  // 服装厂
-        { typeId: 44 },  // 服装厂
-      ],
-      starterGoods: [23, 143, 140, 147], // 纺织品、羽绒、羊毛、毛织品
-      outputGoods: [43],     // 服装
-    },
-    {
-      name: '宜居家具',
-      cash: 28000000,
-      buildings: [
-        { typeId: 45 },  // 家具厂
-        { typeId: 45 },  // 家具厂
-      ],
-      starterGoods: [6, 14], // 木材、钢材
-      outputGoods: [46],     // 家具
-    },
-    {
-      name: '建材巨头',
-      cash: 35000000,
-      buildings: [
-        { typeId: 46 },  // 建材厂
-        { typeId: 46 },  // 建材厂
-      ],
-      starterGoods: [21, 14, 17], // 水泥、钢材、玻璃
-      outputGoods: [36, 47], // 建筑材料、建材成品
-    },
-    
-    // ==================== 高科技与特殊产业 (10家) ====================
-    {
-      name: '特钢集团',
+      name: '新希望牧业',
       cash: 40000000,
       buildings: [
-        { typeId: 32 },  // 特钢厂
-        { typeId: 32 },  // 特钢厂
+        { typeId: 26, recipeId: 37 }, // 畜牧场-牲畜养殖
+        { typeId: 26, recipeId: 37 },
+        { typeId: 26, recipeId: 38 }, // 畜牧场-家禽养殖
+        { typeId: 27, recipeId: 39 }, // 渔场-水产养殖
+        { typeId: 27, recipeId: 39 },
       ],
-      starterGoods: [14, 10], // 钢材、稀土
-      outputGoods: [80, 82], // 特种钢材、装甲板
-    },
-    {
-      name: '北方军工',
-      cash: 100000000,
-      buildings: [
-        { typeId: 33 },  // 武器工厂
-        { typeId: 33 },  // 武器工厂
-      ],
-      starterGoods: [80, 81, 83], // 特种钢材、炸药、军用电子
-      outputGoods: [84, 85, 86], // 轻武器、重武器、军用车辆
-    },
-    {
-      name: '航空航天',
-      cash: 200000000,
-      buildings: [
-        { typeId: 34 },  // 航空航天厂
-      ],
-      starterGoods: [33, 83, 80], // 航空部件、军用电子、特种钢材
-      outputGoods: [87],     // 战斗机
-    },
-    {
-      name: '珠宝奢侈',
-      cash: 80000000,
-      buildings: [
-        { typeId: 35 },  // 金矿
-        { typeId: 36 },  // 奢侈品工坊
-      ],
-      starterGoods: [88, 89, 92, 23, 90, 91], // 金矿石、钻石矿石、丝绸、纺织品、黄金、钻石
-      outputGoods: [88, 89, 53, 54, 90, 91, 93, 94], // 金矿石、钻石矿石、奢侈品、珠宝、黄金、钻石、设计师服装、奢侈腕表
-    },
-    {
-      name: '寒武纪AI',
-      cash: 120000000,
-      buildings: [
-        { typeId: 37 },  // AI芯片厂
-        { typeId: 37 },  // AI芯片厂
-      ],
-      starterGoods: [27, 10], // 芯片、稀土
-      outputGoods: [96, 99], // AI芯片、AI服务器
-    },
-    {
-      name: '量子科技',
-      cash: 300000000,
-      buildings: [
-        { typeId: 38 },  // 量子实验室
-      ],
-      starterGoods: [96, 10], // AI芯片、稀土
-      outputGoods: [97, 100], // 量子组件、量子计算机
-    },
-    {
-      name: '生命科学',
-      cash: 60000000,
-      buildings: [
-        { typeId: 39 },  // 生物实验室
-        { typeId: 39 },  // 生物实验室
-      ],
-      starterGoods: [20],    // 化学品
-      outputGoods: [98, 101], // 生物材料、生物制品
-    },
-    {
-      name: '锂电资源',
-      cash: 35000000,
-      buildings: [
-        { typeId: 41 },  // 锂矿场
-        { typeId: 41 },  // 锂矿场
-      ],
-      starterGoods: [],      // 无需原材料
-      outputGoods: [13],     // 锂矿
-    },
-    {
-      name: '机器人科技',
-      cash: 70000000,
-      buildings: [
-        { typeId: 47 },  // 机器人厂
-        { typeId: 47 },  // 机器人厂
-      ],
-      starterGoods: [31, 26, 27, 96], // 机械部件、电子元件、芯片、AI芯片
-      outputGoods: [51, 102], // 工业机器人、智能机器人
-    },
-    {
-      name: '新能源装备',
-      cash: 50000000,
-      buildings: [
-        { typeId: 48 },  // 新能源设备厂
-        { typeId: 48 },  // 新能源设备厂
-      ],
-      starterGoods: [9, 17, 16, 28, 177, 180], // 硅石、玻璃、铝材、电池、生物质、生物燃料
-      outputGoods: [34, 35, 49], // 光伏板、风机叶片、光伏系统
+      starterGoods: [8],
+      outputGoods: [60, 61, 62],
     },
     
-    // ==================== 新增产业链公司 ====================
-    
-    // 日化产业链 (建筑59-61, 商品104-115)
+    // 8. 橡胶锂矿 - 橡胶+锂矿
     {
-      name: '棕榈日化',
-      cash: 25000000,
+      name: '橡胶锂矿',
+      cash: 30000000,
       buildings: [
-        { typeId: 59 },  // 棕榈种植园
-        { typeId: 59 },  // 棕榈种植园
+        { typeId: 40, recipeId: 64 }, // 橡胶园-天然橡胶
+        { typeId: 40, recipeId: 64 },
+        { typeId: 40, recipeId: 64 },
+        { typeId: 41, recipeId: 65 }, // 锂矿场-锂矿开采
+        { typeId: 41, recipeId: 65 },
       ],
       starterGoods: [],
-      outputGoods: [104, 105], // 棕榈油(104)、香料原料(105)
-    },
-    {
-      name: '宝洁中国',
-      cash: 60000000,
-      buildings: [
-        { typeId: 60 },  // 日化厂
-        { typeId: 60 },  // 日化厂
-        { typeId: 61 },  // 洗涤用品厂
-      ],
-      starterGoods: [104, 105, 20], // 棕榈油、香料原料、化学品
-      outputGoods: [106, 107, 108, 109, 110, 111, 112, 113, 114, 115], // 表面活性剂(106)到口腔护理用品(115)
-    },
-    {
-      name: '蓝月亮',
-      cash: 30000000,
-      buildings: [
-        { typeId: 61 },  // 洗涤用品厂
-        { typeId: 61 },  // 洗涤用品厂
-      ],
-      starterGoods: [106, 20], // 表面活性剂、化学品
-      outputGoods: [110, 111, 112, 113, 114, 115], // 清洁剂原液(110)到口腔护理用品(115)
+      outputGoods: [11, 13],
     },
     
-    // 交通运输设备 (建筑62-66, 商品116-127)
-    {
-      name: '正新轮胎',
-      cash: 35000000,
-      buildings: [
-        { typeId: 62 },  // 轮胎厂
-        { typeId: 62 },  // 轮胎厂
-      ],
-      starterGoods: [19, 23], // 橡胶制品、纺织品
-      outputGoods: [116, 117], // 轮胎(116)、汽车座椅(117)
-    },
-    {
-      name: '捷安特',
-      cash: 20000000,
-      buildings: [
-        { typeId: 63 },  // 自行车厂
-        { typeId: 63 },  // 自行车厂
-      ],
-      starterGoods: [14, 16, 19], // 钢材、铝材、橡胶制品
-      outputGoods: [121, 122, 123], // 自行车(121)、摩托车(122)、电动滑板车(123)
-    },
-    {
-      name: '中远船舶',
-      cash: 200000000,
-      buildings: [
-        { typeId: 64 },  // 造船厂
-      ],
-      starterGoods: [14, 29, 26], // 钢材、电机、电子元件
-      outputGoods: [118, 124], // 船舶部件(118)、船舶(124)
-    },
-    {
-      name: '中车集团',
-      cash: 150000000,
-      buildings: [
-        { typeId: 65 },  // 铁路车辆厂
-      ],
-      starterGoods: [14, 29, 26, 16], // 钢材、电机、电子元件、铝材
-      outputGoods: [119, 125], // 铁路车辆部件(119)、铁路车辆(125)
-    },
-    {
-      name: '中国商飞',
-      cash: 250000000,
-      buildings: [
-        { typeId: 66 },  // 民用航空厂
-      ],
-      starterGoods: [33, 16, 26, 29], // 航空部件、铝材、电子元件、电机
-      outputGoods: [120, 126, 127], // 航空发动机(120)、民用飞机(126)、公交车(127)
-    },
-    
-    // 矿业扩展 (建筑67-69, 商品128-139)
+    // 9. 多金属矿业
     {
       name: '多金属矿业',
-      cash: 40000000,
+      cash: 55000000,
       buildings: [
-        { typeId: 67 },  // 多金属矿场
-        { typeId: 67 },  // 多金属矿场
-        { typeId: 68 },  // 战略金属矿场
+ { typeId: 67, recipeId: 131 }, // 多金属矿场-锌矿
+        { typeId: 67, recipeId: 132 }, // 多金属矿场-镍矿
+        { typeId: 67, recipeId: 133 }, // 多金属矿场-锡矿
+        { typeId: 68, recipeId: 134 }, // 战略金属矿场-钴矿
+        { typeId: 68, recipeId: 135 }, // 战略金属矿场-锰矿
       ],
       starterGoods: [],
-      outputGoods: [128, 129, 130, 131, 132, 133], // 锌矿石(128)到钨矿石(133)
+      outputGoods: [128, 129, 130, 131, 132, 133],
     },
+    
+    // 10. 经济作物种植
+    {
+      name: '经济作物',
+      cash: 35000000,
+      buildings: [
+        { typeId: 76, recipeId: 162 }, // 经济作物种植园-葡萄
+        { typeId: 76, recipeId: 163 }, // 甘蔗
+        { typeId: 76, recipeId: 164 }, // 茶叶
+        { typeId: 76, recipeId: 165 }, // 咖啡豆
+        { typeId: 76, recipeId: 167 }, // 油料作物
+      ],
+      starterGoods: [],
+      outputGoods: [160, 161, 162, 163, 164, 165],
+    },
+    
+    // ==================== B. 基础加工公司 (12家) ====================
+    
+    // 11. 宝钢集团 - 钢铁
+    {
+      name: '宝钢集团',
+      cash: 80000000,
+      buildings: [
+        { typeId: 8, recipeId: 10 },  // 钢铁厂-钢铁冶炼
+        { typeId: 8, recipeId: 10 },
+        { typeId: 8, recipeId: 10 },
+        { typeId: 8, recipeId: 10 },
+        { typeId: 8, recipeId: 11 },  // 钢铁厂-电弧炉炼钢
+      ],
+      starterGoods: [0, 3],
+      outputGoods: [14],
+    },
+    
+    // 12. 江铜冶炼 - 铜材
+    {
+      name: '江铜冶炼',
+      cash: 50000000,
+      buildings: [
+        { typeId: 8, recipeId: 78 },  // 钢铁厂-铜冶炼
+        { typeId: 8, recipeId: 78 },
+        { typeId: 8, recipeId: 78 },
+        { typeId: 8, recipeId: 78 },
+      ],
+      starterGoods: [1],
+      outputGoods: [15],
+    },
+    
+    // 13. 中石化 - 炼油专业 ★关键：化工原料是塑料、化学品的核心原料
+    {
+      name: '中石化',
+      cash: 200000000,
+      buildings: [
+        { typeId: 9, recipeId: 12 },  // 炼油厂-石油精炼
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+      ],
+      starterGoods: [4],
+      outputGoods: [25, 12],
+    },
+    
+    // 13.5 中海油 - 炼油补充
+    {
+      name: '中海油',
+      cash: 150000000,
+      buildings: [
+        { typeId: 9, recipeId: 12 },  // 炼油厂-石油精炼
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+        { typeId: 9, recipeId: 12 },
+      ],
+      starterGoods: [4],
+      outputGoods: [25, 12],
+    },
+    
+    // 13.6 塑料工业 - 塑料专业
+    {
+      name: '塑料工业',
+      cash: 60000000,
+      buildings: [
+        { typeId: 10, recipeId: 13 }, // 化工厂-塑料生产
+        { typeId: 10, recipeId: 13 },
+        { typeId: 10, recipeId: 13 },
+        { typeId: 10, recipeId: 13 },
+        { typeId: 10, recipeId: 13 },
+        { typeId: 10, recipeId: 13 },
+      ],
+      starterGoods: [12],
+      outputGoods: [18],
+    },
+    
+    // 14. 万华化学 - 化学品
+    {
+      name: '万华化学',
+      cash: 60000000,
+      buildings: [
+        { typeId: 10, recipeId: 14 }, // 化工厂-化学品生产
+        { typeId: 10, recipeId: 14 },
+        { typeId: 10, recipeId: 14 },
+        { typeId: 10, recipeId: 14 },
+        { typeId: 10, recipeId: 14 },
+      ],
+      starterGoods: [12, 5],
+      outputGoods: [20],
+    },
+    
+    // 15. 福耀玻璃
+    {
+      name: '福耀玻璃',
+      cash: 40000000,
+      buildings: [
+        { typeId: 11, recipeId: 15 }, // 玻璃厂-玻璃生产
+        { typeId: 11, recipeId: 15 },
+        { typeId: 11, recipeId: 15 },
+        { typeId: 11, recipeId: 15 },
+      ],
+      starterGoods: [9],
+      outputGoods: [17],
+    },
+    
+    // 16. 魏桥纺织
+    {
+      name: '魏桥纺织',
+      cash: 35000000,
+      buildings: [
+        { typeId: 12, recipeId: 16 }, // 纺织厂-纺织品生产
+        { typeId: 12, recipeId: 16 },
+        { typeId: 12, recipeId: 16 },
+        { typeId: 12, recipeId: 99 }, // 纺织厂-丝绸生产
+      ],
+      starterGoods: [7],
+      outputGoods: [23, 92],
+    },
+    
+    // 17. 海螺水泥
+    {
+      name: '海螺水泥',
+      cash: 50000000,
+      buildings: [
+        { typeId: 14, recipeId: 19 }, // 水泥厂-水泥生产
+        { typeId: 14, recipeId: 19 },
+        { typeId: 14, recipeId: 19 },
+        { typeId: 14, recipeId: 19 },
+        { typeId: 14, recipeId: 19 },
+      ],
+      starterGoods: [9, 3],
+      outputGoods: [21],
+    },
+    
+    // 18. 中铝集团
+    {
+      name: '中铝集团',
+      cash: 60000000,
+      buildings: [
+        { typeId: 15, recipeId: 102 }, // 铝冶炼厂-铝土矿开采
+        { typeId: 15, recipeId: 20 },  // 铝冶炼厂-铝冶炼
+        { typeId: 15, recipeId: 20 },
+        { typeId: 15, recipeId: 20 },
+      ],
+      starterGoods: [2],
+      outputGoods: [2, 16],
+    },
+    
+    // 19. 双汇食品
+    {
+      name: '双汇食品',
+      cash: 45000000,
+      buildings: [
+        { typeId: 28, recipeId: 40 }, // 肉类加工厂-肉类加工
+        { typeId: 28, recipeId: 40 },
+        { typeId: 28, recipeId: 40 },
+        { typeId: 28, recipeId: 41 }, // 肉类加工厂-乳制品生产
+      ],
+      starterGoods: [60, 61, 62],
+      outputGoods: [63, 64],
+    },
+    
+    // 20. 造纸集团
+    {
+      name: '造纸集团',
+      cash: 35000000,
+      buildings: [
+        { typeId: 42, recipeId: 66 }, // 造纸厂-纸张生产
+        { typeId: 42, recipeId: 66 },
+        { typeId: 42, recipeId: 67 }, // 造纸厂-包装材料生产
+        { typeId: 42, recipeId: 67 },
+      ],
+      starterGoods: [6],
+      outputGoods: [22, 37],
+    },
+    
+    // 21. 橡胶工业
+    {
+      name: '橡胶工业',
+      cash: 40000000,
+      buildings: [
+        { typeId: 43, recipeId: 68 }, // 橡胶厂-橡胶制品生产
+        { typeId: 43, recipeId: 68 },
+        { typeId: 43, recipeId: 68 },
+        { typeId: 43, recipeId: 68 },
+      ],
+      starterGoods: [11, 20],
+      outputGoods: [19],
+    },
+    
+    // 22. 有色冶炼
     {
       name: '有色冶炼',
       cash: 55000000,
       buildings: [
-        { typeId: 69 },  // 有色金属冶炼厂
-        { typeId: 69 },  // 有色金属冶炼厂
+        { typeId: 69, recipeId: 137 }, // 有色金属冶炼厂-锌冶炼
+        { typeId: 69, recipeId: 138 }, // 镍冶炼
+        { typeId: 69, recipeId: 139 }, // 锡冶炼
+        { typeId: 69, recipeId: 140 }, // 钴冶炼
       ],
-      starterGoods: [128, 129, 130, 131, 132, 133], // 各种矿石
-      outputGoods: [134, 135, 136, 137, 138, 139], // 锌(134)到钨(139)
+      starterGoods: [128, 129, 130, 131],
+      outputGoods: [134, 135, 136, 137],
     },
     
-    // 纺织扩展 (建筑70-72, 商品140-149)
+    // ==================== C. 电力与能源公司 (3家) ====================
+    
+    // 23. 华能集团
     {
-      name: '羊毛纺织',
-      cash: 25000000,
+      name: '华能集团',
+      cash: 100000000,
       buildings: [
-        { typeId: 70 },  // 牧羊场
-        { typeId: 70 },  // 牧羊场
+        { typeId: 24, recipeId: 32 }, // 发电厂-燃煤发电
+        { typeId: 24, recipeId: 32 },
+        { typeId: 24, recipeId: 33 }, // 发电厂-燃气发电
+        { typeId: 24, recipeId: 33 },
+        { typeId: 24, recipeId: 34 }, // 发电厂-光伏发电
       ],
-      starterGoods: [8],     // 粮食（饲料）
-      outputGoods: [140, 141, 143], // 羊毛(140)、亚麻(141)、羽绒(143)
-    },
-    {
-      name: '皮革制品',
-      cash: 35000000,
-      buildings: [
-        { typeId: 71, recipeId: 232 },  // 制革厂 - 麻布生产 ★确保麻布有生产者
-        { typeId: 71 },  // 制革厂 - 智能分配其他配方
-        { typeId: 72 },  // 皮具厂
-      ],
-      starterGoods: [60, 20, 140, 141], // 牲畜（生皮）、化学品、羊毛、亚麻
-      outputGoods: [142, 144, 145, 146, 147, 148, 149], // 生皮(142)、毛纱(144)、麻布(145)、皮革(146)、毛织品(147)、皮具(148)、鞋类(149)
+      starterGoods: [3, 5],
+      outputGoods: [57],
     },
     
-    // 建材扩展 (建筑73-75, 商品150-159)
+    // 24. 中核集团
     {
-      name: '粘土建材',
-      cash: 22000000,
+      name: '中核集团',
+      cash: 600000000,
       buildings: [
-        { typeId: 73 },  // 粘土矿场
-        { typeId: 74 },  // 砖瓦厂
+        { typeId: 80, recipeId: 178 }, // 铀矿场-铀矿开采
+        { typeId: 80, recipeId: 179 }, // 铀矿场-生物质采集
+        { typeId: 81, recipeId: 180 }, // 核燃料厂-核燃料生产
+        { typeId: 81, recipeId: 181 }, // 核燃料厂-氢气生产
       ],
-      starterGoods: [],
-      outputGoods: [150, 151, 152, 153, 154], // 粘土(150)、大理石(151)、砖(152)、瓷砖(153)、木板(154)
+      starterGoods: [176],
+      outputGoods: [176, 177, 178, 179],
     },
+    
+    // 25. 新能源集团
     {
-      name: '陶瓷卫浴',
+      name: '新能源集团',
+      cash: 80000000,
+      buildings: [
+        { typeId: 48, recipeId: 75 }, // 新能源设备厂-光伏板生产
+        { typeId: 48, recipeId: 75 },
+        { typeId: 48, recipeId: 76 }, // 新能源设备厂-风机叶片生产
+        { typeId: 48, recipeId: 77 }, // 新能源设备厂-光伏系统组装
+        { typeId: 83, recipeId: 185 }, // 电力设备厂-风力发电机生产
+      ],
+      starterGoods: [9, 17, 16],
+      outputGoods: [34, 35, 49, 183],
+    },
+    
+    // ==================== D. 电子与半导体公司 (5家) ====================
+    
+    // 26. 立讯精密 - 电子元件专业
+    {
+      name: '立讯精密',
+      cash: 70000000,
+      buildings: [
+        { typeId: 16, recipeId: 21 }, // 电子厂-电子元件生产
+        { typeId: 16, recipeId: 21 },
+        { typeId: 16, recipeId: 21 },
+        { typeId: 16, recipeId: 21 },
+        { typeId: 16, recipeId: 21 },
+        { typeId: 16, recipeId: 21 },
+      ],
+      starterGoods: [15, 18],
+      outputGoods: [26],
+    },
+    
+    // 27. 中芯国际 - 芯片
+    {
+      name: '中芯国际',
+      cash: 100000000,
+      buildings: [
+        { typeId: 17, recipeId: 24 }, // 半导体厂-芯片生产
+        { typeId: 17, recipeId: 24 },
+        { typeId: 17, recipeId: 24 },
+        { typeId: 17, recipeId: 24 },
+      ],
+      starterGoods: [9, 10, 20],
+      outputGoods: [27],
+    },
+    
+    // 28. 宁德时代 - 电池+储能
+    {
+      name: '宁德时代',
+      cash: 90000000,
+      buildings: [
+        { typeId: 20, recipeId: 28 }, // 电池厂-电池生产
+        { typeId: 20, recipeId: 28 },
+        { typeId: 20, recipeId: 28 },
+        { typeId: 20, recipeId: 28 },
+        { typeId: 20, recipeId: 81 }, // 电池厂-储能系统生产
+      ],
+      starterGoods: [13, 15, 20],
+      outputGoods: [28, 50],
+    },
+    
+    // 29. 零部件集团 - 机械+汽车零部件
+    {
+      name: '零部件集团',
+      cash: 70000000,
+      buildings: [
+        { typeId: 21, recipeId: 79 }, // 零部件厂-机械部件生产
+        { typeId: 21, recipeId: 79 },
+        { typeId: 21, recipeId: 79 },
+        { typeId: 21, recipeId: 29 }, // 零部件厂-汽车零部件生产
+        { typeId: 21, recipeId: 29 },
+        { typeId: 21, recipeId: 29 },
+      ],
+      starterGoods: [14, 16, 18],
+      outputGoods: [31, 32],
+    },
+    
+    // 30. 屏幕电机厂 - 电机+屏幕
+    {
+      name: '屏幕电机厂',
+      cash: 60000000,
+      buildings: [
+        { typeId: 21, recipeId: 30 }, // 零部件厂-电机生产
+        { typeId: 21, recipeId: 30 },
+        { typeId: 21, recipeId: 30 },
+        { typeId: 21, recipeId: 31 }, // 零部件厂-屏幕生产
+        { typeId: 21, recipeId: 31 },
+        { typeId: 21, recipeId: 31 },
+      ],
+      starterGoods: [15, 14, 17, 26],
+      outputGoods: [29, 30],
+    },
+    
+    // ==================== E. 消费电子与家电公司 (4家) ====================
+    
+    // 31. 华为终端 - 手机
+    {
+      name: '华为终端',
+      cash: 80000000,
+      buildings: [
+        { typeId: 16, recipeId: 22 }, // 电子厂-智能手机组装
+        { typeId: 16, recipeId: 22 },
+        { typeId: 16, recipeId: 83 }, // 电子厂-高端手机生产
+        { typeId: 16, recipeId: 84 }, // 电子厂-平价手机生产
+      ],
+      starterGoods: [26, 27, 28, 17],
+      outputGoods: [38, 55, 56],
+    },
+    
+    // 32. 联想集团 - 电脑
+    {
+      name: '联想集团',
+      cash: 70000000,
+      buildings: [
+        { typeId: 16, recipeId: 23 }, // 电子厂-电脑组装
+        { typeId: 16, recipeId: 23 },
+        { typeId: 16, recipeId: 23 },
+        { typeId: 16, recipeId: 23 },
+      ],
+      starterGoods: [26, 27, 30, 18],
+      outputGoods: [39],
+    },
+    
+    // 33. 海尔家电
+    {
+      name: '海尔家电',
+      cash: 60000000,
+      buildings: [
+        { typeId: 19, recipeId: 27 }, // 家电厂-家电生产
+        { typeId: 19, recipeId: 27 },
+        { typeId: 19, recipeId: 27 },
+        { typeId: 19, recipeId: 27 },
+      ],
+      starterGoods: [14, 26, 18],
+      outputGoods: [40],
+    },
+    
+    // 34. 大疆科技 - 无人机+VR
+    {
+      name: '大疆科技',
+      cash: 65000000,
+      buildings: [
+        { typeId: 16, recipeId: 82 }, // 电子厂-无人机生产
+        { typeId: 16, recipeId: 82 },
+        { typeId: 16, recipeId: 62 }, // 电子厂-VR设备生产
+        { typeId: 16, recipeId: 62 },
+      ],
+      starterGoods: [26, 27, 28, 18],
+      outputGoods: [52, 103],
+    },
+    
+    // ==================== F. 食品饮料公司 (6家) ====================
+    
+    // 35. 统一食品 - 加工食品
+    {
+      name: '统一食品',
       cash: 40000000,
       buildings: [
-        { typeId: 75 },  // 陶瓷厂
-        { typeId: 75 },  // 陶瓷厂
+        { typeId: 13, recipeId: 17 }, // 食品厂-食品加工
+        { typeId: 13, recipeId: 17 },
+        { typeId: 13, recipeId: 17 },
+        { typeId: 13, recipeId: 103 }, // 食品厂-食品生产
+        { typeId: 13, recipeId: 103 },
       ],
-      starterGoods: [150, 151, 17, 20], // 粘土(150)、大理石(151)、玻璃、化学品
-      outputGoods: [155, 156, 157, 158, 159], // 涂料(155)、陶瓷制品(156)、卫浴设备(157)、餐具(158)、装饰材料(159)
+      starterGoods: [8, 24, 37],
+      outputGoods: [24, 44],
     },
     
-    // 农产品深加工 (建筑76-79, 商品160-175)
+    // 36. 可口可乐 - 饮料专业 ★关键：确保饮料供应
     {
-      name: '经济作物',
-      cash: 28000000,
+      name: '可口可乐',
+      cash: 45000000,
       buildings: [
-        { typeId: 76 },  // 经济作物种植园
-        { typeId: 76 },  // 经济作物种植园
+        { typeId: 13, recipeId: 18 }, // 食品厂-饮料生产
+        { typeId: 13, recipeId: 18 },
+        { typeId: 13, recipeId: 18 },
+        { typeId: 13, recipeId: 18 },
+        { typeId: 13, recipeId: 18 },
       ],
-      starterGoods: [],
-      outputGoods: [160, 161, 162, 163, 164, 165], // 葡萄(160)、甘蔗(161)、茶叶(162)、咖啡豆(163)、烟叶(164)、油料作物(165)
+      starterGoods: [8],
+      outputGoods: [45],
     },
+    
+    // 37. 冷冻零食
     {
-      name: '金龙鱼',
+      name: '冷冻零食',
       cash: 35000000,
       buildings: [
-        { typeId: 77 },  // 制糖厂
-        { typeId: 77 },  // 制糖厂
+        { typeId: 13, recipeId: 42 }, // 食品厂-冷冻食品生产
+        { typeId: 13, recipeId: 42 },
+        { typeId: 13, recipeId: 86 }, // 食品厂-零食生产
+        { typeId: 13, recipeId: 86 },
+        { typeId: 13, recipeId: 88 }, // 食品厂-宠物食品生产
       ],
-      starterGoods: [161, 165, 8], // 甘蔗(161)、油料作物(165)、粮食
-      outputGoods: [166, 167, 168], // 糖(166)、食用油(167)、面粉(168)
+      starterGoods: [63, 58, 8],
+      outputGoods: [65, 67, 69],
     },
+    
+    // 38. 金龙鱼 - 粮油
+    {
+      name: '金龙鱼',
+      cash: 45000000,
+      buildings: [
+        { typeId: 77, recipeId: 168 }, // 制糖厂-糖生产
+        { typeId: 77, recipeId: 168 },
+        { typeId: 77, recipeId: 169 }, // 制糖厂-食用油生产
+        { typeId: 77, recipeId: 169 },
+        { typeId: 77, recipeId: 170 }, // 制糖厂-面粉生产
+        { typeId: 77, recipeId: 170 },
+      ],
+      starterGoods: [161, 165, 8],
+      outputGoods: [166, 167, 168],
+    },
+    
+    // 39. 茅台集团 - 酒类
     {
       name: '茅台集团',
       cash: 80000000,
       buildings: [
-        { typeId: 78 },  // 酿酒厂
-        { typeId: 78 },  // 酿酒厂
+        { typeId: 78, recipeId: 171 }, // 酿酒厂-啤酒酿造
+        { typeId: 78, recipeId: 171 },
+        { typeId: 78, recipeId: 172 }, // 酿酒厂-葡萄酒酿造
+        { typeId: 78, recipeId: 173 }, // 酿酒厂-烈酒酿造
       ],
-      starterGoods: [160, 8, 166], // 葡萄(160)、粮食、糖(166)
-      outputGoods: [169, 170, 171], // 啤酒(169)、葡萄酒(170)、烈酒(171)
-    },
-    {
-      name: '星巴克供应',
-      cash: 45000000,
-      buildings: [
-        { typeId: 79 },  // 饮品厂
-        { typeId: 79 },  // 饮品厂
-      ],
-      starterGoods: [162, 163, 164, 166], // 茶叶(162)、咖啡豆(163)、烟叶(164)、糖(166)
-      outputGoods: [172, 173, 174, 175], // 茶饮(172)、咖啡(173)、烟草制品(174)、糖果(175)
+      starterGoods: [160, 8],
+      outputGoods: [169, 170, 171],
     },
     
-    // 能源扩展 (建筑80-83, 商品176-185)
+    // 40. 饮品糖果
     {
-      name: '中核集团',
-      cash: 500000000,
+      name: '饮品糖果',
+      cash: 40000000,
       buildings: [
-        { typeId: 80 },  // 铀矿场
-        { typeId: 81 },  // 核燃料厂
+        { typeId: 79, recipeId: 174 }, // 饮品厂-茶饮生产
+        { typeId: 79, recipeId: 174 },
+        { typeId: 79, recipeId: 175 }, // 饮品厂-咖啡生产
+        { typeId: 79, recipeId: 175 },
+        { typeId: 79, recipeId: 176 }, // 饮品厂-烟草制品生产
+        { typeId: 79, recipeId: 177 }, // 饮品厂-糖果生产
       ],
-      starterGoods: [],
-      outputGoods: [176, 177, 178, 179, 180], // 铀矿石(176)、生物质(177)、核燃料(178)、氢气(179)、生物燃料(180)
+      starterGoods: [162, 163, 164, 166],
+      outputGoods: [172, 173, 174, 175],
     },
+    
+    // ==================== G. 服装与日用品公司 (5家) ====================
+    
+    // 41. 波司登 - 服装
     {
-      name: '国核工程',
-      cash: 600000000,
+      name: '波司登',
+      cash: 40000000,
       buildings: [
-        { typeId: 82 },  // 核电设备厂
+        { typeId: 44, recipeId: 69 }, // 服装厂-服装生产
+        { typeId: 44, recipeId: 69 },
+        { typeId: 44, recipeId: 69 },
+        { typeId: 44, recipeId: 69 },
+        { typeId: 44, recipeId: 69 },
       ],
-      starterGoods: [178, 80, 27], // 核燃料(178)、特种钢材、芯片
-      outputGoods: [181], // 核反应堆(181)
+      starterGoods: [23],
+      outputGoods: [43],
     },
+    
+    // 42. 宜家家居 - 家具
     {
-      name: '特变电工',
+      name: '宜家家居',
+      cash: 50000000,
+      buildings: [
+        { typeId: 45, recipeId: 70 }, // 家具厂-家具生产
+        { typeId: 45, recipeId: 70 },
+        { typeId: 45, recipeId: 70 },
+        { typeId: 45, recipeId: 70 },
+      ],
+      starterGoods: [6, 14],
+      outputGoods: [46],
+    },
+    
+    // 43. 宝洁日化
+    {
+      name: '宝洁日化',
+      cash: 80000000,
+      buildings: [
+        { typeId: 59, recipeId: 106 }, // 棕榈种植园-棕榈油提取
+        { typeId: 59, recipeId: 107 }, // 棕榈种植园-香料提取
+        { typeId: 60, recipeId: 108 }, // 日化厂-表面活性剂生产
+        { typeId: 60, recipeId: 111 }, // 日化厂-化妆品基质生产
+        { typeId: 60, recipeId: 113 }, // 日化厂-化妆品生产
+        { typeId: 61, recipeId: 115 }, // 洗涤用品厂-洗涤用品生产
+        { typeId: 61, recipeId: 116 }, // 洗涤用品厂-洗发护发用品生产
+        { typeId: 61, recipeId: 117 }, // 洗涤用品厂-口腔护理用品生产
+      ],
+      starterGoods: [104, 105, 20],
+      outputGoods: [104, 105, 106, 107, 109, 111, 112, 113, 114, 115],
+    },
+    
+    // 44. 皮革纺织
+    {
+      name: '皮革纺织',
+      cash: 55000000,
+      buildings: [
+        { typeId: 70, recipeId: 143 }, // 牧羊场-羊毛采集
+        { typeId: 70, recipeId: 144 }, // 牧羊场-亚麻收获
+        { typeId: 71, recipeId: 232 }, // 制革厂-麻布生产 ★确保麻布有生产者
+        { typeId: 71, recipeId: 147 }, // 制革厂-毛纱生产
+        { typeId: 71, recipeId: 148 }, // 制革厂-皮革加工
+        { typeId: 72, recipeId: 149 }, // 皮具厂-毛织品生产
+        { typeId: 72, recipeId: 150 }, // 皮具厂-皮具生产
+        { typeId: 72, recipeId: 151 }, // 皮具厂-鞋类生产
+      ],
+      starterGoods: [8, 60, 140, 141],
+      outputGoods: [140, 141, 142, 144, 145, 146, 147, 148, 149],
+    },
+    
+    // 45. 陶瓷卫浴
+    {
+      name: '陶瓷卫浴',
       cash: 60000000,
       buildings: [
-        { typeId: 83 },  // 电力设备厂
-        { typeId: 83 },  // 电力设备厂
+        { typeId: 73, recipeId: 152 }, // 粘土矿场-粘土开采
+        { typeId: 73, recipeId: 153 }, // 粘土矿场-大理石开采
+        { typeId: 74, recipeId: 154 }, // 砖瓦厂-砖生产
+        { typeId: 74, recipeId: 155 }, // 砖瓦厂-瓷砖生产
+        { typeId: 74, recipeId: 156 }, // 砖瓦厂-木板生产
+        { typeId: 75, recipeId: 157 }, // 陶瓷厂-涂料生产
+        { typeId: 75, recipeId: 158 }, // 陶瓷厂-陶瓷制品生产
+        { typeId: 75, recipeId: 159 }, // 陶瓷厂-卫浴设备生产
       ],
-      starterGoods: [15, 14, 18], // 铜材、钢材、塑料
-      outputGoods: [182, 183, 184, 185], // 燃料电池(182)、风力发电机(183)、变压器(184)、电力电缆(185)
+      starterGoods: [150, 6],
+      outputGoods: [150, 151, 152, 153, 154, 155, 156, 157, 158, 159],
     },
     
-    // 通信产业链 (建筑84-87, 商品186-195)
+    // ==================== H. 建材与基建公司 (4家) ====================
+    
+    // 46. 中建材料
     {
-      name: '长飞光纤',
-      cash: 45000000,
+      name: '中建材料',
+      cash: 60000000,
       buildings: [
-        { typeId: 84 },  // 光纤厂
-        { typeId: 84 },  // 光纤厂
+        { typeId: 46, recipeId: 71 }, // 建材厂-建筑材料生产
+        { typeId: 46, recipeId: 71 },
+        { typeId: 46, recipeId: 71 },
+        { typeId: 46, recipeId: 71 },
+        { typeId: 46, recipeId: 72 }, // 建材厂-建材成品生产
+        { typeId: 46, recipeId: 72 },
       ],
-      starterGoods: [9, 17], // 硅石、玻璃
-      outputGoods: [186], // 光纤(186)
-    },
-    {
-      name: '华为设备',
-      cash: 80000000,
-      buildings: [
-        { typeId: 85 },  // 通信设备厂
-        { typeId: 86 },  // 网络设备厂
-      ],
-      starterGoods: [27, 26, 186], // 芯片、电子元件、光纤(186)
-      outputGoods: [187, 188, 189, 190, 191, 192, 194, 195], // 天线(187)到智能手表(195)
-    },
-    {
-      name: '中国航天',
-      cash: 400000000,
-      buildings: [
-        { typeId: 87 },  // 卫星工厂
-      ],
-      starterGoods: [33, 27, 26], // 航空部件、芯片、电子元件
-      outputGoods: [193], // 卫星(193)
+      starterGoods: [21, 14, 17],
+      outputGoods: [36, 47],
     },
     
-    // 服务业 (建筑88-93, 商品196-209)
+    // 47. 精密零件
     {
-      name: '新东方',
-      cash: 30000000,
+      name: '精密零件',
+      cash: 55000000,
       buildings: [
-        { typeId: 88 },  // 学校
-        { typeId: 88 },  // 学校
+        { typeId: 100, recipeId: 228 }, // 精密零件厂-轴承生产
+        { typeId: 100, recipeId: 228 },
+        { typeId: 100, recipeId: 229 }, // 精密零件厂-弹簧生产
+        { typeId: 100, recipeId: 230 }, // 精密零件厂-密封件生产
+        { typeId: 100, recipeId: 231 }, // 精密零件厂-过滤器生产
       ],
-      starterGoods: [],
-      outputGoods: [196], // 教育服务(196)
+      starterGoods: [14, 19],
+      outputGoods: [226, 227, 228, 229],
     },
+    
+    // 48. 电力电缆
     {
-      name: '协和医院',
+      name: '电力电缆',
+      cash: 60000000,
+      buildings: [
+        { typeId: 83, recipeId: 186 }, // 电力设备厂-变压器生产
+        { typeId: 83, recipeId: 186 },
+        { typeId: 83, recipeId: 187 }, // 电力设备厂-电力电缆生产
+        { typeId: 83, recipeId: 187 },
+        { typeId: 83, recipeId: 187 },
+      ],
+      starterGoods: [15, 14, 19],
+      outputGoods: [184, 185],
+    },
+    
+    // 49. 光纤通信
+    {
+      name: '光纤通信',
+      cash: 50000000,
+      buildings: [
+        { typeId: 84, recipeId: 188 }, // 光纤厂-光纤生产
+        { typeId: 84, recipeId: 188 },
+        { typeId: 84, recipeId: 188 },
+      ],
+      starterGoods: [9, 17],
+      outputGoods: [186],
+    },
+    
+    // ==================== I. 医药与医疗公司 (4家) ====================
+    
+    // 50. 同仁堂 - 药材+仿制药
+    {
+      name: '同仁堂',
       cash: 80000000,
       buildings: [
-        { typeId: 89 },  // 医院
+        { typeId: 29, recipeId: 43 }, // 药材种植园-药材种植
+        { typeId: 29, recipeId: 43 },
+        { typeId: 29, recipeId: 43 },
+        { typeId: 30, recipeId: 44 }, // 制药厂-仿制药生产
+        { typeId: 30, recipeId: 44 },
+        { typeId: 30, recipeId: 44 },
       ],
-      starterGoods: [74, 75, 76], // 仿制药、专利药、非处方药
-      outputGoods: [197], // 医疗服务(197)
+      starterGoods: [70, 71],
+      outputGoods: [70, 74],
     },
+    
+    // 51. 恒瑞医药 - 专利药+疫苗
     {
-      name: '招商银行',
-      cash: 200000000,
+      name: '恒瑞医药',
+      cash: 120000000,
       buildings: [
-        { typeId: 90 },  // 银行
+        { typeId: 10, recipeId: 89 }, // 化工厂-医药化工品生产
+        { typeId: 10, recipeId: 89 },
+        { typeId: 30, recipeId: 90 }, // 制药厂-抗生素生产
+        { typeId: 30, recipeId: 45 }, // 制药厂-专利药生产
+        { typeId: 30, recipeId: 45 },
+        { typeId: 30, recipeId: 46 }, // 制药厂-疫苗生产
       ],
-      starterGoods: [],
-      outputGoods: [198], // 金融服务(198)
+      starterGoods: [12, 70, 71, 20],
+      outputGoods: [71, 72, 73, 75],
     },
+    
+    // 52. 华润医药 - 非处方药
     {
-      name: '万豪酒店',
+      name: '华润医药',
+      cash: 60000000,
+      buildings: [
+        { typeId: 30, recipeId: 91 }, // 制药厂-非处方药生产
+        { typeId: 30, recipeId: 91 },
+        { typeId: 30, recipeId: 91 },
+        { typeId: 30, recipeId: 91 },
+      ],
+      starterGoods: [71, 37],
+      outputGoods: [76],
+    },
+    
+    // 53. 迈瑞医疗 - 医疗器械
+    {
+      name: '迈瑞医疗',
       cash: 100000000,
       buildings: [
-        { typeId: 91 },  // 酒店
-        { typeId: 91 },  // 酒店
+        { typeId: 31, recipeId: 47 }, // 医疗器械厂-医用耗材生产
+        { typeId: 31, recipeId: 47 },
+        { typeId: 31, recipeId: 48 }, // 医疗器械厂-诊断设备生产
+        { typeId: 31, recipeId: 48 },
+        { typeId: 31, recipeId: 104 }, // 医疗器械厂-医疗设备生产
+        { typeId: 31, recipeId: 92 }, // 医疗器械厂-手术设备生产
       ],
-      starterGoods: [24, 45], // 加工食品、饮料
-      outputGoods: [199, 200, 201], // 娱乐服务(199)、餐饮服务(200)、住宿服务(201)
-    },
-    {
-      name: '顺丰速运',
-      cash: 50000000,
-      buildings: [
-        { typeId: 92 },  // 运输公司
-        { typeId: 92 },  // 运输公司
-      ],
-      starterGoods: [25], // 燃油
-      outputGoods: [202, 203, 204], // 运输服务(202)、清洁服务(203)、安保服务(204)
-    },
-    {
-      name: '麦肯锡',
-      cash: 40000000,
-      buildings: [
-        { typeId: 93 },  // 咨询公司
-        { typeId: 93 },  // 咨询公司
-      ],
-      starterGoods: [],
-      outputGoods: [205, 206, 207, 208, 209], // 广告服务(205)到研发服务(209)
+      starterGoods: [18, 23, 26, 27, 14],
+      outputGoods: [48, 77, 78, 79],
     },
     
-    // 文化传媒 (建筑94-97, 商品210-219)
+    // ==================== J. 汽车与交通公司 (5家) ====================
+    
+    // 54. 比亚迪 - 电动车
     {
-      name: '人民日报',
-      cash: 25000000,
+      name: '比亚迪',
+      cash: 100000000,
       buildings: [
-        { typeId: 94 },  // 印刷厂
-        { typeId: 94 },  // 印刷厂
+        { typeId: 18, recipeId: 26 }, // 汽车工厂-电动汽车组装
+        { typeId: 18, recipeId: 26 },
+        { typeId: 18, recipeId: 26 },
       ],
-      starterGoods: [22, 20], // 纸张、化学品
-      outputGoods: [210, 212, 213], // 印刷油墨(210)、图书(212)、杂志报刊(213)
+      starterGoods: [32, 26, 28, 29, 17],
+      outputGoods: [42],
     },
+    
+    // 55. 吉利汽车 - 燃油车+豪华车
     {
-      name: '华谊兄弟',
-      cash: 150000000,
+      name: '吉利汽车',
+      cash: 120000000,
       buildings: [
-        { typeId: 95 },  // 影视制作中心
+        { typeId: 18, recipeId: 25 }, // 汽车工厂-燃油汽车组装
+        { typeId: 18, recipeId: 25 },
+        { typeId: 18, recipeId: 25 },
+        { typeId: 18, recipeId: 101 }, // 汽车工厂-豪华汽车生产
       ],
-      starterGoods: [26, 39], // 电子元件、电脑
-      outputGoods: [211, 214, 215], // 影视设备(211)、音乐专辑(214)、电影(215)
+      starterGoods: [32, 26, 19, 17, 90],
+      outputGoods: [41, 95],
     },
+    
+    // 56. 正新轮胎
     {
-      name: '米哈游',
+      name: '正新轮胎',
+      cash: 50000000,
+      buildings: [
+        { typeId: 62, recipeId: 119 }, // 轮胎厂-轮胎生产
+        { typeId: 62, recipeId: 119 },
+        { typeId: 62, recipeId: 119 },
+        { typeId: 62, recipeId: 120 }, // 轮胎厂-汽车座椅生产
+      ],
+      starterGoods: [19, 14, 23],
+      outputGoods: [116, 117],
+    },
+    
+    // 57. 捷安特 - 两轮车
+    {
+      name: '捷安特',
+      cash: 35000000,
+      buildings: [
+        { typeId: 63, recipeId: 121 }, // 自行车厂-自行车生产
+        { typeId: 63, recipeId: 121 },
+        { typeId: 63, recipeId: 122 }, // 自行车厂-摩托车生产
+        { typeId: 63, recipeId: 123 }, // 自行车厂-电动滑板车生产
+      ],
+      starterGoods: [14, 16, 19, 29, 28],
+      outputGoods: [121, 122, 123],
+    },
+    
+    // 58. 航空部件
+    {
+      name: '航空部件',
       cash: 80000000,
       buildings: [
-        { typeId: 96 },  // 游戏工作室
-        { typeId: 96 },  // 游戏工作室
+        { typeId: 21, recipeId: 80 }, // 零部件厂-航空部件生产
+        { typeId: 21, recipeId: 80 },
+        { typeId: 21, recipeId: 80 },
+        { typeId: 66, recipeId: 128 }, // 民用航空厂-航空发动机生产
       ],
-      starterGoods: [39], // 电脑
-      outputGoods: [216], // 电子游戏(216)
-    },
-    {
-      name: '乐高玩具',
-      cash: 40000000,
-      buildings: [
-        { typeId: 97 },  // 玩具厂
-        { typeId: 97 },  // 玩具厂
-      ],
-      starterGoods: [18, 6], // 塑料、木材
-      outputGoods: [217, 218, 219], // 玩具(217)、运动器材(218)、乐器(219)
+      starterGoods: [16, 80, 10],
+      outputGoods: [33, 120],
     },
     
-    // 杂项 (建筑98-100, 商品220-229)
+    // ==================== K. 高科技与军工公司 (6家) ====================
+    
+    // 59. 特钢集团
     {
-      name: 'YKK拉链',
-      cash: 20000000,
-      buildings: [
-        { typeId: 98 },  // 配件厂
-        { typeId: 98 },  // 配件厂
-      ],
-      starterGoods: [14, 18], // 钢材、塑料
-      outputGoods: [220, 221], // 拉链(220)、纽扣(221)
-    },
-    {
-      name: '精细化工',
+      name: '特钢集团',
       cash: 70000000,
       buildings: [
-        { typeId: 99 },  // 精细化工厂
-        { typeId: 99 },  // 精细化工厂
+        { typeId: 32, recipeId: 49 }, // 特钢厂-特种钢生产
+        { typeId: 32, recipeId: 49 },
+        { typeId: 32, recipeId: 49 },
+        { typeId: 32, recipeId: 50 }, // 特钢厂-装甲板生产
+        { typeId: 32, recipeId: 50 },
       ],
-      starterGoods: [12, 20, 9], // 化工原料、化学品、硅石
-      outputGoods: [222, 223, 224, 225], // 光刻胶(222)、惰性气体(223)、催化剂(224)、胶粘剂(225)
+      starterGoods: [14, 10],
+      outputGoods: [80, 82],
     },
+    
+    // 60. 寒武纪AI
     {
-      name: '精密制造',
+      name: '寒武纪AI',
+      cash: 150000000,
+      buildings: [
+        { typeId: 37, recipeId: 58 }, // AI芯片厂-AI芯片生产
+        { typeId: 37, recipeId: 58 },
+        { typeId: 37, recipeId: 58 },
+        { typeId: 37, recipeId: 60 }, // AI芯片厂-AI服务器组装
+      ],
+      starterGoods: [27, 10],
+      outputGoods: [96, 99],
+    },
+    
+    // 61. 机器人科技
+    {
+      name: '机器人科技',
+      cash: 100000000,
+      buildings: [
+        { typeId: 47, recipeId: 73 }, // 机器人厂-工业机器人生产
+        { typeId: 47, recipeId: 73 },
+        { typeId: 47, recipeId: 74 }, // 机器人厂-智能机器人生产
+      ],
+      starterGoods: [31, 26, 27, 96],
+      outputGoods: [51, 102],
+    },
+    
+    // 62. 生命科学
+    {
+      name: '生命科学',
+      cash: 80000000,
+      buildings: [
+        { typeId: 39, recipeId: 95 }, // 生物实验室-生物材料培育
+        { typeId: 39, recipeId: 95 },
+        { typeId: 39, recipeId: 63 }, // 生物实验室-生物制品生产
+      ],
+      starterGoods: [20],
+      outputGoods: [98, 101],
+    },
+    
+    // 63. 珠宝奢侈
+    {
+      name: '珠宝奢侈',
+      cash: 120000000,
+      buildings: [
+        { typeId: 35, recipeId: 54 }, // 金矿-金矿开采
+        { typeId: 35, recipeId: 55 }, // 金矿-黄金精炼
+        { typeId: 35, recipeId: 97 }, // 金矿-钻石矿开采
+        { typeId: 36, recipeId: 98 }, // 奢侈品工坊-钻石切割
+        { typeId: 36, recipeId: 56 }, // 奢侈品工坊-珠宝制作
+        { typeId: 36, recipeId: 57 }, // 奢侈品工坊-奢侈腕表生产
+        { typeId: 36, recipeId: 100 }, // 奢侈品工坊-设计师服装生产
+      ],
+      starterGoods: [88, 89, 92, 23],
+      outputGoods: [88, 89, 90, 91, 53, 54, 93, 94],
+    },
+    
+    // 64. 精细化工
+    {
+      name: '精细化工',
+      cash: 80000000,
+      buildings: [
+        { typeId: 99, recipeId: 224 }, // 精细化工厂-光刻胶生产
+        { typeId: 99, recipeId: 225 }, // 精细化工厂-惰性气体生产
+        { typeId: 99, recipeId: 226 }, // 精细化工厂-催化剂生产
+        { typeId: 99, recipeId: 227 }, // 精细化工厂-胶粘剂生产
+      ],
+      starterGoods: [20, 10, 12, 11],
+      outputGoods: [222, 223, 224, 225],
+    },
+    
+    // ==================== L. 通信与网络公司 (3家) ====================
+    
+    // 65. 华为设备
+    {
+      name: '华为设备',
+      cash: 100000000,
+      buildings: [
+        { typeId: 85, recipeId: 189 }, // 通信设备厂-天线生产
+        { typeId: 85, recipeId: 190 }, // 通信设备厂-传感器生产
+        { typeId: 85, recipeId: 191 }, // 通信设备厂-存储芯片生产
+        { typeId: 86, recipeId: 193 }, // 网络设备厂-路由器生产
+        { typeId: 86, recipeId: 194 }, // 网络设备厂-通信基站生产
+      ],
+      starterGoods: [16, 26, 27, 186],
+      outputGoods: [187, 188, 189, 191, 192],
+    },
+    
+    // 66. 显示面板
+    {
+      name: '显示面板',
+      cash: 70000000,
+      buildings: [
+        { typeId: 85, recipeId: 192 }, // 通信设备厂-显示面板生产
+        { typeId: 85, recipeId: 192 },
+        { typeId: 85, recipeId: 192 },
+        { typeId: 86, recipeId: 196 }, // 网络设备厂-平板电脑生产
+        { typeId: 86, recipeId: 197 }, // 网络设备厂-智能手表生产
+      ],
+      starterGoods: [17, 26, 10],
+      outputGoods: [190, 194, 195],
+    },
+    
+    // 67. 中国航天
+    {
+      name: '中国航天',
+      cash: 500000000,
+      buildings: [
+        { typeId: 87, recipeId: 195 }, // 卫星工厂-卫星生产
+      ],
+      starterGoods: [33, 27, 26, 187],
+      outputGoods: [193],
+    },
+    
+    // ==================== M. 服务业公司 (4家) ====================
+    
+    // 68. 新东方
+    {
+      name: '新东方',
+      cash: 40000000,
+      buildings: [
+        { typeId: 88, recipeId: 198 }, // 学校-教育服务提供
+        { typeId: 88, recipeId: 198 },
+      ],
+      starterGoods: [212],
+      outputGoods: [196],
+    },
+    
+    // 69. 万豪酒店
+    {
+      name: '万豪酒店',
+      cash: 120000000,
+      buildings: [
+        { typeId: 91, recipeId: 201 }, // 酒店-娱乐服务提供
+        { typeId: 91, recipeId: 202 }, // 酒店-餐饮服务提供
+        { typeId: 91, recipeId: 203 }, // 酒店-住宿服务提供
+      ],
+      starterGoods: [44, 45],
+      outputGoods: [199, 200, 201],
+    },
+    
+    // 70. 顺丰速运
+    {
+      name: '顺丰速运',
+      cash: 60000000,
+      buildings: [
+        { typeId: 92, recipeId: 204 }, // 运输公司-运输服务提供
+        { typeId: 92, recipeId: 204 },
+        { typeId: 92, recipeId: 205 }, // 运输公司-清洁服务提供
+      ],
+      starterGoods: [25, 113],
+      outputGoods: [202, 203],
+    },
+    
+    // 71. 麦肯锡
+    {
+      name: '麦肯锡',
       cash: 50000000,
       buildings: [
-        { typeId: 100 },  // 精密零件厂
-        { typeId: 100 },  // 精密零件厂
+        { typeId: 93, recipeId: 207 }, // 咨询公司-广告服务提供
+        { typeId: 93, recipeId: 208 }, // 咨询公司-法律服务提供
+        { typeId: 93, recipeId: 209 }, // 咨询公司-咨询服务提供
+        { typeId: 93, recipeId: 210 }, // 咨询公司-软件服务提供
       ],
-      starterGoods: [14, 19, 20], // 钢材、橡胶制品、化学品
-      outputGoods: [226, 227, 228, 229], // 轴承(226)、弹簧(227)、密封件(228)、过滤器(229)
+      starterGoods: [],
+      outputGoods: [205, 206, 207, 208],
+    },
+    
+    // ==================== N. 文化传媒公司 (4家) ====================
+    
+    // 72. 人民日报
+    {
+      name: '人民日报',
+      cash: 35000000,
+      buildings: [
+        { typeId: 94, recipeId: 212 }, // 印刷厂-印刷油墨生产
+        { typeId: 94, recipeId: 213 }, // 印刷厂-图书印刷
+        { typeId: 94, recipeId: 214 }, // 印刷厂-杂志报刊印刷
+      ],
+      starterGoods: [22, 20],
+      outputGoods: [210, 212, 213],
+    },
+    
+    // 73. 华谊兄弟
+    {
+      name: '华谊兄弟',
+      cash: 180000000,
+      buildings: [
+        { typeId: 95, recipeId: 215 }, // 影视制作中心-影视设备生产
+        { typeId: 95, recipeId: 216 }, // 影视制作中心-音乐专辑制作
+        { typeId: 95, recipeId: 217 }, // 影视制作中心-电影制作
+      ],
+      starterGoods: [26, 39],
+      outputGoods: [211, 214, 215],
+    },
+    
+    // 74. 米哈游
+    {
+      name: '米哈游',
+      cash: 100000000,
+      buildings: [
+        { typeId: 96, recipeId: 218 }, // 游戏工作室-电子游戏开发
+        { typeId: 96, recipeId: 218 },
+      ],
+      starterGoods: [39],
+      outputGoods: [216],
+    },
+    
+    // 75. 乐高玩具
+    {
+      name: '乐高玩具',
+      cash: 50000000,
+      buildings: [
+        { typeId: 97, recipeId: 219 }, // 玩具厂-玩具生产
+        { typeId: 97, recipeId: 219 },
+        { typeId: 97, recipeId: 220 }, // 玩具厂-运动器材生产
+        { typeId: 97, recipeId: 221 }, // 玩具厂-乐器生产
+      ],
+      starterGoods: [18, 6, 14],
+      outputGoods: [217, 218, 219],
+    },
+    
+    // ==================== O. 杂项配件公司 (2家) ====================
+    
+    // 76. YKK配件
+    {
+      name: 'YKK配件',
+      cash: 25000000,
+      buildings: [
+        { typeId: 98, recipeId: 222 }, // 配件厂-拉链生产
+        { typeId: 98, recipeId: 222 },
+        { typeId: 98, recipeId: 223 }, // 配件厂-纽扣生产
+      ],
+      starterGoods: [14, 18],
+      outputGoods: [220, 221],
+    },
+    
+    // 77. 北方军工
+    {
+      name: '北方军工',
+      cash: 200000000,
+      buildings: [
+        { typeId: 10, recipeId: 93 }, // 化工厂-炸药生产
+        { typeId: 16, recipeId: 94 }, // 电子厂-军用电子生产
+        { typeId: 33, recipeId: 51 }, // 武器工厂-轻武器生产
+        { typeId: 33, recipeId: 52 }, // 武器工厂-军用车辆生产
+      ],
+      starterGoods: [80, 81, 83, 82],
+      outputGoods: [81, 83, 84, 86],
     },
   ];
   
+  // 创建所有AI公司
   for (let i = 0; i < aiCompanies.length; i++) {
     const ai = aiCompanies[i];
     const companyId = c.count;
@@ -1247,35 +1596,33 @@ function initializeAICompanies(world: GameWorld): void {
       setInventory(world, companyId, j, 0);
     }
     
-    // 给AI初始原材料（大幅增加数量，用于生产和市场流动性）
-    // 由于已删除做市商，AI公司需要承担更多的市场流动性责任
+    // 给AI初始原材料（根据商品价值调整数量）
     for (const goodsId of ai.starterGoods) {
       if (goodsId < GOODS_COUNT) {
-        // 根据商品价值调整初始数量（增加2-3倍）
         const basePrice = ALL_GOODS.find(g => g.id === goodsId)?.basePrice || 100;
         let baseAmount: number;
         if (basePrice > 10000) {
-          baseAmount = 50 + Math.random() * 80;   // 高价商品
+          baseAmount = 50 + Math.random() * 80;
         } else if (basePrice > 1000) {
           baseAmount = 300 + Math.random() * 400;
         } else if (basePrice > 100) {
           baseAmount = 1500 + Math.random() * 1500;
         } else {
-          baseAmount = 3000 + Math.random() * 3000;  // 低价商品大量
+          baseAmount = 3000 + Math.random() * 3000;
         }
         setInventory(world, companyId, goodsId, baseAmount);
       }
     }
     
-    // 给AI初始成品库存（大幅增加，用于立即销售和市场深度）
+    // 给AI初始成品库存
     for (const goodsId of ai.outputGoods) {
       if (goodsId < GOODS_COUNT) {
         const basePrice = ALL_GOODS.find(g => g.id === goodsId)?.basePrice || 100;
         let baseAmount: number;
         if (basePrice > 50000) {
-          baseAmount = 15 + Math.random() * 25;   // 超高价商品
+          baseAmount = 15 + Math.random() * 25;
         } else if (basePrice > 10000) {
-          baseAmount = 60 + Math.random() * 90;   // 高价商品
+          baseAmount = 60 + Math.random() * 90;
         } else if (basePrice > 1000) {
           baseAmount = 250 + Math.random() * 350;
         } else if (basePrice > 100) {
@@ -1287,87 +1634,64 @@ function initializeAICompanies(world: GameWorld): void {
       }
     }
     
-    // 给AI初始建筑 - 使用智能配方分配系统
-    const tracker = getGlobalRecipeTracker();
+    // 给AI初始建筑材料库存
+    const buildingMaterialsInit: Array<{ goodsId: number; amount: number }> = [
+      { goodsId: 14, amount: 500 + Math.random() * 1000 },
+      { goodsId: 21, amount: 400 + Math.random() * 600 },
+      { goodsId: 6, amount: 300 + Math.random() * 500 },
+      { goodsId: 152, amount: 300 + Math.random() * 400 },
+      { goodsId: 17, amount: 200 + Math.random() * 300 },
+      { goodsId: 36, amount: 200 + Math.random() * 300 },
+      { goodsId: 47, amount: 80 + Math.random() * 120 },
+      { goodsId: 185, amount: 10 + Math.random() * 20 },
+      { goodsId: 184, amount: 5 + Math.random() * 10 },
+      { goodsId: 29, amount: 20 + Math.random() * 30 },
+      { goodsId: 31, amount: 100 + Math.random() * 150 },
+      { goodsId: 25, amount: 300 + Math.random() * 500 },
+      { goodsId: 18, amount: 200 + Math.random() * 300 },
+      { goodsId: 19, amount: 100 + Math.random() * 150 },
+    ];
     
-    // 按建筑类型分组
-    const buildingsByType = new Map<number, Array<{ typeId: number; recipeId?: number }>>();
-    for (const buildingConfig of ai.buildings) {
-      const typeId = buildingConfig.typeId;
-      if (!buildingsByType.has(typeId)) {
-        buildingsByType.set(typeId, []);
+    for (const mat of buildingMaterialsInit) {
+      if (mat.goodsId < GOODS_COUNT) {
+        const currentInv = world.companies.inventories[companyId * GOODS_COUNT + mat.goodsId] || 0;
+        setInventory(world, companyId, mat.goodsId, currentInv + Math.floor(mat.amount));
       }
-      buildingsByType.get(typeId)!.push(buildingConfig);
     }
     
-    // 对每种建筑类型智能分配配方
-    for (const [buildingTypeId, configs] of buildingsByType) {
-      // 检查是否有手动指定配方的配置
-      const manualRecipes: (number | undefined)[] = configs.map(c =>
-        'recipeId' in c ? c.recipeId : undefined
-      );
+    // 创建建筑 - 使用指定的配方
+    const tracker = getGlobalRecipeTracker();
+    
+    for (const buildingConfig of ai.buildings) {
+      const recipeId = buildingConfig.recipeId;
       
-      // 统计需要智能分配的建筑数量
-      const needAutoAssign = manualRecipes.filter(r => r === undefined).length;
-      
-      // 智能分配配方
-      const autoAssignedRecipes = needAutoAssign > 0
-        ? assignBuildingRecipesIntelligently(buildingTypeId, needAutoAssign, tracker, ai.outputGoods)
-        : [];
-      
-      let autoIndex = 0;
-      
-      // 创建建筑
-      for (let i = 0; i < configs.length; i++) {
-        let recipeId = manualRecipes[i];
-        
-        // 如果没有手动指定，使用智能分配的配方
-        if (recipeId === undefined) {
-          recipeId = autoAssignedRecipes[autoIndex];
-          autoIndex++;
-          
-          // 如果智能分配也没有找到，使用默认配方
-          if (recipeId === undefined) {
-            const recipe = RECIPES.find(r => r.buildingTypeId === buildingTypeId);
-            recipeId = recipe?.id;
-          }
-        } else {
-          // 手动指定的配方也要记录到追踪器
+      if (recipeId !== undefined) {
+        try {
+          addBuilding(world, companyId, buildingConfig.typeId, recipeId);
           recordRecipeAssignment(tracker, recipeId);
-        }
-        
-        if (recipeId !== undefined) {
-          try {
-            addBuilding(world, companyId, buildingTypeId, recipeId);
-          } catch (e) {
-            // 建筑数量已达上限时忽略
-            console.warn(`[初始化] 无法为 ${ai.name} 添加建筑类型 ${buildingTypeId}:`, e);
-          }
+        } catch (e) {
+          console.warn(`[初始化] 无法为 ${ai.name} 添加建筑类型 ${buildingConfig.typeId}:`, e);
         }
       }
     }
   }
   
-  console.log(`[初始化] 创建了 ${aiCompanies.length} 家AI公司`);
+  console.log(`[初始化] 创建了 ${aiCompanies.length} 家AI公司，共 ${world.buildings.count} 个建筑`);
 }
 
 /**
  * 初始化市场状态
- * 设置初始供需和价格
  */
 function initializeMarketState(world: GameWorld): void {
   const g = world.goods;
   
-  // 为每种商品设置初始供需（模拟市场已有状态）
   for (let i = 0; i < g.count; i++) {
-    // 初始供需平衡
     const basePrice = g.baseValues[i];
-    g.supplies[i] = basePrice * 100;  // 供给量与价格成正比
-    g.demands[i] = basePrice * 100;   // 需求量初始平衡
+    g.supplies[i] = basePrice * 100;
+    g.demands[i] = basePrice * 100;
   }
   
-  // 初始化经济指标
-  world.economyStats.gdp = 10000000000;  // 100亿初始GDP
+  world.economyStats.gdp = 10000000000;
   world.economyStats.inflation = 0;
   world.economyStats.unemployment = 0.05;
   world.economyStats.interestRate = 0.03;
@@ -1377,7 +1701,6 @@ function initializeMarketState(world: GameWorld): void {
 
 /**
  * 生成初始市场订单
- * 在游戏开始时，AI公司会立即挂出一些订单
  */
 function generateInitialMarketOrders(world: GameWorld): void {
   const c = world.companies;
@@ -1391,14 +1714,11 @@ function generateInitialMarketOrders(world: GameWorld): void {
       const inventory = world.companies.inventories[companyId * GOODS_COUNT + goodsId];
       
       if (inventory > 30) {
-        // 有库存，挂卖单（降低库存门槛从50到30）
         const currentPrice = world.goods.prices[goodsId];
         const goods = ALL_GOODS.find(g => g.id === goodsId);
         const basePrice = goods?.basePrice || currentPrice;
         
-        // 修复：价格更激进，在基准价格的 88%-100% 之间（更容易成交）
         const sellPrice = basePrice * (0.88 + Math.random() * 0.12);
-        // 卖出库存的 40%-70%（增加市场流动性）
         const sellQuantity = Math.floor(inventory * (0.4 + Math.random() * 0.3));
         
         if (sellQuantity > 5) {
@@ -1408,7 +1728,6 @@ function generateInitialMarketOrders(world: GameWorld): void {
     }
     
     // 为AI需要的原材料挂买单
-    // 获取AI的建筑，查找它需要什么原材料
     for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
       if (world.buildings.owners[buildingId] !== companyId) continue;
       
@@ -1416,15 +1735,12 @@ function generateInitialMarketOrders(world: GameWorld): void {
       const recipe = RECIPES.find(r => r.id === recipeId);
       if (!recipe) continue;
       
-      // 为每种输入材料挂买单
       for (const input of recipe.inputs) {
         const currentPrice = world.goods.prices[input.goodsId];
         const goods = ALL_GOODS.find(g => g.id === input.goodsId);
         const basePrice = goods?.basePrice || currentPrice;
         
-        // 修复：买入价格更高，愿意支付95%-115%基准价（确保能成交）
         const buyPrice = basePrice * (0.95 + Math.random() * 0.2);
-        // 买入量 = 15-40 个生产周期的需求（增加采购量）
         const buyQuantity = Math.floor(input.amount * (15 + Math.random() * 25));
         
         if (buyQuantity > 5 && c.cash[companyId] >= buyQuantity * buyPrice * 1.2) {
@@ -1434,299 +1750,38 @@ function generateInitialMarketOrders(world: GameWorld): void {
     }
   }
   
-  // 为所有商品生成市场订单（确保每种商品都有买卖单）
-  // 覆盖全部104种商品 (ID 0-103)
-  const popularGoods = [
-    // ==================== 原材料（层级0）ID 0-13 ====================
-    { id: 0, name: '铁矿石' },
-    { id: 1, name: '铜矿石' },
-    { id: 2, name: '铝土矿' },
-    { id: 3, name: '煤炭' },
-    { id: 4, name: '原油' },
-    { id: 5, name: '天然气' },
-    { id: 6, name: '木材' },
-    { id: 7, name: '棉花' },
-    { id: 8, name: '粮食' },
-    { id: 9, name: '硅石' },
-    { id: 10, name: '稀土' },
-    { id: 11, name: '天然橡胶' },
-    { id: 12, name: '化工原料' },
-    { id: 13, name: '锂矿' },
-    // ==================== 基础材料（层级1）ID 14-25 ====================
-    { id: 14, name: '钢材' },
-    { id: 15, name: '铜材' },
-    { id: 16, name: '铝材' },
-    { id: 17, name: '玻璃' },
-    { id: 18, name: '塑料' },
-    { id: 19, name: '橡胶制品' },
-    { id: 20, name: '化学品' },
-    { id: 21, name: '水泥' },
-    { id: 22, name: '纸张' },
-    { id: 23, name: '纺织品' },
-    { id: 24, name: '加工食品' },
-    { id: 25, name: '燃油' },
-    // ==================== 中间产品（层级2）ID 26-37 ====================
-    { id: 26, name: '电子元件' },
-    { id: 27, name: '芯片' },
-    { id: 28, name: '电池' },
-    { id: 29, name: '电机' },
-    { id: 30, name: '屏幕' },
-    { id: 31, name: '机械部件' },
-    { id: 32, name: '汽车零部件' },
-    { id: 33, name: '航空部件' },
-    { id: 34, name: '光伏板' },
-    { id: 35, name: '风机叶片' },
-    { id: 36, name: '建筑材料' },
-    { id: 37, name: '包装材料' },
-    // ==================== 最终产品（层级3）ID 38-57 ====================
-    { id: 38, name: '智能手机' },
-    { id: 39, name: '电脑' },
-    { id: 40, name: '家电' },
-    { id: 41, name: '汽车' },
-    { id: 42, name: '电动汽车' },
-    { id: 43, name: '服装' },
-    { id: 44, name: '食品' },
-    { id: 45, name: '饮料' },
-    { id: 46, name: '家具' },
-    { id: 47, name: '建材成品' },
-    { id: 48, name: '医疗设备' },
-    { id: 49, name: '光伏系统' },
-    { id: 50, name: '储能系统' },
-    { id: 51, name: '工业机器人' },
-    { id: 52, name: '无人机' },
-    { id: 53, name: '奢侈品' },
-    { id: 54, name: '珠宝' },
-    { id: 55, name: '高端手机' },
-    { id: 56, name: '平价手机' },
-    { id: 57, name: '电力' },
-    // ==================== 农业产业链扩展（ID 58-69）====================
-    { id: 58, name: '蔬菜' },
-    { id: 59, name: '水果' },
-    { id: 60, name: '牲畜' },
-    { id: 61, name: '家禽' },
-    { id: 62, name: '水产' },
-    { id: 63, name: '肉类' },
-    { id: 64, name: '乳制品' },
-    { id: 65, name: '冷冻食品' },
-    { id: 66, name: '罐头食品' },
-    { id: 67, name: '零食' },
-    { id: 68, name: '有机食品' },
-    { id: 69, name: '宠物食品' },
-    // ==================== 医药产业链扩展（ID 70-79）====================
-    { id: 70, name: '药材' },
-    { id: 71, name: '医药化工品' },
-    { id: 72, name: '抗生素' },
-    { id: 73, name: '疫苗' },
-    { id: 74, name: '仿制药' },
-    { id: 75, name: '专利药' },
-    { id: 76, name: '非处方药' },
-    { id: 77, name: '医用耗材' },
-    { id: 78, name: '诊断设备' },
-    { id: 79, name: '手术设备' },
-    // ==================== 军工产业链扩展（ID 80-87）====================
-    { id: 80, name: '特种钢材' },
-    { id: 81, name: '炸药' },
-    { id: 82, name: '装甲板' },
-    { id: 83, name: '军用电子' },
-    { id: 84, name: '轻武器' },
-    { id: 85, name: '重武器' },
-    { id: 86, name: '军用车辆' },
-    { id: 87, name: '战斗机' },
-    // ==================== 奢侈品产业链扩展（ID 88-95）====================
-    { id: 88, name: '金矿石' },
-    { id: 89, name: '钻石矿石' },
-    { id: 90, name: '黄金' },
-    { id: 91, name: '钻石' },
-    { id: 92, name: '丝绸' },
-    { id: 93, name: '设计师服装' },
-    { id: 94, name: '奢侈腕表' },
-    { id: 95, name: '豪华汽车' },
-    // ==================== 科技产业链扩展（ID 96-103）====================
-    { id: 96, name: 'AI芯片' },
-    { id: 97, name: '量子组件' },
-    { id: 98, name: '生物材料' },
-    { id: 99, name: 'AI服务器' },
-    { id: 100, name: '量子计算机' },
-    { id: 101, name: '生物制品' },
-    { id: 102, name: '智能机器人' },
-    { id: 103, name: 'VR设备' },
-    // ==================== 新增产业链商品（ID 104-229）====================
-    // 日化产业链
-    { id: 104, name: '棕榈油' },
-    { id: 105, name: '香料' },
-    { id: 106, name: '表面活性剂' },
-    { id: 107, name: '香精' },
-    { id: 108, name: '颜料' },
-    { id: 109, name: '化妆品基质' },
-    { id: 110, name: '清洁剂基料' },
-    { id: 111, name: '化妆品' },
-    { id: 112, name: '护肤品' },
-    { id: 113, name: '洗涤用品' },
-    { id: 114, name: '洗发护发' },
-    { id: 115, name: '口腔护理' },
-    // 交通运输
-    { id: 116, name: '轮胎' },
-    { id: 117, name: '汽车座椅' },
-    { id: 118, name: '自行车' },
-    { id: 119, name: '摩托车' },
-    { id: 120, name: '电动滑板车' },
-    { id: 121, name: '船舶部件' },
-    { id: 122, name: '船舶' },
-    { id: 123, name: '铁路车辆部件' },
-    { id: 124, name: '铁路车辆' },
-    { id: 125, name: '航空发动机' },
-    { id: 126, name: '民用飞机' },
-    { id: 127, name: '公交车' },
-    // 矿业扩展
-    { id: 128, name: '锌矿石' },
-    { id: 129, name: '镍矿石' },
-    { id: 130, name: '锡矿石' },
-    { id: 131, name: '钴矿石' },
-    { id: 132, name: '锰矿石' },
-    { id: 133, name: '钨矿石' },
-    { id: 134, name: '锌' },
-    { id: 135, name: '镍' },
-    { id: 136, name: '锡' },
-    { id: 137, name: '钴' },
-    { id: 138, name: '锰' },
-    { id: 139, name: '钨' },
-    // 纺织扩展 (ID 140-149)
-    { id: 140, name: '羊毛' },
-    { id: 141, name: '亚麻' },
-    { id: 142, name: '生皮' },
-    { id: 143, name: '羽绒' },
-    { id: 144, name: '毛纱' },
-    { id: 145, name: '麻布' },
-    { id: 146, name: '皮革' },
-    { id: 147, name: '毛织品' },
-    { id: 148, name: '皮具' },
-    { id: 149, name: '鞋类' },
-    // 建材扩展 (ID 150-159)
-    { id: 150, name: '粘土' },
-    { id: 151, name: '大理石' },
-    { id: 152, name: '砖' },
-    { id: 153, name: '瓷砖' },
-    { id: 154, name: '木板' },
-    { id: 155, name: '涂料' },
-    { id: 156, name: '陶瓷制品' },
-    { id: 157, name: '卫浴设备' },
-    { id: 158, name: '餐具' },
-    { id: 159, name: '装饰材料' },
-    // 农产品深加工 (ID 160-175)
-    { id: 160, name: '葡萄' },
-    { id: 161, name: '甘蔗' },
-    { id: 162, name: '茶叶' },
-    { id: 163, name: '咖啡豆' },
-    { id: 164, name: '烟叶' },
-    { id: 165, name: '油料作物' },
-    { id: 166, name: '糖' },
-    { id: 167, name: '食用油' },
-    { id: 168, name: '面粉' },
-    { id: 169, name: '啤酒' },
-    { id: 170, name: '葡萄酒' },
-    { id: 171, name: '烈酒' },
-    { id: 172, name: '茶饮' },
-    { id: 173, name: '咖啡' },
-    { id: 174, name: '烟草制品' },
-    { id: 175, name: '糖果' },
-    // 能源扩展 (ID 176-185)
-    { id: 176, name: '铀矿石' },
-    { id: 177, name: '生物质' },
-    { id: 178, name: '核燃料' },
-    { id: 179, name: '氢气' },
-    { id: 180, name: '生物燃料' },
-    { id: 181, name: '核反应堆' },
-    { id: 182, name: '燃料电池' },
-    { id: 183, name: '风力发电机' },
-    { id: 184, name: '变压器' },
-    { id: 185, name: '电力电缆' },
-    // 通信产业链 (ID 186-195)
-    { id: 186, name: '光纤' },
-    { id: 187, name: '天线' },
-    { id: 188, name: '传感器' },
-    { id: 189, name: '存储芯片' },
-    { id: 190, name: '显示面板' },
-    { id: 191, name: '路由器' },
-    { id: 192, name: '通信基站' },
-    { id: 193, name: '卫星' },
-    { id: 194, name: '平板电脑' },
-    { id: 195, name: '智能手表' },
-    // 服务业 (ID 196-209)
-    { id: 196, name: '教育服务' },
-    { id: 197, name: '医疗服务' },
-    { id: 198, name: '金融服务' },
-    { id: 199, name: '娱乐服务' },
-    { id: 200, name: '餐饮服务' },
-    { id: 201, name: '住宿服务' },
-    { id: 202, name: '运输服务' },
-    { id: 203, name: '清洁服务' },
-    { id: 204, name: '安保服务' },
-    { id: 205, name: '广告服务' },
-    { id: 206, name: '法律服务' },
-    { id: 207, name: '咨询服务' },
-    { id: 208, name: '软件服务' },
-    { id: 209, name: '研发服务' },
-    // 文化传媒 (ID 210-219)
-    { id: 210, name: '印刷油墨' },
-    { id: 211, name: '影视设备' },
-    { id: 212, name: '图书' },
-    { id: 213, name: '杂志报刊' },
-    { id: 214, name: '音乐专辑' },
-    { id: 215, name: '电影' },
-    { id: 216, name: '电子游戏' },
-    { id: 217, name: '玩具' },
-    { id: 218, name: '运动器材' },
-    { id: 219, name: '乐器' },
-    // 杂项 (ID 220-229)
-    { id: 220, name: '拉链' },
-    { id: 221, name: '纽扣' },
-    { id: 222, name: '光刻胶' },
-    { id: 223, name: '惰性气体' },
-    { id: 224, name: '催化剂' },
-    { id: 225, name: '胶粘剂' },
-    { id: 226, name: '轴承' },
-    { id: 227, name: '弹簧' },
-    { id: 228, name: '密封件' },
-    { id: 229, name: '过滤器' },
-  ];
-  
-  // 为每个热门商品，由随机AI公司挂单
-  // 增加订单数量和规模，弥补做市商缺失后的流动性
-  for (const pop of popularGoods) {
-    const goodsId = pop.id;
-    if (goodsId >= world.goods.count) continue;
+  // 为所有商品生成市场订单（覆盖全部230种商品）
+  for (let goodsId = 0; goodsId < world.goods.count; goodsId++) {
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
     
-    const basePrice = ALL_GOODS.find(g => g.id === goodsId)?.basePrice || 100;
+    const basePrice = goods.basePrice;
     
-    // 生成 5-10 个买单（大幅增加市场深度）
-    for (let i = 0; i < 5 + Math.floor(Math.random() * 6); i++) {
+    // 生成 3-6 个买单
+    for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
       const companyId = 1 + Math.floor(Math.random() * (c.count - 1));
       if (companyId >= c.count || !c.isAI[companyId]) continue;
       
-      // 买入价格区间 90%-108%，确保能与卖单匹配
       const buyPrice = basePrice * (0.90 + Math.random() * 0.18);
-      const buyQuantity = Math.floor(50 + Math.random() * 200);
+      const buyQuantity = Math.floor(30 + Math.random() * 150);
       
       if (c.cash[companyId] >= buyQuantity * buyPrice * 1.2) {
         createBuyOrder(world, companyId, goodsId, buyQuantity, buyPrice);
       }
     }
     
-    // 生成 5-10 个卖单（大幅增加市场深度）
-    for (let i = 0; i < 5 + Math.floor(Math.random() * 6); i++) {
+    // 生成 3-6 个卖单
+    for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
       const companyId = 1 + Math.floor(Math.random() * (c.count - 1));
       if (companyId >= c.count || !c.isAI[companyId]) continue;
       
-      // 确保有库存可卖
       const inventory = world.companies.inventories[companyId * GOODS_COUNT + goodsId];
-      if (inventory < 100) {
-        // 给这个公司更多库存
-        setInventory(world, companyId, goodsId, 400 + Math.random() * 600);
+      if (inventory < 50) {
+        setInventory(world, companyId, goodsId, 200 + Math.random() * 400);
       }
       
-      // 卖出价格区间 88%-103%，更容易与买单匹配
       const sellPrice = basePrice * (0.88 + Math.random() * 0.15);
-      const sellQuantity = Math.floor(50 + Math.random() * 200);
+      const sellQuantity = Math.floor(30 + Math.random() * 150);
       
       createSellOrder(world, companyId, goodsId, sellQuantity, sellPrice);
     }
@@ -1761,18 +1816,16 @@ export function addBuilding(
   b.recipeIds[buildingId] = recipeId;
   b.isActive[buildingId] = 1;
   
-  // 初始化生产方式槽位
   const defaultMethods = getDefaultSlotMethods(buildingTypeId);
   const slotOffset = buildingId * MAX_SLOTS;
   for (let i = 0; i < MAX_SLOTS; i++) {
     if (i < defaultMethods.length) {
       b.slotMethods[slotOffset + i] = defaultMethods[i];
     } else {
-      b.slotMethods[slotOffset + i] = 0;  // 无方法
+      b.slotMethods[slotOffset + i] = 0;
     }
   }
   
-  // 清空输入输出缓冲区
   for (let i = 0; i < 8; i++) {
     b.inputBuffers[buildingId * 8 + i] = 0;
   }
@@ -1780,7 +1833,6 @@ export function addBuilding(
     b.outputBuffers[buildingId * 4 + i] = 0;
   }
   
-  // 添加到建筑索引
   buildingIndex.add(buildingId, companyId, buildingTypeId, recipeId);
   
   return buildingId;
@@ -1808,13 +1860,10 @@ export function getBuildingSlotMethodsArray(world: GameWorld, buildingId: number
   const buildingTypeId = b.types[buildingId];
   const slotCount = getBuildingSlotCount(buildingTypeId);
   
-  console.log(`[getBuildingSlotMethodsArray] buildingId=${buildingId}, typeId=${buildingTypeId}, slotCount=${slotCount}, slotOffset=${slotOffset}`);
-  
   const methods: number[] = [];
   for (let i = 0; i < slotCount; i++) {
     const value = b.slotMethods[slotOffset + i];
     methods.push(value);
-    console.log(`  slot[${i}] = slotMethods[${slotOffset + i}] = ${value}`);
   }
   return methods;
 }
@@ -1878,102 +1927,143 @@ export function collectBuildingOutput(
 
 /**
  * 初始化零售店
- * 在游戏开始时预置一些零售店，让Pop有地方消费
  */
 function initializeRetailStores(world: GameWorld): void {
-  // 初始化零售系统数据结构
   initRetailSystem(world);
   
   const c = world.companies;
   
-  // 预置零售店配置
-  // 由多家AI零售商经营不同类型的店铺
   const retailCompanies = [
     {
       name: '全家便利',
       cash: 5000000,
       stores: [
-        { buildingTypeId: 49 },  // 便利店
-        { buildingTypeId: 49 },  // 便利店
-        { buildingTypeId: 49 },  // 便利店
+        { buildingTypeId: 49 },
+        { buildingTypeId: 49 },
+        { buildingTypeId: 49 },
       ],
     },
     {
       name: '永辉超市',
       cash: 20000000,
       stores: [
-        { buildingTypeId: 50 },  // 超市
-        { buildingTypeId: 50 },  // 超市
+        { buildingTypeId: 50 },
+        { buildingTypeId: 50 },
       ],
     },
     {
       name: '沃尔玛',
       cash: 50000000,
       stores: [
-        { buildingTypeId: 51 },  // 大卖场
+        { buildingTypeId: 51 },
       ],
     },
     {
       name: '苏宁电器',
       cash: 30000000,
       stores: [
-        { buildingTypeId: 52 },  // 电子商城
-        { buildingTypeId: 52 },  // 电子商城
+        { buildingTypeId: 52 },
+        { buildingTypeId: 52 },
       ],
     },
     {
       name: '广汽4S',
       cash: 80000000,
       stores: [
-        { buildingTypeId: 53 },  // 汽车4S店
+        { buildingTypeId: 53 },
       ],
     },
     {
       name: '优衣库',
       cash: 15000000,
       stores: [
-        { buildingTypeId: 54 },  // 服装店
-        { buildingTypeId: 54 },  // 服装店
+        { buildingTypeId: 54 },
+        { buildingTypeId: 54 },
       ],
     },
     {
       name: '卡地亚精品',
       cash: 100000000,
       stores: [
-        { buildingTypeId: 55 },  // 奢侈品店
+        { buildingTypeId: 55 },
       ],
     },
     {
       name: '大参林药房',
       cash: 10000000,
       stores: [
-        { buildingTypeId: 56 },  // 药店
-        { buildingTypeId: 56 },  // 药店
+        { buildingTypeId: 56 },
+        { buildingTypeId: 56 },
       ],
     },
     {
-      name: '中石化',
+      name: '中石化加油',
       cash: 40000000,
       stores: [
-        { buildingTypeId: 57 },  // 加油站
-        { buildingTypeId: 57 },  // 加油站
-        { buildingTypeId: 57 },  // 加油站
+        { buildingTypeId: 57 },
+        { buildingTypeId: 57 },
+        { buildingTypeId: 57 },
       ],
     },
     {
-      name: '宜家家居',
+      name: '红星美凯龙',
       cash: 60000000,
       stores: [
-        { buildingTypeId: 58 },  // 家居商城
+        { buildingTypeId: 58 },
+      ],
+    },
+    {
+      name: '屈臣氏',
+      cash: 15000000,
+      stores: [
+        { buildingTypeId: 101 },
+        { buildingTypeId: 101 },
+      ],
+    },
+    {
+      name: '新华书店',
+      cash: 8000000,
+      stores: [
+        { buildingTypeId: 102 },
+        { buildingTypeId: 102 },
+      ],
+    },
+    {
+      name: '酒仙网',
+      cash: 12000000,
+      stores: [
+        { buildingTypeId: 103 },
+        { buildingTypeId: 103 },
+      ],
+    },
+    {
+      name: '迪卡侬',
+      cash: 25000000,
+      stores: [
+        { buildingTypeId: 104 },
+        { buildingTypeId: 104 },
+      ],
+    },
+    {
+      name: '玩具反斗城',
+      cash: 15000000,
+      stores: [
+        { buildingTypeId: 105 },
+        { buildingTypeId: 105 },
+      ],
+    },
+    {
+      name: '海伦钢琴',
+      cash: 20000000,
+      stores: [
+        { buildingTypeId: 106 },
       ],
     },
   ];
   
-  // 创建零售公司和店铺
   for (const retailCo of retailCompanies) {
     const companyId = c.count;
     
-    // 创建公司
     c.count++;
     c.cash[companyId] = retailCo.cash;
     c.totalAssets[companyId] = retailCo.cash;
@@ -1982,23 +2072,19 @@ function initializeRetailStores(world: GameWorld): void {
     c.isPlayer.push(false);
     c.isAI.push(true);
     
-    // 初始化库存为0
     for (let j = 0; j < ALL_GOODS.length; j++) {
       setInventory(world, companyId, j, 0);
     }
     
-    // 为每家店铺创建建筑并注册为零售店
     for (const store of retailCo.stores) {
       const buildingId = addRetailBuilding(world, companyId, store.buildingTypeId);
       if (buildingId >= 0) {
-        // 注册到零售系统
         registerRetailStore(world, buildingId);
       }
     }
   }
   
-  // 给玩家一个便利店作为起始零售业务
-  const playerRetailBuildingId = addRetailBuilding(world, 0, 49);  // 便利店
+  const playerRetailBuildingId = addRetailBuilding(world, 0, 49);
   if (playerRetailBuildingId >= 0) {
     registerRetailStore(world, playerRetailBuildingId);
   }
@@ -2034,16 +2120,14 @@ function addRetailBuilding(
   b.levels[buildingId] = 1;
   b.efficiencies[buildingId] = 1.0;
   b.progress[buildingId] = 0;
-  b.recipeIds[buildingId] = -1;  // 零售建筑没有生产配方
+  b.recipeIds[buildingId] = -1;
   b.isActive[buildingId] = 1;
   
-  // 零售建筑不需要生产方式槽位
   const slotOffset = buildingId * MAX_SLOTS;
   for (let i = 0; i < MAX_SLOTS; i++) {
     b.slotMethods[slotOffset + i] = 0;
   }
   
-  // 清空输入输出缓冲区
   for (let i = 0; i < 8; i++) {
     b.inputBuffers[buildingId * 8 + i] = 0;
   }

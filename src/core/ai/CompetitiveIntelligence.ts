@@ -11,6 +11,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
+import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_COMPANIES } from '@/core/constants';
 import { AIPersonality, AI_COMPANIES } from './AIPersonality';
 import { getCompanyProfitMargin, getCompanyMarketShare } from './PrecisionCalculator';
@@ -317,8 +318,8 @@ function analyzePricingTendency(
   let totalRatio = 0;
   let orderCount = 0;
   
-  for (let i = 0; i < world.orders.maxOrders; i++) {
-    if (!world.orders.isActive[i]) continue;
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
     if (world.orders.companyIds[i] !== companyId) continue;
     if (world.orders.types[i] !== 1) continue; // 只看卖单
     
@@ -361,8 +362,9 @@ function analyzeTradingFrequency(
   // 统计活跃订单数
   let orderCount = 0;
   
-  for (let i = 0; i < world.orders.maxOrders; i++) {
-    if (world.orders.isActive[i] && world.orders.companyIds[i] === companyId) {
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (world.orders.companyIds[i] === companyId) {
       orderCount++;
     }
   }

@@ -12,8 +12,8 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_COMPANIES, MAX_ORDERS } from '@/core/constants';
-import { createBuyOrder, createSellOrder, cancelOrder } from '@/core/market/OrderBook';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_COMPANIES } from '@/core/constants';
+import { createBuyOrder, createSellOrder, cancelOrder, getActiveOrderIndices } from '@/core/market/OrderBook';
 import { 
   getCachedPrediction, 
   getCachedTradingTime,
@@ -361,13 +361,14 @@ function fastOrderManagement(world: GameWorld, companyId: number): number {
   let cancelledCount = 0;
   const o = world.orders;
   
-  // 优化：使用早期退出和限制处理数量
+  // 优化：使用活跃订单索引，避免遍历全部 MAX_ORDERS
   let processedCount = 0;
   const maxOrdersToProcess = 50; // 每次最多检查50个订单
   
-  // 遍历该公司的所有活跃订单
-  for (let orderIdx = 0; orderIdx < MAX_ORDERS && processedCount < maxOrdersToProcess; orderIdx++) {
-    if (!o.isActive[orderIdx]) continue;
+  // 使用活跃订单索引遍历该公司的订单
+  const activeIndices = getActiveOrderIndices();
+  for (const orderIdx of activeIndices) {
+    if (processedCount >= maxOrdersToProcess) break;
     if (o.companyIds[orderIdx] !== companyId) continue;
     
     processedCount++;

@@ -1,6 +1,7 @@
 /**
  * 竞争与投资 - 统一页面
  * 整合竞争对手和股票市场功能
+ * 使用新设计系统组件重构
  */
 
 import React, { useMemo, useState } from 'react';
@@ -24,11 +25,30 @@ import {
 } from '@/core/finance/CompanyProfile';
 import { getMarketState } from '@/core/finance/StockMarket';
 
+// 设计系统组件
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Badge,
+  Input,
+  StatWidget,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  Slider,
+} from '@/ui/design-system';
+
 type TabType = 'all' | 'holdings' | 'favorites' | 'gainers' | 'losers';
 
-/**
- * 格式化金额
- */
 function formatMoney(value: number): string {
   if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
   if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
@@ -62,11 +82,11 @@ export const CompetitorsAndInvestment: React.FC = () => {
   } | null>(null);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [showAcquisitionModal, setShowAcquisitionModal] = useState<number | null>(null);
-  const [acquisitionPercent, setAcquisitionPercent] = useState(51);
-  const [acquisitionPremium, setAcquisitionPremium] = useState(20);
+  const [acquisitionPercent, setAcquisitionPercent] = useState([51]);
+  const [acquisitionPremium, setAcquisitionPremium] = useState([20]);
   
   // IPO状态
-  const [ipoShares, setIpoShares] = useState(400000);
+  const [ipoShares, setIpoShares] = useState([400000]);
   const [ipoPrice, setIpoPrice] = useState(10);
   
   // 获取玩家公司股票信息
@@ -78,7 +98,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
     return getCompanyProfile(world, 0);
   }, [world, tick]);
   
-  // 获取所有公司资料（包括玩家）
+  // 获取所有公司资料
   const allProfiles = useMemo(() => {
     if (!world) return [];
     return getAICompanyProfiles(world);
@@ -113,7 +133,6 @@ export const CompetitorsAndInvestment: React.FC = () => {
         profiles = allProfiles;
     }
     
-    // 搜索过滤
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       profiles = profiles.filter(p => 
@@ -160,7 +179,6 @@ export const CompetitorsAndInvestment: React.FC = () => {
     }
     
     const playerShare = totalCash > 0 ? (playerCash / totalCash) * 100 : 0;
-    
     const colors = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
     
     return [
@@ -186,28 +204,16 @@ export const CompetitorsAndInvestment: React.FC = () => {
   const toggleFavorite = (companyId: number) => {
     setFavorites(prev => {
       const next = new Set(prev);
-      if (next.has(companyId)) {
-        next.delete(companyId);
-      } else {
-        next.add(companyId);
-      }
+      if (next.has(companyId)) next.delete(companyId);
+      else next.add(companyId);
       return next;
     });
   };
   
   // 处理快速交易
-  const handleQuickBuy = (companyId: number) => {
-    setShowQuickTrade({ companyId, type: 'buy' });
-  };
-  
-  const handleQuickSell = (companyId: number) => {
-    setShowQuickTrade({ companyId, type: 'sell' });
-  };
-  
-  // 处理收购
-  const handleAcquire = (companyId: number) => {
-    setShowAcquisitionModal(companyId);
-  };
+  const handleQuickBuy = (companyId: number) => setShowQuickTrade({ companyId, type: 'buy' });
+  const handleQuickSell = (companyId: number) => setShowQuickTrade({ companyId, type: 'sell' });
+  const handleAcquire = (companyId: number) => setShowAcquisitionModal(companyId);
   
   // 执行收购
   const executeAcquisition = () => {
@@ -219,19 +225,16 @@ export const CompetitorsAndInvestment: React.FC = () => {
       return;
     }
     
-    // 计算收购价格（当前股价 * (1 + 溢价率)）
-    const offerPrice = profile.stock.currentPrice * (1 + acquisitionPremium / 100);
-    const targetPercent = acquisitionPercent / 100;
+    const offerPrice = profile.stock.currentPrice * (1 + acquisitionPremium[0] / 100);
+    const targetPercent = acquisitionPercent[0] / 100;
     
     const success = initiateAcquisitionOffer(showAcquisitionModal, targetPercent, offerPrice);
-    if (success) {
-      setShowAcquisitionModal(null);
-    }
+    if (success) setShowAcquisitionModal(null);
   };
   
   // 执行IPO
   const executeIPO = () => {
-    playerIPO(ipoShares, ipoPrice);
+    playerIPO(ipoShares[0], ipoPrice);
     setShowIPOModal(false);
   };
   
@@ -239,198 +242,125 @@ export const CompetitorsAndInvestment: React.FC = () => {
     <div className="p-6 space-y-6">
       {/* 页面标题 */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">竞争与投资</h1>
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">📊 竞争与投资</h1>
         {!playerStock && (
-          <button
-            onClick={() => setShowIPOModal(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            发起IPO
-          </button>
+          <Button variant="gradient" onClick={() => setShowIPOModal(true)}>
+            🚀 发起IPO
+          </Button>
         )}
       </div>
       
       {/* 顶部统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* 市场指数 */}
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-sm text-slate-400">市场指数</div>
-          <div className="text-2xl font-bold text-white mt-1 tabular-nums">
-            {marketIndex.toFixed(2)}
-          </div>
-          <div className={`text-sm mt-1 tabular-nums ${
-            marketIndexChange >= 0 ? 'text-green-400' : 'text-red-400'
-          }`}>
-            {marketIndexChange >= 0 ? '+' : ''}{(marketIndexChange * 100).toFixed(2)}%
-          </div>
-          <div className="text-xs text-slate-500 mt-2">
-            总市值: {formatMoney(marketStats.totalMarketCap)}
-          </div>
-        </div>
-        
-        {/* 我的投资组合 */}
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-sm text-slate-400">我的投资组合</div>
-          <div className="text-2xl font-bold text-white mt-1 tabular-nums">
-            {formatMoney(portfolio.totalValue)}
-          </div>
-          <div className={`text-sm mt-1 tabular-nums ${
-            portfolio.totalGain >= 0 ? 'text-green-400' : 'text-red-400'
-          }`}>
-            {portfolio.totalGain >= 0 ? '+' : ''}{formatMoney(portfolio.totalGain)}
-            ({portfolio.gainPercent >= 0 ? '+' : ''}{portfolio.gainPercent.toFixed(2)}%)
-          </div>
-          <div className="text-xs text-slate-500 mt-2">
-            持有 {portfolio.holdingCount} 只股票
-          </div>
-        </div>
-        
-        {/* 市场竞争格局 */}
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="text-sm text-slate-400">市场竞争格局</div>
+        <StatWidget
+          title="市场指数"
+          value={marketIndex.toFixed(2)}
+          change={marketIndexChange}
+          icon="📈"
+          status={marketIndexChange >= 0 ? 'success' : 'error'}
+        />
+        <StatWidget
+          title="我的投资组合"
+          value={formatMoney(portfolio.totalValue)}
+          change={portfolio.gainPercent / 100}
+          icon="💼"
+          status={portfolio.totalGain >= 0 ? 'success' : 'error'}
+        />
+        <Card variant="elevated" padding="md">
+          <div className="text-sm text-[var(--text-muted)]">市场竞争格局</div>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xl font-bold text-green-400 tabular-nums">{marketStats.rising}</span>
-            <span className="text-slate-500">/</span>
-            <span className="text-xl font-bold text-slate-400 tabular-nums">{marketStats.unchanged}</span>
-            <span className="text-slate-500">/</span>
-            <span className="text-xl font-bold text-red-400 tabular-nums">{marketStats.falling}</span>
+            <Badge variant="success">{marketStats.rising}</Badge>
+            <span className="text-[var(--text-muted)]">/</span>
+            <Badge variant="outline">{marketStats.unchanged}</Badge>
+            <span className="text-[var(--text-muted)]">/</span>
+            <Badge variant="error">{marketStats.falling}</Badge>
           </div>
-          <div className="text-xs text-slate-500 mt-1">涨 / 平 / 跌</div>
-          <div className={`text-sm mt-2 ${
-            hhi < 1500 ? 'text-green-400' : hhi < 2500 ? 'text-yellow-400' : 'text-red-400'
-          }`}>
+          <div className="text-xs text-[var(--text-muted)] mt-1">涨 / 平 / 跌</div>
+          <Badge
+            variant={hhi < 1500 ? 'success' : hhi < 2500 ? 'warning' : 'error'}
+            size="sm"
+            className="mt-2"
+          >
             HHI: {hhi} ({hhi < 1500 ? '竞争充分' : hhi < 2500 ? '中度集中' : '高度集中'})
-          </div>
-        </div>
+          </Badge>
+        </Card>
       </div>
       
       {/* 玩家公司信息 */}
       {playerProfile && (
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+        <Card variant="game" padding="md">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xl">
+              <div className="w-12 h-12 rounded-full bg-[var(--accent)] flex items-center justify-center text-white font-bold text-xl">
                 {playerProfile.name.charAt(0)}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xl font-bold text-white">{playerProfile.name}</span>
+                  <span className="text-xl font-bold text-[var(--text-primary)]">{playerProfile.name}</span>
                   {playerStock && (
-                    <span className="font-mono text-slate-400">{playerStock.ticker}</span>
+                    <Badge variant="outline">{playerStock.ticker}</Badge>
                   )}
-                  <span className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 rounded">
-                    我的公司
-                  </span>
+                  <Badge variant="primary">我的公司</Badge>
                 </div>
-                <div className="text-sm text-slate-400 mt-1">
+                <div className="text-sm text-[var(--text-muted)] mt-1">
                   {playerProfile.competition.specialization}
                 </div>
               </div>
             </div>
             
             {!playerStock && (
-              <button
-                onClick={() => setShowIPOModal(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                发起IPO
-              </button>
+              <Button variant="gradient" onClick={() => setShowIPOModal(true)}>
+                🚀 发起IPO
+              </Button>
             )}
           </div>
           
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* 现金 */}
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <div className="text-xs text-slate-400 mb-1">现金</div>
-              <div className="text-lg font-bold text-white tabular-nums">
-                {formatMoney(playerProfile.cash)}
-              </div>
-            </div>
-            
-            {/* 总资产 */}
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <div className="text-xs text-slate-400 mb-1">总资产</div>
-              <div className="text-lg font-bold text-white tabular-nums">
-                {formatMoney(playerProfile.totalAssets)}
-              </div>
-            </div>
-            
-            {/* 建筑数量 */}
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <div className="text-xs text-slate-400 mb-1">建筑数量</div>
-              <div className="text-lg font-bold text-white tabular-nums">
-                {playerProfile.buildingCount}
-              </div>
-            </div>
-            
-            {/* 市场份额 */}
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <div className="text-xs text-slate-400 mb-1">市场份额</div>
-              <div className="text-lg font-bold text-white tabular-nums">
-                {playerProfile.marketShare.toFixed(2)}%
-              </div>
-            </div>
-            
-            {/* 股票信息 */}
-            {playerStock && (
-              <div className="bg-slate-700/50 rounded-lg p-3">
-                <div className="text-xs text-slate-400 mb-1">股价</div>
-                <div className="text-lg font-bold text-white tabular-nums">
-                  ¥{playerStock.currentPrice.toFixed(2)}
-                </div>
-                {(() => {
-                  const priceChange = playerStock.currentPrice - playerStock.previousClose;
-                  const priceChangePercent = playerStock.previousClose > 0
-                    ? (priceChange / playerStock.previousClose) * 100
-                    : 0;
-                  return (
-                    <div className={`text-xs tabular-nums ${
-                      priceChange >= 0 ? 'text-green-400' : 'text-red-400'
-                    }`}>
-                      {priceChange >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-            
-            {!playerStock && (
-              <div className="bg-slate-700/50 rounded-lg p-3">
-                <div className="text-xs text-slate-400 mb-1">股票状态</div>
-                <div className="text-sm font-medium text-yellow-400">
-                  未上市
-                </div>
-              </div>
+            <StatWidget title="现金" value={formatMoney(playerProfile.cash)} icon="💵" compact />
+            <StatWidget title="总资产" value={formatMoney(playerProfile.totalAssets)} icon="🏦" compact />
+            <StatWidget title="建筑数量" value={playerProfile.buildingCount.toString()} icon="🏭" compact />
+            <StatWidget title="市场份额" value={`${playerProfile.marketShare.toFixed(2)}%`} icon="📊" compact />
+            {playerStock ? (
+              <StatWidget
+                title="股价"
+                value={`¥${playerStock.currentPrice.toFixed(2)}`}
+                change={(playerStock.currentPrice - playerStock.previousClose) / playerStock.previousClose}
+                icon="📈"
+                compact
+              />
+            ) : (
+              <Card variant="elevated" padding="sm">
+                <div className="text-xs text-[var(--text-muted)] mb-1">股票状态</div>
+                <Badge variant="warning">未上市</Badge>
+              </Card>
             )}
           </div>
           
-          {/* 库存价值 */}
           {playerProfile.inventoryValue > 0 && (
-            <div className="mt-3 text-sm text-slate-400">
-              库存价值: <span className="text-white tabular-nums">{formatMoney(playerProfile.inventoryValue)}</span>
+            <div className="mt-3 text-sm text-[var(--text-muted)]">
+              库存价值: <span className="text-[var(--text-primary)] tabular-nums">{formatMoney(playerProfile.inventoryValue)}</span>
             </div>
           )}
           
-          {/* 股东结构 - 仅当已上市时显示 */}
           {playerStock && playerProfile.ownership && (
-            <div className="mt-4 pt-4 border-t border-slate-700">
-              <h4 className="text-sm font-medium text-slate-300 mb-3">股东结构</h4>
+            <div className="mt-4 pt-4 border-t border-[var(--border-muted)]">
+              <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">股东结构</h4>
               <ShareholderChart ownership={playerProfile.ownership} />
             </div>
           )}
-        </div>
+        </Card>
       )}
       
       {/* 市场份额图 + 控股公司 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+        <Card variant="elevated" padding="md">
           <MarketShareChart
             data={marketShareData}
             title="市场份额分布"
             height={280}
             showLegend={false}
           />
-        </div>
+        </Card>
         
         <ControlledCompanies
           controlledProfiles={controlledProfiles}
@@ -439,48 +369,38 @@ export const CompetitorsAndInvestment: React.FC = () => {
       </div>
       
       {/* 标签页和搜索 */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-800 rounded-lg p-3 border border-slate-700">
-        <div className="flex gap-1">
-          {[
-            { key: 'all', label: '🏢 全部公司', count: allProfiles.length },
-            { key: 'holdings', label: '📈 我的持股', count: portfolio.holdingCount },
-            { key: 'favorites', label: '⭐ 收藏', count: favorites.size },
-            { key: 'gainers', label: '🔺 涨幅榜' },
-            { key: 'losers', label: '🔻 跌幅榜' },
-          ].map(({ key, label, count }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key as TabType)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === key
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              {label}
-              {count !== undefined && (
-                <span className="ml-1 text-xs opacity-70">({count})</span>
-              )}
-            </button>
-          ))}
-        </div>
-        
-        <div className="relative">
-          <input
-            type="text"
+      <Card variant="elevated" padding="sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
+            <TabsList variant="game">
+              <TabsTrigger value="all" variant="game">
+                🏢 全部 <Badge variant="outline" size="sm" className="ml-1">{allProfiles.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="holdings" variant="game">
+                📈 持股 <Badge variant="outline" size="sm" className="ml-1">{portfolio.holdingCount}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="favorites" variant="game">
+                ⭐ 收藏 <Badge variant="outline" size="sm" className="ml-1">{favorites.size}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="gainers" variant="game">🔺 涨幅榜</TabsTrigger>
+              <TabsTrigger value="losers" variant="game">🔻 跌幅榜</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          
+          <Input
             placeholder="搜索公司..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-48 px-3 py-2 pl-8 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm placeholder-slate-400"
+            leftIcon="🔍"
+            size="sm"
+            className="w-48"
           />
-          <span className="absolute left-2.5 top-2.5 text-slate-400">🔍</span>
         </div>
-      </div>
+      </Card>
       
       {/* 公司列表 */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
-        {/* 列表头部 */}
-        <div className="grid grid-cols-12 gap-2 p-3 bg-slate-700/50 text-sm text-slate-300 font-medium">
+      <Card variant="elevated" padding="none">
+        <div className="grid grid-cols-12 gap-2 p-3 bg-[var(--bg-muted)] text-sm text-[var(--text-muted)] font-medium border-b border-[var(--border-muted)]">
           <div className="col-span-1">代码</div>
           <div className="col-span-2">公司名称</div>
           <div className="col-span-1 text-right">股价</div>
@@ -493,7 +413,6 @@ export const CompetitorsAndInvestment: React.FC = () => {
           <div className="col-span-2 text-center">操作</div>
         </div>
         
-        {/* 公司列表 */}
         <div className="max-h-[500px] overflow-y-auto">
           {filteredProfiles.length > 0 ? (
             filteredProfiles.map((profile) => (
@@ -510,14 +429,14 @@ export const CompetitorsAndInvestment: React.FC = () => {
               />
             ))
           ) : (
-            <div className="text-center py-8 text-slate-400">
-              {activeTab === 'holdings' ? '暂无持股' :
-               activeTab === 'favorites' ? '暂无收藏' :
-               searchQuery ? '未找到匹配的公司' : '暂无公司数据'}
+            <div className="text-center py-8 text-[var(--text-muted)]">
+              {activeTab === 'holdings' ? '📭 暂无持股' :
+               activeTab === 'favorites' ? '⭐ 暂无收藏' :
+               searchQuery ? '🔍 未找到匹配的公司' : '📊 暂无公司数据'}
             </div>
           )}
         </div>
-      </div>
+      </Card>
       
       {/* 选中公司详情面板 */}
       {selectedProfile && (
@@ -529,43 +448,40 @@ export const CompetitorsAndInvestment: React.FC = () => {
       )}
       
       {/* 竞争分析提示 */}
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h3 className="text-lg font-semibold text-white mb-3">竞争分析</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-yellow-400 mb-2">
-              <span>⚠️</span>
-              <span className="font-medium">价格战警告</span>
-            </div>
-            <p className="text-slate-300 text-sm">
-              {allProfiles.filter(p => p.personality === 'cost_leader').length > 0
-                ? `成本领先型公司正在压低市场价格，注意调整定价策略。`
-                : `市场价格暂时稳定，未发现明显价格战。`}
-            </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card variant="default" status="warning" padding="md">
+          <div className="flex items-center gap-2 text-[var(--warning)] mb-2">
+            <span>⚠️</span>
+            <span className="font-medium">价格战警告</span>
           </div>
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-blue-400 mb-2">
-              <span>💡</span>
-              <span className="font-medium">投资机会</span>
-            </div>
-            <p className="text-slate-300 text-sm">
-              {marketStats.falling > marketStats.rising
-                ? `市场下跌中，可能存在低估值买入机会。`
-                : `市场上涨中，关注成长股的投资价值。`}
-            </p>
+          <p className="text-[var(--text-secondary)] text-sm">
+            {allProfiles.filter(p => p.personality === 'cost_leader').length > 0
+              ? `成本领先型公司正在压低市场价格，注意调整定价策略。`
+              : `市场价格暂时稳定，未发现明显价格战。`}
+          </p>
+        </Card>
+        <Card variant="default" status="info" padding="md">
+          <div className="flex items-center gap-2 text-[var(--info)] mb-2">
+            <span>💡</span>
+            <span className="font-medium">投资机会</span>
           </div>
-          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-green-400 mb-2">
-              <span>✅</span>
-              <span className="font-medium">控股提示</span>
-            </div>
-            <p className="text-slate-300 text-sm">
-              {controlledProfiles.length > 0
-                ? `您已控股 ${controlledProfiles.length} 家公司，可通过管理面板调整经营策略。`
-                : `持股超过50%可获得公司控制权，建议关注高价值目标。`}
-            </p>
+          <p className="text-[var(--text-secondary)] text-sm">
+            {marketStats.falling > marketStats.rising
+              ? `市场下跌中，可能存在低估值买入机会。`
+              : `市场上涨中，关注成长股的投资价值。`}
+          </p>
+        </Card>
+        <Card variant="default" status="success" padding="md">
+          <div className="flex items-center gap-2 text-[var(--success)] mb-2">
+            <span>✅</span>
+            <span className="font-medium">控股提示</span>
           </div>
-        </div>
+          <p className="text-[var(--text-secondary)] text-sm">
+            {controlledProfiles.length > 0
+              ? `您已控股 ${controlledProfiles.length} 家公司，可通过管理面板调整经营策略。`
+              : `持股超过50%可获得公司控制权，建议关注高价值目标。`}
+          </p>
+        </Card>
       </div>
       
       {/* 快速交易模态框 */}
@@ -587,99 +503,76 @@ export const CompetitorsAndInvestment: React.FC = () => {
       })()}
       
       {/* IPO模态框 */}
-      {showIPOModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-lg p-6 w-[500px] border border-slate-700">
-            <h3 className="text-xl font-semibold text-white mb-4">发起首次公开募股 (IPO)</h3>
+      <Dialog open={showIPOModal} onOpenChange={setShowIPOModal}>
+        <DialogContent size="md" variant="game">
+          <DialogHeader>
+            <DialogTitle>🚀 发起首次公开募股 (IPO)</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <Card variant="default" status="info" padding="sm">
+              <p className="text-sm text-[var(--info)]">
+                通过IPO，您可以将公司股份出售给公众，获得融资。发行后，公司股票将可在市场上自由交易。
+              </p>
+            </Card>
 
-            <div className="space-y-4">
-              <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 text-sm text-purple-300">
-                <p>通过IPO，您可以将公司股份出售给公众，获得融资。发行后，公司股票将可在市场上自由交易。</p>
-              </div>
+            <Slider
+              value={ipoShares}
+              onValueChange={setIpoShares}
+              min={100000}
+              max={600000}
+              step={10000}
+              label="发行股数（总股本100万股）"
+              showValue
+              formatValue={(v) => `${v.toLocaleString()}股 (${(v / 10000).toFixed(0)}%)`}
+              variant="game"
+              color="brand"
+            />
 
-              {/* 发行股数 */}
-              <div>
-                <label className="text-sm text-slate-400 mb-2 block">发行股数（总股本100万股）</label>
-                <input
-                  type="range"
-                  min="100000"
-                  max="600000"
-                  step="10000"
-                  value={ipoShares}
-                  onChange={(e) => setIpoShares(parseInt(e.target.value))}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-sm mt-1">
-                  <span className="text-slate-400">10%</span>
-                  <span className="text-white font-medium tabular-nums">
-                    {ipoShares.toLocaleString()}股 ({(ipoShares / 10000).toFixed(0)}%)
+            <Input
+              label="发行价格（每股）"
+              type="number"
+              value={ipoPrice.toString()}
+              onChange={(e) => setIpoPrice(Math.max(1, parseFloat(e.target.value) || 0))}
+              min={1}
+              step={1}
+            />
+
+            <Card variant="elevated" padding="md">
+              <CardTitle className="text-sm mb-3">IPO预览</CardTitle>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">募集资金:</span>
+                  <span className="text-[var(--success)] font-medium tabular-nums">
+                    ¥{(ipoShares[0] * ipoPrice).toLocaleString()}
                   </span>
-                  <span className="text-slate-400">60%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">估值:</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    ¥{(1000000 * ipoPrice).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">保留股份:</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    {(1000000 - ipoShares[0]).toLocaleString()}股 ({((1000000 - ipoShares[0]) / 10000).toFixed(0)}%)
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">流通股:</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    {ipoShares[0].toLocaleString()}股
+                  </span>
                 </div>
               </div>
-
-              {/* 发行价格 */}
-              <div>
-                <label className="text-sm text-slate-400 mb-2 block">发行价格（每股）</label>
-                <input
-                  type="number"
-                  value={ipoPrice}
-                  onChange={(e) => setIpoPrice(Math.max(1, parseFloat(e.target.value) || 0))}
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
-                  min="1"
-                  step="1"
-                />
-              </div>
-
-              {/* IPO预览 */}
-              <div className="bg-slate-700/50 rounded-lg p-4 space-y-2">
-                <h4 className="text-sm font-medium text-slate-300 mb-2">IPO预览</h4>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-slate-400">募集资金:</span>
-                    <span className="text-green-400 ml-2 tabular-nums">
-                      ¥{(ipoShares * ipoPrice).toLocaleString()}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">估值:</span>
-                    <span className="text-white ml-2 tabular-nums">
-                      ¥{(1000000 * ipoPrice).toLocaleString()}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">保留股份:</span>
-                    <span className="text-white ml-2 tabular-nums">
-                      {(1000000 - ipoShares).toLocaleString()}股 ({((1000000 - ipoShares) / 10000).toFixed(0)}%)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">流通股:</span>
-                    <span className="text-white ml-2 tabular-nums">
-                      {ipoShares.toLocaleString()}股
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setShowIPOModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={executeIPO}
-                className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors"
-              >
-                确认发行
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </Card>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowIPOModal(false)}>取消</Button>
+            <Button variant="gradient" onClick={executeIPO}>确认发行</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* 收购模态框 */}
       {showAcquisitionModal !== null && (() => {
@@ -688,154 +581,113 @@ export const CompetitorsAndInvestment: React.FC = () => {
         
         const analysis = analyzeAcquisition(showAcquisitionModal);
         const currentPrice = profile.stock?.currentPrice || 0;
-        const offerPrice = currentPrice * (1 + acquisitionPremium / 100);
-        const targetShares = Math.floor((profile.stock?.totalShares || 1000000) * (acquisitionPercent / 100));
+        const offerPrice = currentPrice * (1 + acquisitionPremium[0] / 100);
+        const targetShares = Math.floor((profile.stock?.totalShares || 1000000) * (acquisitionPercent[0] / 100));
         const totalCost = offerPrice * targetShares;
         
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-lg p-6 w-[550px] border border-slate-700">
-              <h3 className="text-xl font-semibold text-white mb-4">
-                发起收购要约 - {profile.name}
-              </h3>
-              
-              <div className="space-y-4">
-                {/* 收购可行性分析 */}
+          <Dialog open={true} onOpenChange={() => setShowAcquisitionModal(null)}>
+            <DialogContent size="lg" variant="game">
+              <DialogHeader>
+                <DialogTitle>🏢 发起收购要约 - {profile.name}</DialogTitle>
+              </DialogHeader>
+              <DialogBody className="space-y-4">
                 {analysis && (
-                  <div className={`rounded-lg p-3 ${
-                    analysis.feasible
-                      ? 'bg-green-500/10 border border-green-500/30'
-                      : 'bg-red-500/10 border border-red-500/30'
-                  }`}>
+                  <Card
+                    variant="default"
+                    status={analysis.feasible ? 'success' : 'error'}
+                    padding="sm"
+                  >
                     <div className="flex items-center gap-2 text-sm">
-                      <span className={analysis.feasible ? 'text-green-400' : 'text-red-400'}>
+                      <span className={analysis.feasible ? 'text-[var(--success)]' : 'text-[var(--error)]'}>
                         {analysis.feasible ? '✓ 收购可行' : '✗ 收购风险较高'}
                       </span>
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        analysis.riskLevel === 'low' ? 'bg-green-500/20 text-green-400' :
-                        analysis.riskLevel === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-red-500/20 text-red-400'
-                      }`}>
-                        风险: {analysis.riskLevel === 'low' ? '低' :
-                               analysis.riskLevel === 'medium' ? '中' : '高'}
-                      </span>
+                      <Badge
+                        variant={analysis.riskLevel === 'low' ? 'success' : analysis.riskLevel === 'medium' ? 'warning' : 'error'}
+                        size="sm"
+                      >
+                        风险: {analysis.riskLevel === 'low' ? '低' : analysis.riskLevel === 'medium' ? '中' : '高'}
+                      </Badge>
                     </div>
                     {!analysis.feasible && analysis.reason && (
-                      <p className="text-xs text-red-300 mt-1">{analysis.reason}</p>
+                      <p className="text-xs text-[var(--error)] mt-1">{analysis.reason}</p>
                     )}
-                  </div>
+                  </Card>
                 )}
                 
-                {/* 目标持股比例 */}
-                <div>
-                  <label className="text-sm text-slate-400 mb-2 block">目标持股比例</label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    step="1"
-                    value={acquisitionPercent}
-                    onChange={(e) => setAcquisitionPercent(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-slate-400">10%</span>
-                    <span className={`font-medium tabular-nums ${
-                      acquisitionPercent >= 50 ? 'text-purple-400' :
-                      acquisitionPercent >= 20 ? 'text-blue-400' : 'text-slate-300'
-                    }`}>
-                      {acquisitionPercent}%
-                      {acquisitionPercent >= 50 ? ' (控股)' :
-                       acquisitionPercent >= 20 ? ' (战略)' : ''}
-                    </span>
-                    <span className="text-slate-400">100%</span>
-                  </div>
-                </div>
+                <Slider
+                  value={acquisitionPercent}
+                  onValueChange={setAcquisitionPercent}
+                  min={10}
+                  max={100}
+                  step={1}
+                  label="目标持股比例"
+                  showValue
+                  formatValue={(v) => `${v}%${v >= 50 ? ' (控股)' : v >= 20 ? ' (战略)' : ''}`}
+                  variant="game"
+                  color={acquisitionPercent[0] >= 50 ? 'brand' : undefined}
+                />
                 
-                {/* 收购溢价 */}
-                <div>
-                  <label className="text-sm text-slate-400 mb-2 block">收购溢价</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="50"
-                    step="5"
-                    value={acquisitionPremium}
-                    onChange={(e) => setAcquisitionPremium(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-slate-400">0%</span>
-                    <span className="text-white font-medium tabular-nums">+{acquisitionPremium}%</span>
-                    <span className="text-slate-400">50%</span>
-                  </div>
-                </div>
+                <Slider
+                  value={acquisitionPremium}
+                  onValueChange={setAcquisitionPremium}
+                  min={0}
+                  max={50}
+                  step={5}
+                  label="收购溢价"
+                  showValue
+                  formatValue={(v) => `+${v}%`}
+                  variant="game"
+                />
                 
-                {/* 收购预览 */}
-                <div className="bg-slate-700/50 rounded-lg p-4 space-y-2">
-                  <h4 className="text-sm font-medium text-slate-300 mb-2">收购预览</h4>
+                <Card variant="elevated" padding="md">
+                  <CardTitle className="text-sm mb-3">收购预览</CardTitle>
                   <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-slate-400">当前股价:</span>
-                      <span className="text-white ml-2 tabular-nums">
-                        ¥{currentPrice.toFixed(2)}
-                      </span>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">当前股价:</span>
+                      <span className="text-[var(--text-primary)] tabular-nums">¥{currentPrice.toFixed(2)}</span>
                     </div>
-                    <div>
-                      <span className="text-slate-400">要约价格:</span>
-                      <span className="text-green-400 ml-2 tabular-nums">
-                        ¥{offerPrice.toFixed(2)}
-                      </span>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">要约价格:</span>
+                      <span className="text-[var(--success)] tabular-nums">¥{offerPrice.toFixed(2)}</span>
                     </div>
-                    <div>
-                      <span className="text-slate-400">目标股数:</span>
-                      <span className="text-white ml-2 tabular-nums">
-                        {targetShares.toLocaleString()}股
-                      </span>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">目标股数:</span>
+                      <span className="text-[var(--text-primary)] tabular-nums">{targetShares.toLocaleString()}股</span>
                     </div>
-                    <div>
-                      <span className="text-slate-400">预估总成本:</span>
-                      <span className={`ml-2 tabular-nums ${
-                        totalCost > playerCash ? 'text-red-400' : 'text-white'
-                      }`}>
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-muted)]">预估总成本:</span>
+                      <span className={`tabular-nums ${totalCost > playerCash ? 'text-[var(--error)]' : 'text-[var(--text-primary)]'}`}>
                         {formatMoney(totalCost)}
                       </span>
                     </div>
                   </div>
-                  <div className="border-t border-slate-600 pt-2 mt-2">
+                  <div className="border-t border-[var(--border-muted)] pt-2 mt-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-400">可用资金:</span>
-                      <span className={`tabular-nums ${
-                        totalCost > playerCash ? 'text-red-400' : 'text-green-400'
-                      }`}>
+                      <span className="text-[var(--text-muted)]">可用资金:</span>
+                      <span className={`tabular-nums ${totalCost > playerCash ? 'text-[var(--error)]' : 'text-[var(--success)]'}`}>
                         {formatMoney(playerCash)}
                       </span>
                     </div>
                   </div>
-                </div>
+                </Card>
                 
                 {totalCost > playerCash && (
-                  <p className="text-xs text-red-400 text-center">资金不足，无法完成收购</p>
+                  <p className="text-xs text-[var(--error)] text-center">⚠️ 资金不足，无法完成收购</p>
                 )}
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-6">
-                <button
-                  onClick={() => setShowAcquisitionModal(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
-                >
-                  取消
-                </button>
-                <button
+              </DialogBody>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setShowAcquisitionModal(null)}>取消</Button>
+                <Button
+                  variant="gradient"
                   onClick={executeAcquisition}
                   disabled={totalCost > playerCash}
-                  className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   发起收购
-                </button>
-              </div>
-            </div>
-          </div>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         );
       })()}
     </div>

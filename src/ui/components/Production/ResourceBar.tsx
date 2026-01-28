@@ -1,3 +1,8 @@
+/**
+ * 资源进度条组件
+ * 使用设计系统变量重构
+ */
+
 import React from 'react';
 
 interface ResourceBarProps {
@@ -27,9 +32,9 @@ const sizeStyles = {
 
 const colorStyles = {
   blue: 'from-blue-500 to-blue-400',
-  green: 'from-green-500 to-green-400',
-  yellow: 'from-yellow-500 to-yellow-400',
-  red: 'from-red-500 to-red-400',
+  green: 'from-[var(--success)] to-green-400',
+  yellow: 'from-[var(--warning)] to-yellow-400',
+  red: 'from-[var(--error)] to-red-400',
   purple: 'from-purple-500 to-purple-400',
 };
 
@@ -56,18 +61,18 @@ export const ResourceBar: React.FC<ResourceBarProps> = ({
   const barColor = color === 'auto' ? getAutoColor(clampedValue) : colorStyles[color];
   
   return (
-    <div className={`${className}`}>
+    <div className={className}>
       {(label || rightText || showPercentage) && (
         <div className="flex justify-between items-center mb-1">
           {label && (
-            <span className="text-xs text-text-secondary truncate">{label}</span>
+            <span className="text-xs text-[var(--text-secondary)] truncate">{label}</span>
           )}
-          <span className="text-xs text-text-tertiary tabular-nums">
+          <span className="text-xs text-[var(--text-muted)] tabular-nums">
             {rightText || (showPercentage && `${percentage}%`)}
           </span>
         </div>
       )}
-      <div className={`w-full bg-white/10 rounded-full overflow-hidden ${sizeStyles[size]}`}>
+      <div className={`w-full bg-[var(--bg-muted)] rounded-full overflow-hidden ${sizeStyles[size]}`}>
         <div
           className={`h-full bg-gradient-to-r ${barColor} rounded-full ${
             animated ? 'transition-all duration-300 ease-out' : ''
@@ -97,14 +102,14 @@ export const CompactResourceBar: React.FC<CompactResourceBarProps> = ({
   
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-text-tertiary w-12 truncate">{label}</span>
-      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+      <span className="text-xs text-[var(--text-muted)] w-12 truncate">{label}</span>
+      <div className="flex-1 h-1.5 bg-[var(--bg-muted)] rounded-full overflow-hidden">
         <div
           className={`h-full bg-gradient-to-r ${barColor} rounded-full transition-all duration-300`}
           style={{ width: `${percentage}%` }}
         />
       </div>
-      <span className="text-xs text-text-tertiary tabular-nums w-8 text-right">{percentage}%</span>
+      <span className="text-xs text-[var(--text-muted)] tabular-nums w-8 text-right">{percentage}%</span>
     </div>
   );
 };

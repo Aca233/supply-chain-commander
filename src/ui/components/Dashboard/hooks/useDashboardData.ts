@@ -5,6 +5,7 @@
 
 import { useMemo, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
 import { tickToDate } from '@/core/world/GameWorld';
@@ -463,8 +464,9 @@ export function useDashboardData(): DashboardData {
 
     // 玩家挂单统计
     let buyOrders = 0, sellOrders = 0, pendingValue = 0;
-    for (let i = 0; i < world.orders.maxOrders; i++) {
-      if (world.orders.isActive[i] && world.orders.companyIds[i] === 0) {
+    const activeIndices = getActiveOrderIndices();
+    for (const i of activeIndices) {
+      if (world.orders.companyIds[i] === 0) {
         const value = world.orders.prices[i] * world.orders.remainings[i];
         pendingValue += value;
         if (world.orders.types[i] === 0) {

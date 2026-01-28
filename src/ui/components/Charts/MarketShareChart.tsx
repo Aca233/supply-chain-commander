@@ -80,6 +80,10 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
   const isUnmountedRef = useRef(false);
   // 保存当前数据的引用，用于 tooltip 访问
   const dataRef = useRef<MarketShareData[]>(data);
+  // 标记是否正在与图表交互（鼠标悬停）
+  const isInteractingRef = useRef(false);
+  // 待更新的数据
+  const pendingDataRef = useRef<MarketShareData[] | null>(null);
   
   // 更新数据引用
   useEffect(() => {
@@ -154,11 +158,24 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
         top: 10,
       },
       tooltip: {
+        show: true,
         trigger: 'item',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
         borderColor: '#334155',
-        textStyle: { color: '#e2e8f0' },
-        formatter: safeTooltipFormatter,
+        borderWidth: 1,
+        borderRadius: 8,
+        padding: [8, 12],
+        textStyle: { color: '#e2e8f0', fontSize: 12 },
+        formatter: (params: any) => {
+          if (!params || params.value === undefined) return '';
+          const total = (data || []).reduce((sum, d) => sum + (d.value || 0), 0);
+          if (total === 0) return '';
+          const percent = ((params.value / total) * 100).toFixed(1);
+          return `<div style="font-weight:600;margin-bottom:4px;">${params.name || ''}</div>
+                  <div>份额: ${percent}%</div>
+                  <div>数值: ${(params.value || 0).toLocaleString()}</div>`;
+        },
+        extraCssText: 'z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none;',
       },
       legend: {
         show: showLegend && safeData.length <= 10, // 只在10个以内显示图例
@@ -190,13 +207,15 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
           label: {
             show: false,
           },
+          labelLine: {
+            show: false,
+          },
           emphasis: {
             label: {
-              show: true,
-              fontSize: 14,
-              fontWeight: 'bold',
-              color: '#e2e8f0',
-              formatter: safeLabelFormatter,
+              show: false,
+            },
+            labelLine: {
+              show: false,
             },
             itemStyle: {
               shadowBlur: 10,
@@ -215,30 +234,17 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [safeTooltipFormatter, safeLabelFormatter]); // 只在首次渲染时创建
   
-  // 数据更新时直接调用setOption（禁用动画）
-  useEffect(() => {
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
-      // 首次动画完成后标记
-      setTimeout(() => {
-        hasAnimatedRef.current = true;
-      }, 1000);
-      return;
-    }
-    
-    // 检查组件是否已卸载
-    if (isUnmountedRef.current) return;
-    
-    // 后续更新：直接使用chart实例setOption，只更新数据部分
+  // 实际执行图表数据更新的函数
+  const doUpdateChart = useCallback((safeData: MarketShareData[]) => {
     const chart = chartRef.current?.getEchartsInstance();
-    if (chart && !chart.isDisposed() && hasAnimatedRef.current) {
-      const safeData = data || [];
-      
+    if (!chart || chart.isDisposed() || isUnmountedRef.current) return;
+    
+    try {
       // 只更新数据，不替换整个series配置
       chart.setOption({
         animation: false,
         series: [{
-          type: 'pie', // 保留类型
+          type: 'pie',
           animation: false,
           animationDuration: 0,
           animationDurationUpdate: 0,
@@ -257,11 +263,67 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
           formatter: safeTooltipFormatter,
         },
       }, {
-        notMerge: false, // 合并而不是替换
+        notMerge: false,
         lazyUpdate: true,
+        silent: true,
+      });
+    } catch {
+      // 忽略setOption时的错误
+    }
+  }, [safeLabelFormatter, safeTooltipFormatter]);
+
+  // 数据更新时直接调用setOption（禁用动画）
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      // 首次动画完成后标记
+      setTimeout(() => {
+        hasAnimatedRef.current = true;
+      }, 1000);
+      return;
+    }
+    
+    // 检查组件是否已卸载
+    if (isUnmountedRef.current) return;
+    
+    const safeData = data || [];
+    
+    // 如果正在交互，暂存数据稍后更新
+    if (isInteractingRef.current) {
+      pendingDataRef.current = safeData;
+      return;
+    }
+    
+    // 后续更新：直接使用chart实例setOption，只更新数据部分
+    const chart = chartRef.current?.getEchartsInstance();
+    if (chart && !chart.isDisposed() && hasAnimatedRef.current) {
+      // 使用 requestAnimationFrame 确保在下一帧更新
+      requestAnimationFrame(() => {
+        if (isUnmountedRef.current) return;
+        doUpdateChart(safeData);
       });
     }
-  }, [data, safeTooltipFormatter, safeLabelFormatter]);
+  }, [data, doUpdateChart]);
+  
+  // 处理鼠标事件
+  const onEvents = useMemo(() => ({
+    mouseover: () => {
+      isInteractingRef.current = true;
+    },
+    mouseout: () => {
+      isInteractingRef.current = false;
+      // 如果有待更新的数据，现在更新
+      if (pendingDataRef.current) {
+        const pendingData = pendingDataRef.current;
+        pendingDataRef.current = null;
+        requestAnimationFrame(() => {
+          if (!isUnmountedRef.current) {
+            doUpdateChart(pendingData);
+          }
+        });
+      }
+    },
+  }), [doUpdateChart]);
   
   return (
     <ReactECharts
@@ -271,6 +333,7 @@ export const MarketShareChart: React.FC<MarketShareChartProps> = ({
       opts={{ renderer: 'canvas' }}
       notMerge={false}
       lazyUpdate={true}
+      onEvents={onEvents}
     />
   );
 };

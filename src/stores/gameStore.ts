@@ -145,7 +145,7 @@ import {
 interface UIState {
   selectedGoodsId: number | null;
   selectedBuildingId: number | null;
-  currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'settings';
+  currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings';
   sidebarCollapsed: boolean;
   notifications: Notification[];
   theme: 'light' | 'dark';
@@ -387,10 +387,15 @@ let gameLoopRef: GameLoop | null = null;
 
 // 性能优化：限制状态更新频率
 let lastUIUpdateTick = 0;
-const UI_UPDATE_INTERVAL = 2; // 每2个tick更新一次UI状态（减少渲染）
+const UI_UPDATE_INTERVAL = 2; // 每2个tick更新一次UI状态（保持流畅度）
 
 // 财务历史数据更新间隔
 const HISTORY_UPDATE_INTERVAL = 4; // 每4个tick记录一次历史数据
+
+// 建筑计数缓存
+let cachedPlayerBuildingCount = 0;
+let cachedBuildingCountTick = -100;
+const BUILDING_COUNT_CACHE_INTERVAL = 24; // 每24tick更新一次建筑计数
 
 /**
  * 创建游戏Store
@@ -450,15 +455,17 @@ export const useGameStore = create<GameState & GameActions>()(
               state.playerAssets = worldRef.companies.totalAssets[0];
               
               // 优化：使用缓存的建筑数量，仅在特定间隔更新
-              if (currentTick % 10 === 0) {
+              if (currentTick - cachedBuildingCountTick >= BUILDING_COUNT_CACHE_INTERVAL) {
+                cachedBuildingCountTick = currentTick;
                 let buildingCount = 0;
                 for (let i = 0; i < worldRef.buildings.count; i++) {
                   if (worldRef.buildings.owners[i] === 0) {
                     buildingCount++;
                   }
                 }
-                state.playerBuildings = buildingCount;
+                cachedPlayerBuildingCount = buildingCount;
               }
+              state.playerBuildings = cachedPlayerBuildingCount;
             }
             
             state.performance = gameLoop.getPerformanceReport();

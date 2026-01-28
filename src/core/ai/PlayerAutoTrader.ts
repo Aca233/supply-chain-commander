@@ -10,8 +10,8 @@
 import { GameWorld } from '../world/GameWorld';
 import { ALL_GOODS } from '@/data/goods';
 import { RECIPES } from '@/data/recipes';
-import { GOODS_COUNT, MAX_ORDERS } from '../constants';
-import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder } from '../market/OrderBook';
+import { GOODS_COUNT } from '../constants';
+import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder, getActiveOrderIndices } from '../market/OrderBook';
 import { getBaseMaterials, getUpgradeMaterials, getBuildingConstructionConfig } from '@/data/buildingMaterials';
 import { getCompanyConstructionQueue } from '../construction/ConstructionTick';
 
@@ -593,7 +593,7 @@ function executeAutoBuy(
 }
 
 /**
- * 统计现有订单数量
+ * 统计现有订单数量（使用活跃订单索引优化）
  */
 function countExistingOrders(
   world: GameWorld,
@@ -605,9 +605,10 @@ function countExistingOrders(
   const typeValue = orderType === 'buy' ? 0 : 1;
   let count = 0;
   
-  for (let i = 0; i < MAX_ORDERS; i++) {
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
     if (
-      o.isActive[i] &&
       o.companyIds[i] === companyId &&
       o.goodsIds[i] === goodsId &&
       o.types[i] === typeValue
@@ -620,7 +621,7 @@ function countExistingOrders(
 }
 
 /**
- * 统计现有订单的总数量（用于避免重复下单）
+ * 统计现有订单的总数量（用于避免重复下单，使用活跃订单索引优化）
  */
 function countExistingOrderQuantity(
   world: GameWorld,
@@ -632,9 +633,10 @@ function countExistingOrderQuantity(
   const typeValue = orderType === 'buy' ? 0 : 1;
   let totalQuantity = 0;
   
-  for (let i = 0; i < MAX_ORDERS; i++) {
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
     if (
-      o.isActive[i] &&
       o.companyIds[i] === companyId &&
       o.goodsIds[i] === goodsId &&
       o.types[i] === typeValue
@@ -647,7 +649,7 @@ function countExistingOrderQuantity(
 }
 
 /**
- * 调整长期未成交的订单价格
+ * 调整长期未成交的订单价格（使用活跃订单索引优化）
  * 卖单：降价促销
  * 买单：涨价买入
  */
@@ -665,8 +667,10 @@ function adjustStaleOrderPrices(world: GameWorld, playerId: number): void {
     createdTick: number;
   }> = [];
   
-  for (let i = 0; i < MAX_ORDERS; i++) {
-    if (!o.isActive[i] || o.companyIds[i] !== playerId) continue;
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (o.companyIds[i] !== playerId) continue;
     
     const orderAge = currentTick - o.createdTicks[i];
     

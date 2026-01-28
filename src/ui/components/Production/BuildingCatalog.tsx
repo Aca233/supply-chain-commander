@@ -1,7 +1,15 @@
+/**
+ * 建筑目录组件
+ * 使用设计系统组件重构
+ */
+
 import React, { useState, useMemo } from 'react';
 import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_INDUSTRY, isRetailBuilding } from '@/data/buildings';
 import { BuildingIcon } from '@/ui/components/Icons';
 import { useGameStore } from '@/stores/gameStore';
+
+// 设计系统组件
+import { Card, Badge, Button, Input, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
 
 // 产业链配置
 const INDUSTRY_CONFIG: Record<string, { name: string; icon: string; color: string; gradient: string }> = {
@@ -33,9 +41,7 @@ interface BuildingCatalogProps {
 export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuilding }) => {
   const { playerCash } = useGameStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedIndustries, setExpandedIndustries] = useState<Record<string, boolean>>({
-    core: true,
-  });
+  const [expandedIndustries, setExpandedIndustries] = useState<Record<string, boolean>>({ core: true });
   const [filterMode, setFilterMode] = useState<'all' | 'affordable'>('all');
 
   // 按产业链分组并过滤建筑
@@ -45,7 +51,6 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
 
     for (const [industryKey, buildings] of Object.entries(BUILDINGS_BY_INDUSTRY)) {
       const filtered = buildings.filter((b) => {
-        // 搜索过滤
         if (query) {
           const matchesSearch =
             b.name.toLowerCase().includes(query) ||
@@ -53,12 +58,7 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
             b.key.toLowerCase().includes(query);
           if (!matchesSearch) return false;
         }
-        
-        // 可购买过滤
-        if (filterMode === 'affordable' && b.buildCost > playerCash) {
-          return false;
-        }
-        
+        if (filterMode === 'affordable' && b.buildCost > playerCash) return false;
         return true;
       });
       
@@ -70,114 +70,71 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
   }, [searchQuery, filterMode, playerCash]);
 
   const toggleIndustry = (industryKey: string) => {
-    setExpandedIndustries((prev) => ({
-      ...prev,
-      [industryKey]: !prev[industryKey],
-    }));
+    setExpandedIndustries((prev) => ({ ...prev, [industryKey]: !prev[industryKey] }));
   };
 
   const formatCost = (cost: number) => {
-    if (cost >= 1000000) {
-      return `${(cost / 1000000).toFixed(1)}M`;
-    } else if (cost >= 1000) {
-      return `${(cost / 1000).toFixed(0)}K`;
-    }
+    if (cost >= 1000000) return `${(cost / 1000000).toFixed(1)}M`;
+    if (cost >= 1000) return `${(cost / 1000).toFixed(0)}K`;
     return `${cost}`;
   };
 
-  const totalIndustries = Object.keys(filteredBuildingsByIndustry).length;
   const totalBuildings = Object.values(filteredBuildingsByIndustry).reduce(
-    (sum, buildings) => sum + buildings.length,
-    0
+    (sum, buildings) => sum + buildings.length, 0
   );
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-slate-800/50 to-slate-900/80 border-r border-white/10">
+    <div className="flex flex-col h-full bg-[var(--bg-surface)] border-r border-[var(--border-muted)]">
       {/* 头部 */}
-      <div className="p-4 border-b border-white/10">
+      <div className="p-4 border-b border-[var(--border-muted)]">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-lg">🏗️</span>
-          <h3 className="text-sm font-semibold text-text-primary">建造</h3>
-          <span className="text-xs text-text-tertiary">
-            ({totalBuildings}种)
-          </span>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">建造</h3>
+          <Badge variant="outline" size="sm">{totalBuildings}种</Badge>
         </div>
         
         {/* 搜索框 */}
-        <div className="relative mb-3">
-          <input
-            type="text"
-            placeholder="搜索建筑..."
-            className="w-full px-3 py-2 pl-8 text-xs bg-black/30 rounded-lg border border-white/10 
-                       focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/20
-                       placeholder:text-text-tertiary text-text-primary"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary text-xs">🔍</span>
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+        <Input
+          placeholder="搜索建筑..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          leftIcon="🔍"
+          size="sm"
+          className="mb-3"
+        />
         
         {/* 筛选按钮 */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setFilterMode('all')}
-            className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${
-              filterMode === 'all'
-                ? 'bg-blue-600/30 text-blue-400 border border-blue-500/30'
-                : 'bg-white/5 text-text-tertiary hover:bg-white/10'
-            }`}
-          >
-            全部
-          </button>
-          <button
-            onClick={() => setFilterMode('affordable')}
-            className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${
-              filterMode === 'affordable'
-                ? 'bg-green-600/30 text-green-400 border border-green-500/30'
-                : 'bg-white/5 text-text-tertiary hover:bg-white/10'
-            }`}
-          >
-            可建造
-          </button>
-        </div>
+        <Tabs value={filterMode} onValueChange={(v) => setFilterMode(v as 'all' | 'affordable')}>
+          <TabsList variant="game" size="sm" className="w-full">
+            <TabsTrigger value="all" variant="game" className="flex-1">全部</TabsTrigger>
+            <TabsTrigger value="affordable" variant="game" className="flex-1">可建造</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* 建筑列表 */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 overflow-y-auto">
         {Object.entries(filteredBuildingsByIndustry).map(([industryKey, buildings]) => {
           const config = INDUSTRY_CONFIG[industryKey] || {
-            name: industryKey,
-            icon: '📦',
-            color: 'text-gray-400',
-            gradient: 'from-gray-500/20',
+            name: industryKey, icon: '📦', color: 'text-gray-400', gradient: 'from-gray-500/20'
           };
           const isExpanded = expandedIndustries[industryKey] ?? false;
 
           return (
-            <div key={industryKey} className="border-b border-white/5">
+            <div key={industryKey} className="border-b border-[var(--border-muted)]">
               {/* 产业链标题 */}
               <button
                 className={`w-full flex items-center justify-between px-4 py-2.5 
-                           hover:bg-white/5 transition-colors
+                           hover:bg-[var(--bg-muted)] transition-colors
                            ${isExpanded ? `bg-gradient-to-r ${config.gradient} to-transparent` : ''}`}
                 onClick={() => toggleIndustry(industryKey)}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base">{config.icon}</span>
                   <span className={`text-xs font-medium ${config.color}`}>{config.name}</span>
-                  <span className="text-[10px] text-text-tertiary bg-white/5 px-1.5 py-0.5 rounded">
-                    {buildings.length}
-                  </span>
+                  <Badge variant="outline" size="sm">{buildings.length}</Badge>
                 </div>
-                <span className={`text-text-tertiary text-xs transition-transform duration-200 ${
+                <span className={`text-[var(--text-muted)] text-xs transition-transform duration-200 ${
                   isExpanded ? 'rotate-180' : ''
                 }`}>
                   ▼
@@ -199,40 +156,37 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
                         className={`w-full flex items-center gap-3 px-4 py-2 
                                    transition-all duration-150 group
                                    ${canAfford
-                                     ? 'hover:bg-white/10 cursor-pointer'
+                                     ? 'hover:bg-[var(--bg-muted)] cursor-pointer'
                                      : 'opacity-40 cursor-not-allowed'
                                    }`}
                       >
-                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center
-                                       group-hover:bg-white/10 transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-[var(--bg-muted)] flex items-center justify-center
+                                       group-hover:bg-[var(--bg-subtle)] transition-colors">
                           <BuildingIcon buildingId={building.id} size={20} autoColor />
                         </div>
                         <div className="flex-1 min-w-0 text-left">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-text-primary truncate">
+                            <span className="text-xs font-medium text-[var(--text-primary)] truncate">
                               {building.name}
                             </span>
-                            {isRetail && (
-                              <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400">
-                                零售
-                              </span>
-                            )}
+                            {isRetail && <Badge variant="warning" size="sm">零售</Badge>}
                           </div>
-                          <div className="text-[10px] text-text-tertiary truncate">
+                          <div className="text-[10px] text-[var(--text-muted)] truncate">
                             {building.category === 'extraction' && '采掘'}
                             {building.category === 'processing' && '加工'}
                             {building.category === 'manufacturing' && '制造'}
                             {building.category === 'service' && '服务'}
                             {building.category === 'retail' && '零售'}
-                            {' · '}
-                            最高Lv.{building.maxLevel}
+                            {' · '}最高Lv.{building.maxLevel}
                           </div>
                         </div>
-                        <div className={`text-xs tabular-nums font-medium ${
-                          canAfford ? 'text-green-400' : 'text-red-400'
-                        }`}>
+                        <Badge
+                          variant={canAfford ? 'success' : 'error'}
+                          size="sm"
+                          className="tabular-nums"
+                        >
                           ¥{formatCost(building.buildCost)}
-                        </div>
+                        </Badge>
                       </button>
                     );
                   })}
@@ -243,7 +197,7 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
         })}
 
         {totalBuildings === 0 && (
-          <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+          <div className="flex flex-col items-center justify-center py-8 text-[var(--text-muted)]">
             <span className="text-2xl mb-2">🔍</span>
             <span className="text-xs">未找到匹配的建筑</span>
           </div>
@@ -251,14 +205,14 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
       </div>
 
       {/* 底部资金显示 */}
-      <div className="p-3 border-t border-white/10 bg-black/20">
+      <Card variant="elevated" padding="sm" className="m-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-text-tertiary">可用资金</span>
-          <span className="text-sm font-medium text-green-400 tabular-nums">
+          <span className="text-xs text-[var(--text-muted)]">可用资金</span>
+          <Badge variant="success" size="sm" className="tabular-nums">
             ¥{playerCash.toLocaleString()}
-          </span>
+          </Badge>
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

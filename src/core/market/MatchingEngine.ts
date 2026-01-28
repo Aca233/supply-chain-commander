@@ -11,7 +11,7 @@
 
 import { GameWorld } from '../world/GameWorld';
 import { GOODS_COUNT, MAX_ORDERS, ACTUAL_GOODS_COUNT } from '../constants';
-import { Trade, getOrderBookView } from './OrderBook';
+import { Trade, getOrderBookView, releaseOrderSlot, removeFromCompanyGoodsIndex, getActiveOrderIndices } from './OrderBook';
 import { getOrderBookIndex } from './OrderBookIndex';
 import { updatePriceCache } from './PriceCache';
 import { perfMonitor } from '../performance/PerformanceMonitor';
@@ -176,17 +176,23 @@ function matchOrdersForGoodsOptimized(
     }
     tradesCount++;
     
-    // 标记已完成的订单
+    // 标记已完成的订单并释放槽位
     if (o.remainings[buyIdx] <= 0) {
       o.isActive[buyIdx] = 0;
       o.activeCount--;
       orderIndex.removeOrder(buyIdx);
+      // 【修复】释放订单槽位回对象池，并从公司商品索引移除
+      removeFromCompanyGoodsIndex(buyIdx, buyCompanyId, goodsId, 0);
+      releaseOrderSlot(buyIdx, 0);
       buyPtr++;
     }
     if (o.remainings[sellIdx] <= 0) {
       o.isActive[sellIdx] = 0;
       o.activeCount--;
       orderIndex.removeOrder(sellIdx);
+      // 【修复】释放订单槽位回对象池，并从公司商品索引移除
+      removeFromCompanyGoodsIndex(sellIdx, sellCompanyId, goodsId, 1);
+      releaseOrderSlot(sellIdx, 1);
       sellPtr++;
     }
   }
@@ -195,7 +201,7 @@ function matchOrdersForGoodsOptimized(
 }
 
 /**
- * 处理单个商品的订单撮合（兼容旧版，使用遍历方式）
+ * 处理单个商品的订单撮合（兼容旧版，使用活跃订单索引优化）
  */
 function matchOrdersForGoods(
   world: GameWorld,
@@ -210,8 +216,10 @@ function matchOrdersForGoods(
   tempBuyCount = 0;
   tempSellCount = 0;
   
-  for (let i = 0; i < MAX_ORDERS; i++) {
-    if (!o.isActive[i] || o.goodsIds[i] !== goodsId) continue;
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (o.goodsIds[i] !== goodsId) continue;
     
     if (o.types[i] === 0) {
       TEMP_BUY_INDICES[tempBuyCount++] = i;
@@ -318,11 +326,17 @@ function matchOrdersForGoods(
     if (o.remainings[buyIdx] <= 0) {
       o.isActive[buyIdx] = 0;
       o.activeCount--;
+      // 【修复】释放订单槽位回对象池
+      removeFromCompanyGoodsIndex(buyIdx, buyCompanyId, goodsId, 0);
+      releaseOrderSlot(buyIdx, 0);
       buyPtr++;
     }
     if (o.remainings[sellIdx] <= 0) {
       o.isActive[sellIdx] = 0;
       o.activeCount--;
+      // 【修复】释放订单槽位回对象池
+      removeFromCompanyGoodsIndex(sellIdx, sellCompanyId, goodsId, 1);
+      releaseOrderSlot(sellIdx, 1);
       sellPtr++;
     }
   }

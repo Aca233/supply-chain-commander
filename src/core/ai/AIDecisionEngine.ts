@@ -25,8 +25,8 @@ import { getBaseMaterials, calculateMaterialsValue } from '@/data/buildingMateri
 import { ALL_BUILDINGS } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { RECIPES, RecipeDefinition } from '@/data/recipes';
-import { GOODS_COUNT, AI_DECISION_INTERVAL, ACTUAL_GOODS_COUNT, MAX_SUBSIDIARIES, MAX_ORDERS } from '@/core/constants';
-import { getOrderBookView, cancelOrder } from '@/core/market/OrderBook';
+import { GOODS_COUNT, AI_DECISION_INTERVAL, ACTUAL_GOODS_COUNT, MAX_SUBSIDIARIES } from '@/core/constants';
+import { getOrderBookView, cancelOrder, hasExistingOrderForCompanyGoods, getActiveOrderIndices } from '@/core/market/OrderBook';
 import { calculateOptimalQuantity, calculateCostStructure } from '@/core/economy/SupplyCurve';
 import { createBuyOrder, createSellOrder } from '@/core/market/OrderBook';
 
@@ -763,11 +763,11 @@ export function generateTradingDecisions(
         const supply = world.goods.supplies[input.goodsId];
         const hasSupply = supply > 0;
         
-        // 检查现有买单数量，避免重复下单
+        // 【性能优化】使用活跃订单索引检查现有买单数量，避免O(n)遍历
         let existingBuyQuantity = 0;
-        for (let j = 0; j < world.orders.maxOrders; j++) {
-          if (world.orders.isActive[j] &&
-              world.orders.companyIds[j] === companyId &&
+        const activeIndices = getActiveOrderIndices();
+        for (const j of activeIndices) {
+          if (world.orders.companyIds[j] === companyId &&
               world.orders.goodsIds[j] === input.goodsId &&
               world.orders.types[j] === 0) { // 买单
             existingBuyQuantity += world.orders.remainings[j];
@@ -1792,20 +1792,14 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
     // 获取建造所需材料
     const materials = getBaseMaterials(buildingTypeId);
     
-    // 检查材料是否充足（AI需要有材料才能建造）
+    // 检查材料是否充足
     const inventoryGetter = (goodsId: number) => {
       const idx = companyId * GOODS_COUNT + goodsId;
       return world.companies.inventories[idx] - world.companies.inventoryReserved[idx];
     };
     
-    const cashGetter = () => world.companies.cash[companyId];
-    
     const priceGetter = (goodsId: number) => world.goods.prices[goodsId];
     
-    // 使用建造管理器检查是否可以建造
-    // 注意：GameWorld中的construction已经是ConstructionQueueSystem
-    // 需要导入ConstructionManager中的createConstructionQueueSystem来创建兼容的队列
-    // 这里暂时使用简化检查逻辑
     let canBuild = true;
     const missingMaterials: Array<{ goodsId: number; amount: number }> = [];
     
@@ -1820,41 +1814,51 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       }
     }
     
-    const canBuildResult = {
-      canBuild,
-      missingMaterials,
-    };
-    
-    // 如果材料不足，AI会尝试采购材料（通过交易决策）
-    if (!canBuildResult.canBuild) {
-      // 记录缺少的材料，用于后续采购决策
-      if (canBuildResult.missingMaterials.length > 0) {
-        // 为缺少的材料创建采购需求（将在下一个决策周期处理）
-        console.log(`[AI建造] 公司${companyId}建造${buildingDef.name}材料不足，需采购:`,
-          canBuildResult.missingMaterials.map(m => `商品${m.goodsId}:${m.amount}`).join(', '));
+    // 如果材料不足，为缺少的材料下买单
+    if (!canBuild) {
+      // 主动为缺少的建筑材料下买单
+      let ordersCreated = 0;
+      for (const missing of missingMaterials.slice(0, 5)) { // 每次最多处理5种材料
+        const goods = ALL_GOODS.find(g => g.id === missing.goodsId);
+        if (!goods) continue;
+        
+        // 检查是否已有足够买单
+        let existingBuyQty = 0;
+        const activeIndices = getActiveOrderIndices();
+        for (const j of activeIndices) {
+          if (world.orders.companyIds[j] === companyId &&
+              world.orders.goodsIds[j] === missing.goodsId &&
+              world.orders.types[j] === 0) {
+            existingBuyQty += world.orders.remainings[j];
+          }
+        }
+        
+        // 如果已有足够买单，跳过
+        if (existingBuyQty >= missing.amount) continue;
+        
+        // 计算购买数量和价格（愿意支付高价以获得建材）
+        const buyQty = Math.min(missing.amount - existingBuyQty, 500);
+        const basePrice = goods.basePrice;
+        const marketPrice = world.goods.prices[missing.goodsId];
+        const buyPrice = Math.max(basePrice, marketPrice) * 1.5; // 愿意支付1.5倍价格
+        
+        // 检查资金（保留至少一半现金）
+        const availableCash = world.companies.cash[companyId] * 0.5;
+        if (buyQty * buyPrice <= availableCash) {
+          const orderId = createBuyOrder(world, companyId, missing.goodsId, buyQty, buyPrice, 9999999);
+          if (orderId !== null) {
+            ordersCreated++;
+          }
+        }
       }
       
-      // 暂时回退到直接建造模式（保持向后兼容）
-      // TODO: 完全切换到材料建造模式后移除此分支
-      try {
-        // 扣除建造费用
-        world.companies.cash[companyId] -= cost;
-        
-        // 添加建筑
-        const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
-        
-        // 更新公司资产
-        world.companies.totalAssets[companyId] += cost * 0.8;
-        
-        console.log(`[AI] 公司 ${world.companies.names[companyId]} 建造了 ${buildingDef.name}(无材料模式), 花费 ¥${cost}`);
-        return true;
-      } catch (e) {
-        world.companies.cash[companyId] += cost;
-        return false;
+      if (ordersCreated > 0 && world.tick % 50 === 0) {
+        console.log(`[AI建材采购] 公司${companyId}为建造${buildingDef.name}下了${ordersCreated}个建材采购单`);
       }
+      return false;
     }
     
-    // 材料充足，使用建造队列系统
+    // 材料充足，执行建造
     try {
       // 1. 扣除建造费用
       world.companies.cash[companyId] -= cost;
@@ -1865,31 +1869,22 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
         world.companies.inventories[idx] -= mat.amount;
       }
       
-      // 3. 直接创建建筑（AI建造不使用建造队列，直接完成）
-      // 这样简化逻辑，避免AI需要等待建造时间
-      try {
-        // 添加建筑
-        const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
-        
-        // 更新公司资产（预付材料价值）
-        const materialsValue = calculateMaterialsValue(materials, priceGetter);
-        world.companies.totalAssets[companyId] += (cost + materialsValue) * 0.8;
-        
-        console.log(`[AI建造] 公司 ${world.companies.names[companyId]} 建造了 ${buildingDef.name}, 花费 ¥${cost} + 材料`);
-        return true;
-      } catch (e) {
-        // 建造失败，退还资金和材料
-        world.companies.cash[companyId] += cost;
-        for (const mat of materials) {
-          const idx = companyId * GOODS_COUNT + mat.goodsId;
-          world.companies.inventories[idx] += mat.amount;
-        }
-        console.error(`[AI建造] 建造失败:`, e);
-        return false;
-      }
+      // 3. 直接创建建筑
+      const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
+      
+      // 更新公司资产
+      const materialsValue = calculateMaterialsValue(materials, priceGetter);
+      world.companies.totalAssets[companyId] += (cost + materialsValue) * 0.8;
+      
+      console.log(`[AI建造] 公司 ${world.companies.names[companyId]} 建造了 ${buildingDef.name}, 花费 ¥${cost} + 材料`);
+      return true;
     } catch (e) {
-      // 如果建造失败，退还资金
+      // 建造失败，退还资金和材料
       world.companies.cash[companyId] += cost;
+      for (const mat of materials) {
+        const idx = companyId * GOODS_COUNT + mat.goodsId;
+        world.companies.inventories[idx] += mat.amount;
+      }
       console.error('[AI建造] 异常:', e);
       return false;
     }
@@ -2110,8 +2105,23 @@ export function runAIDecisionCycle(world: GameWorld, companyId: number): AIDecis
   const maxDecisionsPerTick = Math.round(8 * personality.decisionFrequency);
   const executedDecisions: AIDecision[] = [];
   
-  for (let i = 0; i < Math.min(maxDecisionsPerTick, allDecisions.length); i++) {
-    const decision = allDecisions[i];
+  // 【重要】确保每次都尝试执行至少一个投资决策（如果有的话）
+  // 这样可以防止投资决策被交易决策完全挤掉
+  const investmentDecisions = allDecisions.filter(d => d.type === 'investment');
+  const otherDecisions = allDecisions.filter(d => d.type !== 'investment');
+  
+  // 先尝试执行1个投资决策
+  if (investmentDecisions.length > 0) {
+    const investDecision = investmentDecisions[0];
+    if (executeDecision(world, investDecision)) {
+      executedDecisions.push(investDecision);
+      recordDecision(world, companyId, investDecision);
+    }
+  }
+  
+  // 再执行其他决策
+  for (let i = 0; i < Math.min(maxDecisionsPerTick - 1, otherDecisions.length); i++) {
+    const decision = otherDecisions[i];
     if (executeDecision(world, decision)) {
       executedDecisions.push(decision);
       
@@ -2602,8 +2612,10 @@ function adjustAIStaleOrderPrices(world: GameWorld, companyId: number): void {
     createdTick: number;
   }> = [];
   
-  for (let i = 0; i < MAX_ORDERS; i++) {
-    if (!o.isActive[i] || o.companyIds[i] !== companyId) continue;
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (o.companyIds[i] !== companyId) continue;
     
     const orderAge = currentTick - o.createdTicks[i];
     
@@ -2736,13 +2748,15 @@ export function adjustAllAIOrderPrices(world: GameWorld): number {
 }
 
 /**
- * 统计公司的订单数量
+ * 统计公司的订单数量（使用活跃订单索引优化）
  */
 function countCompanyOrders(world: GameWorld, companyId: number): number {
   const o = world.orders;
   let count = 0;
-  for (let i = 0; i < MAX_ORDERS; i++) {
-    if (o.isActive[i] && o.companyIds[i] === companyId) {
+  // 使用活跃订单索引，避免遍历全部 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
+    if (o.companyIds[i] === companyId) {
       count++;
     }
   }
@@ -2907,14 +2921,11 @@ function estimateDailyOutput(world: GameWorld, companyId: number, goodsId: numbe
 }
 
 /**
- * 检查是否已有相似价格的挂单（优化版：使用订单合并机制替代）
+ * 检查是否已有相似价格的挂单（使用O(1)索引查询）
  *
- * 【性能优化说明】
- * 原函数会遍历所有订单（O(n)复杂度），当订单池满时导致严重性能问题。
- * 现在改用订单合并机制：createSellOrder已经实现了订单合并功能，
- * 相似价格的订单会自动合并，无需提前检查。
- *
- * @deprecated 不再需要此检查，订单创建时会自动合并相似订单
+ * 【修复说明】
+ * 恢复重复订单检查，防止AI公司对同一商品重复挂单导致订单池溢出。
+ * 使用OrderBook中的索引进行O(1)查询，避免性能问题。
  */
 function hasExistingOrder(
   world: GameWorld,
@@ -2923,9 +2934,8 @@ function hasExistingOrder(
   minPrice: number,
   maxPrice: number
 ): boolean {
-  // 【优化】直接返回false，让createSellOrder处理合并逻辑
-  // 这样可以避免O(n)遍历，且createSellOrder已经实现了更好的合并策略
-  return false;
+  // 使用索引进行O(1)查询，检查该公司是否已有该商品的卖单
+  return hasExistingOrderForCompanyGoods(companyId, goodsId, 1);  // 1 = sell
 }
 
 /**
@@ -2980,11 +2990,11 @@ export function autoPostBuyOrders(world: GameWorld): number {
       
       // 库存不足5天时采购
       if (inventoryDays < 5) {
-        // 【新增】检查现有买单数量，避免订单堆积
+        // 【性能优化】使用活跃订单索引检查现有买单数量，避免O(n)遍历
         let existingBuyQuantity = 0;
-        for (let j = 0; j < o.maxOrders; j++) {
-          if (o.isActive[j] &&
-              o.companyIds[j] === companyId &&
+        const activeIndices = getActiveOrderIndices();
+        for (const j of activeIndices) {
+          if (o.companyIds[j] === companyId &&
               o.goodsIds[j] === goodsId &&
               o.types[j] === 0) { // 买单
             existingBuyQuantity += o.remainings[j];

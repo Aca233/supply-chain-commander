@@ -5,6 +5,7 @@
 
 import { useCallback, useMemo, useRef } from 'react';
 import { useGameStore } from './gameStore';
+import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
 
 // ==================== 浅比较工具 ====================
@@ -398,11 +399,8 @@ export function useMarketOverview() {
       totalVolume += world.goods.supplies[i] + world.goods.demands[i];
     }
     
-    for (let i = 0; i < world.orders.maxOrders; i++) {
-      if (world.orders.isActive[i]) {
-        totalOrders++;
-      }
-    }
+    const activeIndices = getActiveOrderIndices();
+    totalOrders = activeIndices.size;
     
     return {
       totalVolume,

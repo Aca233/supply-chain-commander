@@ -18,8 +18,8 @@ export const MAX_BUILDINGS = 3000;
 /** 最大公司数量（包括玩家和AI） */
 export const MAX_COMPANIES = 100;
 
-/** 最大订单数量（增加以支持更多交易，并预留缓冲空间） */
-export const MAX_ORDERS = 50000;
+/** 最大订单数量（大幅增加到50万以支持大规模交易，约占25MB内存） */
+export const MAX_ORDERS = 500000;
 
 /** 每个建筑最大输入槽位 */
 export const MAX_INPUTS = 8;

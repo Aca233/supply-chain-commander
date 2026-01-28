@@ -1107,7 +1107,6 @@ export function getDefaultSlotMethods(buildingTypeId: number): number[] {
     if (newConfig && newConfig.defaultMethods) {
       // 返回新系统的默认方式ID数组
       const methodIds = Object.values(newConfig.defaultMethods) as number[];
-      console.log(`[getDefaultSlotMethods] buildingTypeId=${buildingTypeId}, using NEW system:`, methodIds);
       return methodIds;
     }
   }
@@ -1115,11 +1114,9 @@ export function getDefaultSlotMethods(buildingTypeId: number): number[] {
   // 回退到旧系统
   const config = SLOT_CONFIGS_BY_BUILDING.get(buildingTypeId);
   if (!config) {
-    console.log(`[getDefaultSlotMethods] buildingTypeId=${buildingTypeId}, no config found`);
     return [];
   }
   const methodIds = config.slots.map(s => s.defaultMethod);
-  console.log(`[getDefaultSlotMethods] buildingTypeId=${buildingTypeId}, using OLD system:`, methodIds, `newSystemInitialized=${newSystemInitialized}`);
   return methodIds;
 }
 

@@ -26,6 +26,54 @@ import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
 import { RECIPES } from '@/data/recipes';
 import { updateRetailSystem, RetailTickResult } from './RetailSystem';
 
+// ==================== 预计算查找表（O(1)查找替代O(n)） ====================
+
+// 商品ID到商品定义的Map（避免每次 ALL_GOODS.find()）
+const GOODS_BY_ID: Map<number, GoodsDefinition> = new Map();
+for (const goods of ALL_GOODS) {
+  GOODS_BY_ID.set(goods.id, goods);
+}
+
+// 配方ID到配方定义的Map（避免每次 RECIPES.find()）
+const RECIPES_BY_ID: Map<number, typeof RECIPES[0]> = new Map();
+for (const recipe of RECIPES) {
+  RECIPES_BY_ID.set(recipe.id, recipe);
+}
+
+// ==================== 可复用结果对象（减少GC压力） ====================
+
+// 复用的B2B采购结果对象
+const reusableB2BResult = {
+  totalPurchases: 0,
+  totalSpent: 0,
+  totalQuantity: 0,
+};
+
+function resetB2BResult(): typeof reusableB2BResult {
+  reusableB2BResult.totalPurchases = 0;
+  reusableB2BResult.totalSpent = 0;
+  reusableB2BResult.totalQuantity = 0;
+  return reusableB2BResult;
+}
+
+// 复用的消费者购买结果对象
+const reusablePurchaseResult: ConsumerPurchaseResult = {
+  goodsId: 0,
+  quantity: 0,
+  totalSpent: 0,
+  avgPrice: 0,
+  ordersConsumed: 0,
+};
+
+function resetPurchaseResult(goodsId: number): ConsumerPurchaseResult {
+  reusablePurchaseResult.goodsId = goodsId;
+  reusablePurchaseResult.quantity = 0;
+  reusablePurchaseResult.totalSpent = 0;
+  reusablePurchaseResult.avgPrice = 0;
+  reusablePurchaseResult.ordersConsumed = 0;
+  return reusablePurchaseResult;
+}
+
 // 消费者购买配置
 export interface ConsumerBuyConfig {
   // 每tick消费的需求比例（0-1）
@@ -36,15 +84,24 @@ export interface ConsumerBuyConfig {
   minTradeQuantity: number;
   // 价格敏感度（越高越在意价格）
   priceSensitivity: number;
+  // 执行间隔（每N个tick执行一次，用于性能优化）
+  executionInterval: number;
+  // B2B采购执行间隔（每N个tick执行一次）
+  b2bExecutionInterval: number;
+  // 每次处理的商品分组数
+  goodsBatchGroups: number;
 }
 
 // 默认配置
-// 修复：提高消费速度和容忍度，让市场更活跃
+// 性能优化：降低执行频率，增加单次处理量
 const DEFAULT_CONFIG: ConsumerBuyConfig = {
-  consumptionRatePerTick: 0.08,  // 每tick消费8%的需求（从2%提升到8%）
-  maxPremiumRatio: 1.5,          // 最多接受150%基准价（从130%放宽到150%）
+  consumptionRatePerTick: 0.32, // 提高到32%（因为每4tick执行一次，0.08*4=0.32）
+  maxPremiumRatio: 1.5,          // 最多接受150%基准价
   minTradeQuantity: 1,           // 最小成交1单位
-  priceSensitivity: 0.5,         // 降低价格敏感度（从0.7降到0.5，让消费者更愿意购买）
+  priceSensitivity: 0.5,         // 价格敏感度
+  executionInterval: 4,          // 每4tick执行一次消费者购买
+  b2bExecutionInterval: 4,       // 每4tick执行一次B2B采购
+  goodsBatchGroups: 4,           // 商品分4组轮询处理
 };
 
 // 消费者购买结果
@@ -69,16 +126,39 @@ export interface MarketConsumptionSummary {
   b2bQuantity: number;
 }
 
+// 空结果缓存（避免每次创建新对象）
+const EMPTY_SUMMARY: MarketConsumptionSummary = {
+  totalPurchases: 0,
+  totalSpent: 0,
+  totalQuantity: 0,
+  purchasesByGoods: new Map(),
+  b2bPurchases: 0,
+  b2bSpent: 0,
+  b2bQuantity: 0,
+};
+
 /**
  * 执行消费者市场购买
- * 这是核心函数，每tick调用一次
- * 
+ * 性能优化：使用间隔执行和商品分批处理
+ *
  * 重要：当零售系统启用时，Pop消费通过零售店进行
  */
 export function executeConsumerPurchases(
   world: GameWorld,
   config: ConsumerBuyConfig = DEFAULT_CONFIG
 ): MarketConsumptionSummary {
+  const currentTick = world.tick;
+  
+  // 性能优化：消费者购买每N个tick执行一次
+  const shouldExecuteConsumer = currentTick % config.executionInterval === 0;
+  // B2B采购使用独立的间隔，错峰执行（偏移2个tick）
+  const shouldExecuteB2B = (currentTick + 2) % config.b2bExecutionInterval === 0;
+  
+  // 如果两者都不需要执行，返回空结果
+  if (!shouldExecuteConsumer && !shouldExecuteB2B) {
+    return EMPTY_SUMMARY;
+  }
+  
   const summary: MarketConsumptionSummary = {
     totalPurchases: 0,
     totalSpent: 0,
@@ -89,46 +169,61 @@ export function executeConsumerPurchases(
     b2bQuantity: 0,
   };
   
-  // 检查是否启用零售系统
-  // 如果有零售店，Pop只能通过零售店消费
-  if (world.retail && world.retail.count > 0) {
-    // 使用零售系统处理Pop消费
-    const retailResult = updateRetailSystem(world);
-    
-    // 转换零售结果到消费汇总
-    summary.totalPurchases = retailResult.totalCustomers;
-    summary.totalSpent = retailResult.totalRevenue;
-    summary.totalQuantity = retailResult.totalSales;
-    
-    // 更新经济统计
-    if (world.economyStats) {
-      world.economyStats.retailSales = retailResult.totalSales;
-      world.economyStats.retailRevenue = retailResult.totalRevenue;
-    }
-  } else {
-    // 降级：没有零售店时，使用传统的直接市场购买（向后兼容）
-    for (const goods of CONSUMER_GOODS) {
-      const result = purchaseGoodsForConsumers(world, goods, config);
+  // 1. 处理消费者购买
+  if (shouldExecuteConsumer) {
+    // 检查是否启用零售系统
+    if (world.retail && world.retail.count > 0) {
+      // 使用零售系统处理Pop消费
+      const retailResult = updateRetailSystem(world);
       
-      if (result.quantity > 0) {
-        summary.totalPurchases++;
-        summary.totalSpent += result.totalSpent;
-        summary.totalQuantity += result.quantity;
-        summary.purchasesByGoods.set(goods.id, result);
+      // 转换零售结果到消费汇总
+      summary.totalPurchases = retailResult.totalCustomers;
+      summary.totalSpent = retailResult.totalRevenue;
+      summary.totalQuantity = retailResult.totalSales;
+      
+      // 更新经济统计
+      if (world.economyStats) {
+        world.economyStats.retailSales = retailResult.totalSales;
+        world.economyStats.retailRevenue = retailResult.totalRevenue;
+      }
+    } else {
+      // 降级：没有零售店时，使用传统的直接市场购买（向后兼容）
+      // 性能优化：商品分组处理，每次只处理一组
+      const groupIndex = (currentTick / config.executionInterval) % config.goodsBatchGroups;
+      const goodsToProcess = CONSUMER_GOODS.filter(
+        (_, idx) => idx % config.goodsBatchGroups === groupIndex
+      );
+      
+      for (const goods of goodsToProcess) {
+        // 调整消费量以补偿分组（每组处理goodsBatchGroups倍的量）
+        const adjustedConfig = {
+          ...config,
+          consumptionRatePerTick: config.consumptionRatePerTick * config.goodsBatchGroups,
+        };
+        const result = purchaseGoodsForConsumers(world, goods, adjustedConfig);
+        
+        if (result.quantity > 0) {
+          summary.totalPurchases++;
+          summary.totalSpent += result.totalSpent;
+          summary.totalQuantity += result.quantity;
+          summary.purchasesByGoods.set(goods.id, result);
+        }
       }
     }
   }
   
-  // 2. 处理企业B2B采购（原材料和中间品）- 这部分不受零售系统影响
-  const b2bResult = executeB2BPurchases(world, config);
-  summary.b2bPurchases = b2bResult.totalPurchases;
-  summary.b2bSpent = b2bResult.totalSpent;
-  summary.b2bQuantity = b2bResult.totalQuantity;
-  
-  // 合并B2B结果到总计
-  summary.totalPurchases += b2bResult.totalPurchases;
-  summary.totalSpent += b2bResult.totalSpent;
-  summary.totalQuantity += b2bResult.totalQuantity;
+  // 2. 处理企业B2B采购（原材料和中间品）- 错峰执行
+  if (shouldExecuteB2B) {
+    const b2bResult = executeB2BPurchases(world, config);
+    summary.b2bPurchases = b2bResult.totalPurchases;
+    summary.b2bSpent = b2bResult.totalSpent;
+    summary.b2bQuantity = b2bResult.totalQuantity;
+    
+    // 合并B2B结果到总计
+    summary.totalPurchases += b2bResult.totalPurchases;
+    summary.totalSpent += b2bResult.totalSpent;
+    summary.totalQuantity += b2bResult.totalQuantity;
+  }
   
   return summary;
 }
@@ -154,7 +249,8 @@ function executeB2BPurchases(
     
     const companyId = b.owners[buildingId];
     const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
+    // 使用预计算的Map进行O(1)查找（替代O(n)的RECIPES.find）
+    const recipe = RECIPES_BY_ID.get(recipeId);
     
     if (!recipe) continue;
     
@@ -206,7 +302,8 @@ function purchaseFromMarketForCompany(
   targetQuantity: number,
   config: ConsumerBuyConfig
 ): ConsumerPurchaseResult {
-  const goods = ALL_GOODS.find(g => g.id === goodsId);
+  // 使用预计算的Map进行O(1)查找（替代O(n)的ALL_GOODS.find）
+  const goods = GOODS_BY_ID.get(goodsId);
   if (!goods) {
     return { goodsId, quantity: 0, totalSpent: 0, avgPrice: 0, ordersConsumed: 0 };
   }
@@ -636,7 +733,8 @@ export function getGoodsConsumptionPotential(
   sellOrdersVolume: number;
   estimatedDailyConsumption: number;
 } {
-  const goods = ALL_GOODS.find(g => g.id === goodsId);
+  // 使用预计算的Map进行O(1)查找（替代O(n)的ALL_GOODS.find）
+  const goods = GOODS_BY_ID.get(goodsId);
   if (!goods) {
     return {
       demand: 0,

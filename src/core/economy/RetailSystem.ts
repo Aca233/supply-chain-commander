@@ -17,7 +17,7 @@ import { GameWorld } from '../world/GameWorld';
 import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
 import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition } from '@/data/goods';
 import { BUILDINGS_BY_ID, isRetailBuilding, getRetailConfig, RetailConfig } from '@/data/buildings';
-import { createBuyOrder, getOrderBookView } from '../market/OrderBook';
+import { createBuyOrder, getOrderBookView, getActiveOrderIndices } from '../market/OrderBook';
 import { getOrderBookIndex } from '../market/OrderBookIndex';
 import {
   GOODS_COUNT,
@@ -65,6 +65,52 @@ const attractivenessCache: StoreAttractivenessCache = {
 /** 消费批次控制 */
 let consumptionBatchIndex = 0;
 const CONSUMPTION_BATCH_SIZE = 10;  // 每tick处理10种商品（从5提高到10）
+
+// ==================== 性能优化：可复用对象池 ====================
+
+/** 可复用的RetailTickResult对象，避免每tick创建新对象 */
+let reusableTickResult: RetailTickResult = {
+  totalSales: 0,
+  totalRevenue: 0,
+  totalCustomers: 0,
+  restockOrders: 0,
+  priceAdjustments: 0,
+  stockouts: 0,
+};
+
+/** 可复用的PopConsumptionResult对象 */
+let reusableConsumptionResult: PopConsumptionResult = {
+  totalQuantity: 0,
+  totalSpent: 0,
+  customerCount: 0,
+  satisfiedDemand: 0,
+  purchasesByGoods: new Map(),
+  purchasesByRetail: new Map(),
+};
+
+/** 创建新的RetailTickResult对象 */
+function createTickResult(): RetailTickResult {
+  return {
+    totalSales: 0,
+    totalRevenue: 0,
+    totalCustomers: 0,
+    restockOrders: 0,
+    priceAdjustments: 0,
+    stockouts: 0,
+  };
+}
+
+/** 创建新的PopConsumptionResult对象 */
+function createConsumptionResult(): PopConsumptionResult {
+  return {
+    totalQuantity: 0,
+    totalSpent: 0,
+    customerCount: 0,
+    satisfiedDemand: 0,
+    purchasesByGoods: new Map(),
+    purchasesByRetail: new Map(),
+  };
+}
 
 // ==================== 类型定义 ====================
 
@@ -261,14 +307,22 @@ export function registerRetailStore(world: GameWorld, buildingId: number, isNewl
  * 每tick更新零售系统
  */
 export function updateRetailSystem(world: GameWorld): RetailTickResult {
-  const result: RetailTickResult = {
-    totalSales: 0,
-    totalRevenue: 0,
-    totalCustomers: 0,
-    restockOrders: 0,
-    priceAdjustments: 0,
-    stockouts: 0,
-  };
+  // 【性能优化】使用可复用对象，避免每tick创建新对象
+  // 注意：如果对象被冻结（如HMR），则创建新对象
+  let result: RetailTickResult;
+  try {
+    reusableTickResult.totalSales = 0;
+    reusableTickResult.totalRevenue = 0;
+    reusableTickResult.totalCustomers = 0;
+    reusableTickResult.restockOrders = 0;
+    reusableTickResult.priceAdjustments = 0;
+    reusableTickResult.stockouts = 0;
+    result = reusableTickResult;
+  } catch {
+    // 对象被冻结时创建新对象
+    result = createTickResult();
+    reusableTickResult = result;
+  }
   
   if (!world.retail || world.retail.count === 0) {
     return result;
@@ -439,6 +493,7 @@ const BUY_ORDER_CACHE_TTL = 6;  // 缓存有效期6tick
 /**
  * 统计公司对某商品的现有买单总量（优化版）
  * 使用缓存避免重复遍历
+ * 【性能优化】使用 activeOrderIndices 替代全量遍历
  */
 function countExistingBuyOrders(world: GameWorld, companyId: number, goodsId: number): number {
   // 检查缓存
@@ -451,8 +506,9 @@ function countExistingBuyOrders(world: GameWorld, companyId: number, goodsId: nu
   const o = world.orders;
   const quantities = new Map<number, number>();
   
-  // 只遍历一次，统计该公司所有商品的买单
-  for (let i = 0; i < MAX_ORDERS; i++) {
+  // 【性能优化】只遍历活跃订单，而不是所有 MAX_ORDERS
+  const activeIndices = getActiveOrderIndices();
+  for (const i of activeIndices) {
     if (!o.isActive[i]) continue;
     if (o.companyIds[i] !== companyId) continue;
     if (o.types[i] !== 0) continue;  // 0 = buy
@@ -739,14 +795,21 @@ function updateRetailGoodsCache(world: GameWorld): void {
  * 3. 简化吸引力计算
  */
 function processPopConsumption(world: GameWorld): PopConsumptionResult {
-  const result: PopConsumptionResult = {
-    totalQuantity: 0,
-    totalSpent: 0,
-    customerCount: 0,
-    satisfiedDemand: 0,
-    purchasesByGoods: new Map(),
-    purchasesByRetail: new Map(),
-  };
+  // 【性能优化】使用可复用对象，避免每tick创建新对象
+  let result: PopConsumptionResult;
+  try {
+    reusableConsumptionResult.totalQuantity = 0;
+    reusableConsumptionResult.totalSpent = 0;
+    reusableConsumptionResult.customerCount = 0;
+    reusableConsumptionResult.satisfiedDemand = 0;
+    reusableConsumptionResult.purchasesByGoods.clear();
+    reusableConsumptionResult.purchasesByRetail.clear();
+    result = reusableConsumptionResult;
+  } catch {
+    // 对象被冻结时创建新对象
+    result = createConsumptionResult();
+    reusableConsumptionResult = result;
+  }
   
   const retail = world.retail;
   if (retail.count === 0) return result;

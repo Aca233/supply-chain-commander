@@ -391,7 +391,7 @@ export const SubsidiaryPanel: React.FC<SubsidiaryPanelProps> = ({ buildingId }) 
             <p className="text-xs mt-1">升级建筑等级可解锁更多选项</p>
           </div>
         ) : (
-          <div className="grid gap-2 max-h-96 overflow-y-auto pr-1">
+          <div className="grid gap-2 max-h-[320px] overflow-y-auto scrollbar-thin pr-1">
             {filteredSubsidiaries.map(sub => {
               // 检查是否已安装
               const isInstalled = installedSubsidiaries.some(i => i.subsidiaryId === sub.id);
