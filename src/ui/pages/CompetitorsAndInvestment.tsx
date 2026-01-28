@@ -7,6 +7,7 @@
 import React, { useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
+import { useMobile } from '@/ui/hooks/useMobile';
 import { CompanyRow } from '@/ui/components/Company/CompanyRow';
 import { CompanyDetail } from '@/ui/components/Company/CompanyDetail';
 import { ControlledCompanies } from '@/ui/components/Company/ControlledCompanies';
@@ -56,6 +57,7 @@ function formatMoney(value: number): string {
 }
 
 export const CompetitorsAndInvestment: React.FC = () => {
+  const { isMobile, isTablet } = useMobile();
   const {
     getWorld,
     tick,
@@ -239,10 +241,10 @@ export const CompetitorsAndInvestment: React.FC = () => {
   };
   
   return (
-    <div className="p-6 space-y-6">
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
       {/* 页面标题 */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-[var(--text-primary)]">📊 竞争与投资</h1>
+        <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>📊 竞争与投资</h1>
         {!playerStock && (
           <Button variant="gradient" onClick={() => setShowIPOModal(true)}>
             🚀 发起IPO

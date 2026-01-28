@@ -11,6 +11,7 @@ import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { GOODS_COUNT } from '@/core/constants';
 import { LoanType } from '@/core/finance/BankingSystem';
 import { formatGameDate, tickToDate } from '@/core/world/GameWorld';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 设计系统组件
 import {
@@ -49,6 +50,7 @@ const LOAN_TYPE_NAMES: Record<LoanType, string> = {
 };
 
 export const Finance: React.FC = () => {
+  const { isMobile, isTablet } = useMobile();
   const {
     getWorld,
     lastTickResult,
@@ -284,12 +286,132 @@ export const Finance: React.FC = () => {
   const loanOptions = getPlayerLoanOptions();
   const selectedOption = loanOptions.find(o => o.type === selectedLoanType);
 
+  // 移动端布局
+  if (isMobile) {
+    return (
+      <div className="space-y-4 pb-4">
+        <h1 className="text-lg font-bold">💼 财务报表</h1>
+
+        {/* 关键指标 - 2列 */}
+        <div className="grid grid-cols-2 gap-2">
+          {metrics.slice(0, 4).map((metric) => (
+            <StatWidget
+              key={metric.label}
+              title={metric.label}
+              value={formatValue(metric.value, metric.format)}
+              icon={metric.icon}
+              compact
+            />
+          ))}
+        </div>
+
+        {/* 现金趋势 */}
+        <Card variant="elevated" padding="sm">
+          <CardHeader className="py-2">
+            <CardTitle className="text-sm">📈 现金余额</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <PriceChart
+              data={incomeData}
+              title=""
+              height={180}
+              color="#22c55e"
+            />
+          </CardContent>
+        </Card>
+
+        {/* 损益表简化版 */}
+        <Card variant="elevated" padding="sm">
+          <CardHeader className="py-2">
+            <CardTitle className="text-sm">📋 损益表</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-foreground-muted">销售收入</span>
+              <span className="text-success">¥{totalRevenue.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-foreground-muted">采购成本</span>
+              <span className="text-error">-¥{totalCost.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold pt-2 border-t border-border">
+              <span>净利润</span>
+              <span className={netProfit >= 0 ? 'text-success' : 'text-error'}>
+                {netProfit >= 0 ? '¥' : '-¥'}{Math.abs(netProfit).toLocaleString()}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 信用评级 */}
+        {creditProfile && (
+          <Card variant="game" padding="sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant={
+                    creditProfile.rating.startsWith('A') ? 'success' :
+                    creditProfile.rating.startsWith('B') ? 'warning' : 'error'
+                  }
+                  size="lg"
+                  glow
+                >
+                  {creditProfile.rating}
+                </Badge>
+                <div>
+                  <p className="text-sm font-medium">信用评级</p>
+                  <p className="text-xs text-foreground-muted">分数: {creditProfile.score}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-success">
+                  ¥{creditProfile.availableCredit.toLocaleString()}
+                </p>
+                <p className="text-xs text-foreground-muted">可用额度</p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* 贷款列表 */}
+        <Card variant="elevated" padding="sm">
+          <CardHeader className="py-2">
+            <div className="flex justify-between items-center w-full">
+              <CardTitle className="text-sm">🏦 贷款</CardTitle>
+              <Button size="xs" onClick={() => setShowLoanModal(true)}>申请</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {activeLoans.length > 0 ? (
+              <div className="space-y-2">
+                {activeLoans.map((loan) => (
+                  <div key={loan.id} className="p-2 rounded-lg bg-background-muted">
+                    <div className="flex justify-between text-sm">
+                      <span>{LOAN_TYPE_NAMES[loan.type as LoanType]}</span>
+                      <span className="font-medium">¥{loan.remainingPrincipal.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-foreground-muted mt-1">
+                      <span>月供: ¥{loan.monthlyPayment.toLocaleString()}</span>
+                      <Button size="xs" variant="ghost" onClick={() => prepayPlayerLoan(loan.id)}>还款</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-foreground-muted text-center py-4">🎉 无贷款</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-[var(--text-primary)]">💼 财务报表</h1>
+    <div className={`space-y-6 ${isTablet ? 'p-4' : 'p-6'}`}>
+      <h1 className={`font-bold ${isTablet ? 'text-xl' : 'text-2xl'}`}>💼 财务报表</h1>
 
       {/* 关键指标卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className={`grid gap-4 ${isTablet ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
         {metrics.map((metric, index) => (
           <StatWidget
             key={metric.label}

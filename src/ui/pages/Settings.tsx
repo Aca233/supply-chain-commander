@@ -9,6 +9,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager';
 import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 import { formatGameDate } from '@/core/world/GameWorld';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 设计系统组件
 import {
@@ -38,6 +39,7 @@ import {
 const PerformanceDashboard = lazy(() => import('@/ui/components/Performance/PerformanceDashboard'));
 
 export const Settings: React.FC = () => {
+  const { isMobile, isTablet } = useMobile();
   const { getWorld, ui, toggleTheme, tick } = useGameStore();
   const world = getWorld();
   const theme = ui.theme;
@@ -192,15 +194,23 @@ export const Settings: React.FC = () => {
   ];
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-[var(--text-primary)]">⚙️ 设置</h1>
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
+      <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>⚙️ 设置</h1>
 
       <Tabs defaultValue="game">
-        <TabsList variant="game">
-          <TabsTrigger value="game" variant="game">🎮 游戏设置</TabsTrigger>
-          <TabsTrigger value="save" variant="game">💾 存档管理</TabsTrigger>
-          <TabsTrigger value="performance" variant="game">📊 性能监控</TabsTrigger>
-          <TabsTrigger value="about" variant="game">ℹ️ 关于游戏</TabsTrigger>
+        <TabsList variant="game" className={isMobile ? 'flex-wrap gap-1' : ''}>
+          <TabsTrigger value="game" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
+            {isMobile ? '🎮' : '🎮 游戏设置'}
+          </TabsTrigger>
+          <TabsTrigger value="save" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
+            {isMobile ? '💾' : '💾 存档管理'}
+          </TabsTrigger>
+          <TabsTrigger value="performance" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
+            {isMobile ? '📊' : '📊 性能监控'}
+          </TabsTrigger>
+          <TabsTrigger value="about" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
+            {isMobile ? 'ℹ️' : 'ℹ️ 关于游戏'}
+          </TabsTrigger>
         </TabsList>
 
         {/* 游戏设置 */}

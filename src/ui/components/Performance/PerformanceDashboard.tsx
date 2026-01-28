@@ -1,6 +1,7 @@
 /**
  * 性能监控面板
  * 实时显示FPS、Tick耗时、内存使用、系统breakdown等
+ * 使用统一设计系统，支持主题切换
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -9,14 +10,11 @@ import type { EChartsOption } from 'echarts';
 import {
   perfMonitor,
   PerformanceSnapshot,
-  FPSData,
-  MemoryData,
-  TickBreakdown,
-  PoolStatsData,
   downloadPerformanceJSON,
   downloadPerformanceCSV,
   ExportOptions,
 } from '@/core/performance';
+import { Card, CardHeader, CardTitle, CardContent, Button, Switch, Badge } from '@/ui/design-system';
 
 // ==================== 类型定义 ====================
 
@@ -39,19 +37,19 @@ const formatBytes = (bytes: number): string => {
 
 const getStatusColor = (status: 'healthy' | 'warning' | 'critical'): string => {
   switch (status) {
-    case 'healthy': return '#22c55e';
-    case 'warning': return '#f59e0b';
-    case 'critical': return '#ef4444';
-    default: return '#64748b';
+    case 'healthy': return 'var(--success)';
+    case 'warning': return 'var(--warning)';
+    case 'critical': return 'var(--error)';
+    default: return 'var(--text-muted)';
   }
 };
 
 const getStatusBgClass = (status: 'healthy' | 'warning' | 'critical'): string => {
   switch (status) {
-    case 'healthy': return 'bg-green-500/20 border-green-500/50';
-    case 'warning': return 'bg-yellow-500/20 border-yellow-500/50';
-    case 'critical': return 'bg-red-500/20 border-red-500/50';
-    default: return 'bg-slate-700 border-slate-600';
+    case 'healthy': return 'bg-[var(--success-muted)] border-[var(--success)]';
+    case 'warning': return 'bg-[var(--warning-muted)] border-[var(--warning)]';
+    case 'critical': return 'bg-[var(--error-muted)] border-[var(--error)]';
+    default: return 'bg-[var(--bg-surface)] border-[var(--border-default)]';
   }
 };
 
@@ -61,20 +59,20 @@ const getStatusBgClass = (status: 'healthy' | 'warning' | 'critical'): string =>
  * 指标卡片
  */
 const MetricCard: React.FC<MetricCardProps> = ({ title, value, subtitle, status, icon }) => {
-  const statusColor = status ? getStatusColor(status) : '#3b82f6';
-  const bgClass = status ? getStatusBgClass(status) : 'bg-slate-800 border-slate-700';
+  const statusColor = status ? getStatusColor(status) : 'var(--accent)';
+  const bgClass = status ? getStatusBgClass(status) : 'bg-[var(--bg-surface)] border-[var(--border-default)]';
   
   return (
     <div className={`rounded-lg p-4 border ${bgClass}`}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-slate-400">{title}</span>
+        <span className="text-sm text-[var(--text-muted)]">{title}</span>
         {icon && <span className="text-lg">{icon}</span>}
       </div>
       <div className="text-2xl font-bold" style={{ color: statusColor }}>
         {value}
       </div>
       {subtitle && (
-        <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
+        <div className="text-xs text-[var(--text-subtle)] mt-1">{subtitle}</div>
       )}
     </div>
   );
@@ -92,7 +90,7 @@ const HealthIndicator: React.FC<{ health: 'healthy' | 'warning' | 'critical' }> 
   
   return (
     <div className={`rounded-lg p-4 border ${getStatusBgClass(health)} text-center`}>
-      <div className="text-sm text-slate-400 mb-2">健康状态</div>
+      <div className="text-sm text-[var(--text-muted)] mb-2">健康状态</div>
       <div className="text-2xl font-bold" style={{ color: getStatusColor(health) }}>
         {labels[health]}
       </div>
@@ -161,9 +159,9 @@ export const PerformanceDashboard: React.FC = () => {
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        borderColor: '#334155',
-        textStyle: { color: '#e2e8f0', fontSize: 12 },
+        backgroundColor: 'var(--bg-elevated)',
+        borderColor: 'var(--border-default)',
+        textStyle: { color: 'var(--text-primary)', fontSize: 12 },
         formatter: (params: any) => {
           const p = params[0];
           return `Tick ${p.name}<br/>耗时: ${p.value.toFixed(2)}ms`;
@@ -173,16 +171,16 @@ export const PerformanceDashboard: React.FC = () => {
       xAxis: {
         type: 'category',
         data: times,
-        axisLine: { lineStyle: { color: '#334155' } },
-        axisLabel: { color: '#94a3b8', fontSize: 10 },
+        axisLine: { lineStyle: { color: 'var(--border-default)' } },
+        axisLabel: { color: 'var(--text-muted)', fontSize: 10 },
       },
       yAxis: {
         type: 'value',
         min: 0,
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
+        splitLine: { lineStyle: { color: 'var(--border-muted)', type: 'dashed' } },
         axisLabel: { 
-          color: '#94a3b8', 
+          color: 'var(--text-muted)', 
           fontSize: 10,
           formatter: (v: number) => `${v}ms`,
         },
@@ -194,7 +192,7 @@ export const PerformanceDashboard: React.FC = () => {
           data: values,
           smooth: true,
           symbol: 'none',
-          lineStyle: { color: '#3b82f6', width: 2 },
+          lineStyle: { color: 'var(--accent)', width: 2 },
           areaStyle: {
             color: {
               type: 'linear',
@@ -211,13 +209,13 @@ export const PerformanceDashboard: React.FC = () => {
             data: [
               { 
                 yAxis: thresholds.warning, 
-                lineStyle: { color: '#f59e0b', type: 'dashed', width: 1 },
-                label: { show: true, formatter: '警告', color: '#f59e0b', fontSize: 10 },
+                lineStyle: { color: 'var(--warning)', type: 'dashed', width: 1 },
+                label: { show: true, formatter: '警告', color: 'var(--warning)', fontSize: 10 },
               },
               { 
                 yAxis: thresholds.critical, 
-                lineStyle: { color: '#ef4444', type: 'dashed', width: 1 },
-                label: { show: true, formatter: '临界', color: '#ef4444', fontSize: 10 },
+                lineStyle: { color: 'var(--error)', type: 'dashed', width: 1 },
+                label: { show: true, formatter: '临界', color: 'var(--error)', fontSize: 10 },
               },
             ],
           },
@@ -235,23 +233,23 @@ export const PerformanceDashboard: React.FC = () => {
       { name: 'AI', value: breakdown.ai, itemStyle: { color: '#f59e0b' } },
       { name: '零售', value: breakdown.retail, itemStyle: { color: '#22c55e' } },
       { name: '其他', value: breakdown.other, itemStyle: { color: '#64748b' } },
-    ].filter(d => d.value > 0.01); // 过滤掉太小的值
+    ].filter(d => d.value > 0.01);
     
     return {
       animation: false,
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'item',
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        borderColor: '#334155',
-        textStyle: { color: '#e2e8f0', fontSize: 12 },
+        backgroundColor: 'var(--bg-elevated)',
+        borderColor: 'var(--border-default)',
+        textStyle: { color: 'var(--text-primary)', fontSize: 12 },
         formatter: (params: any) => `${params.name}: ${params.value.toFixed(2)}ms (${params.percent}%)`,
       },
       legend: {
         orient: 'vertical',
         right: 10,
         top: 'center',
-        textStyle: { color: '#94a3b8', fontSize: 11 },
+        textStyle: { color: 'var(--text-muted)', fontSize: 11 },
       },
       series: [
         {
@@ -260,10 +258,10 @@ export const PerformanceDashboard: React.FC = () => {
           radius: ['40%', '70%'],
           center: ['35%', '50%'],
           avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 4, borderColor: '#0f172a', borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: 'var(--bg-base)', borderWidth: 2 },
           label: { show: false },
           emphasis: {
-            label: { show: true, fontSize: 12, fontWeight: 'bold', color: '#fff' },
+            label: { show: true, fontSize: 12, fontWeight: 'bold', color: 'var(--text-primary)' },
           },
           data,
         },
@@ -288,9 +286,9 @@ export const PerformanceDashboard: React.FC = () => {
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        borderColor: '#334155',
-        textStyle: { color: '#e2e8f0', fontSize: 12 },
+        backgroundColor: 'var(--bg-elevated)',
+        borderColor: 'var(--border-default)',
+        textStyle: { color: 'var(--text-primary)', fontSize: 12 },
         formatter: (params: any) => {
           const d = poolData.find(p => p.name === params[0].name);
           if (!d) return '';
@@ -302,14 +300,14 @@ export const PerformanceDashboard: React.FC = () => {
         type: 'value',
         max: 100,
         axisLine: { show: false },
-        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
-        axisLabel: { color: '#94a3b8', fontSize: 10, formatter: (v: number) => `${v}%` },
+        splitLine: { lineStyle: { color: 'var(--border-muted)', type: 'dashed' } },
+        axisLabel: { color: 'var(--text-muted)', fontSize: 10, formatter: (v: number) => `${v}%` },
       },
       yAxis: {
         type: 'category',
         data: poolData.map(d => d.name),
-        axisLine: { lineStyle: { color: '#334155' } },
-        axisLabel: { color: '#94a3b8', fontSize: 11 },
+        axisLine: { lineStyle: { color: 'var(--border-default)' } },
+        axisLabel: { color: 'var(--text-muted)', fontSize: 11 },
       },
       series: [
         {
@@ -318,7 +316,7 @@ export const PerformanceDashboard: React.FC = () => {
           data: poolData.map(d => ({
             value: d.usage,
             itemStyle: { 
-              color: d.usage > 80 ? '#ef4444' : d.usage > 50 ? '#f59e0b' : '#22c55e',
+              color: d.usage > 80 ? 'var(--error)' : d.usage > 50 ? 'var(--warning)' : 'var(--success)',
               borderRadius: [0, 4, 4, 0],
             },
           })),
@@ -326,7 +324,7 @@ export const PerformanceDashboard: React.FC = () => {
           label: {
             show: true,
             position: 'right',
-            color: '#94a3b8',
+            color: 'var(--text-muted)',
             fontSize: 10,
             formatter: (params: any) => `${params.value.toFixed(0)}%`,
           },
@@ -338,16 +336,15 @@ export const PerformanceDashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* 标题和控制栏 */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">性能监控</h2>
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">📊 性能监控</h2>
+        <div className="flex items-center gap-4 flex-wrap">
           {/* 自动刷新开关 */}
-          <label className="flex items-center gap-2 text-sm text-slate-400">
-            <input
-              type="checkbox"
+          <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+            <Switch
               checked={isAutoRefresh}
-              onChange={e => setIsAutoRefresh(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500"
+              onCheckedChange={setIsAutoRefresh}
+              variant="game"
             />
             自动刷新
           </label>
@@ -356,7 +353,7 @@ export const PerformanceDashboard: React.FC = () => {
           <select
             value={refreshInterval}
             onChange={e => setRefreshInterval(Number(e.target.value))}
-            className="bg-slate-700 text-white text-sm px-3 py-1 rounded border border-slate-600"
+            className="bg-[var(--bg-surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 rounded-lg border border-[var(--border-default)] focus:outline-none focus:border-[var(--accent)]"
           >
             <option value={250}>250ms</option>
             <option value={500}>500ms</option>
@@ -369,31 +366,25 @@ export const PerformanceDashboard: React.FC = () => {
             <select
               value={exportTimeRange}
               onChange={e => setExportTimeRange(e.target.value as ExportOptions['timeRange'])}
-              className="bg-slate-700 text-white text-sm px-3 py-1 rounded border border-slate-600"
+              className="bg-[var(--bg-surface)] text-[var(--text-primary)] text-sm px-3 py-1.5 rounded-lg border border-[var(--border-default)] focus:outline-none focus:border-[var(--accent)]"
             >
               <option value="last100">最近100条</option>
               <option value="last500">最近500条</option>
               <option value="last1000">最近1000条</option>
               <option value="all">全部</option>
             </select>
-            <button
-              onClick={handleExportJSON}
-              className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-            >
+            <Button size="sm" variant="primary" onClick={handleExportJSON}>
               导出JSON
-            </button>
-            <button
-              onClick={handleExportCSV}
-              className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
-            >
+            </Button>
+            <Button size="sm" variant="success" onClick={handleExportCSV}>
               导出CSV
-            </button>
+            </Button>
           </div>
         </div>
       </div>
       
       {/* 指标卡片 */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="FPS"
           value={fps.current.toFixed(1)}
@@ -419,82 +410,98 @@ export const PerformanceDashboard: React.FC = () => {
       </div>
       
       {/* 图表区域 */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Tick耗时历史 */}
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h3 className="text-sm font-medium text-slate-300 mb-3">Tick耗时历史</h3>
-          <ReactECharts
-            option={tickTimeChartOption}
-            style={{ height: 200 }}
-            opts={{ renderer: 'canvas' }}
-            notMerge={true}
-            lazyUpdate={true}
-          />
-        </div>
+        <Card variant="elevated">
+          <CardHeader>
+            <CardTitle>Tick耗时历史</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ReactECharts
+              option={tickTimeChartOption}
+              style={{ height: 200 }}
+              opts={{ renderer: 'canvas' }}
+              notMerge={true}
+              lazyUpdate={true}
+            />
+          </CardContent>
+        </Card>
         
         {/* 系统Breakdown */}
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h3 className="text-sm font-medium text-slate-300 mb-3">系统耗时分布</h3>
-          <ReactECharts
-            option={breakdownChartOption}
-            style={{ height: 200 }}
-            opts={{ renderer: 'canvas' }}
-            notMerge={true}
-            lazyUpdate={true}
-          />
-        </div>
+        <Card variant="elevated">
+          <CardHeader>
+            <CardTitle>系统耗时分布</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ReactECharts
+              option={breakdownChartOption}
+              style={{ height: 200 }}
+              opts={{ renderer: 'canvas' }}
+              notMerge={true}
+              lazyUpdate={true}
+            />
+          </CardContent>
+        </Card>
       </div>
       
       {/* 对象池状态 */}
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h3 className="text-sm font-medium text-slate-300 mb-3">对象池使用率</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <ReactECharts
-            option={poolChartOption}
-            style={{ height: 160 }}
-            opts={{ renderer: 'canvas' }}
-            notMerge={true}
-            lazyUpdate={true}
-          />
-          
-          {/* 对象池详细信息 */}
-          {pools && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="bg-slate-700/50 rounded p-3">
-                <div className="text-slate-400 mb-1">Orders Pool</div>
-                <div className="text-white">活跃: {pools.orders.activeCount} / 池中: {pools.orders.poolSize}</div>
-                <div className="text-slate-500">命中率: {(pools.orders.hitRate * 100).toFixed(1)}%</div>
+      <Card variant="elevated">
+        <CardHeader>
+          <CardTitle>对象池使用率</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ReactECharts
+              option={poolChartOption}
+              style={{ height: 160 }}
+              opts={{ renderer: 'canvas' }}
+              notMerge={true}
+              lazyUpdate={true}
+            />
+            
+            {/* 对象池详细信息 */}
+            {pools && (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-[var(--bg-muted)] rounded-lg p-3">
+                  <div className="text-[var(--text-muted)] mb-1">Orders Pool</div>
+                  <div className="text-[var(--text-primary)]">活跃: {pools.orders.activeCount} / 池中: {pools.orders.poolSize}</div>
+                  <div className="text-[var(--text-subtle)]">命中率: {(pools.orders.hitRate * 100).toFixed(1)}%</div>
+                </div>
+                <div className="bg-[var(--bg-muted)] rounded-lg p-3">
+                  <div className="text-[var(--text-muted)] mb-1">Trades Pool</div>
+                  <div className="text-[var(--text-primary)]">活跃: {pools.trades.activeCount} / 池中: {pools.trades.poolSize}</div>
+                  <div className="text-[var(--text-subtle)]">命中率: {(pools.trades.hitRate * 100).toFixed(1)}%</div>
+                </div>
+                <div className="bg-[var(--bg-muted)] rounded-lg p-3">
+                  <div className="text-[var(--text-muted)] mb-1">Events Pool</div>
+                  <div className="text-[var(--text-primary)]">活跃: {pools.events.activeCount} / 池中: {pools.events.poolSize}</div>
+                  <div className="text-[var(--text-subtle)]">命中率: {(pools.events.hitRate * 100).toFixed(1)}%</div>
+                </div>
+                <div className="bg-[var(--bg-muted)] rounded-lg p-3">
+                  <div className="text-[var(--text-muted)] mb-1">TypedArrays Pool</div>
+                  <div className="text-[var(--text-primary)]">数组: {pools.typedArrays.pooledArrays} / {formatBytes(pools.typedArrays.pooledBytes)}</div>
+                  <div className="text-[var(--text-subtle)]">命中率: {(pools.typedArrays.hitRate * 100).toFixed(1)}%</div>
+                </div>
               </div>
-              <div className="bg-slate-700/50 rounded p-3">
-                <div className="text-slate-400 mb-1">Trades Pool</div>
-                <div className="text-white">活跃: {pools.trades.activeCount} / 池中: {pools.trades.poolSize}</div>
-                <div className="text-slate-500">命中率: {(pools.trades.hitRate * 100).toFixed(1)}%</div>
-              </div>
-              <div className="bg-slate-700/50 rounded p-3">
-                <div className="text-slate-400 mb-1">Events Pool</div>
-                <div className="text-white">活跃: {pools.events.activeCount} / 池中: {pools.events.poolSize}</div>
-                <div className="text-slate-500">命中率: {(pools.events.hitRate * 100).toFixed(1)}%</div>
-              </div>
-              <div className="bg-slate-700/50 rounded p-3">
-                <div className="text-slate-400 mb-1">TypedArrays Pool</div>
-                <div className="text-white">数组: {pools.typedArrays.pooledArrays} / {formatBytes(pools.typedArrays.pooledBytes)}</div>
-                <div className="text-slate-500">命中率: {(pools.typedArrays.hitRate * 100).toFixed(1)}%</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
       
       {/* 最近警告 */}
       {latestSnapshot && latestSnapshot.warnings.length > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-yellow-400 mb-2">⚠️ 性能警告</h3>
-          <ul className="text-sm text-yellow-200 space-y-1">
-            {latestSnapshot.warnings.map((w, i) => (
-              <li key={i}>{w}</li>
-            ))}
-          </ul>
-        </div>
+        <Card variant="elevated" className="bg-[var(--warning-muted)] border-[var(--warning)]">
+          <CardHeader>
+            <CardTitle className="text-[var(--warning)]">⚠️ 性能警告</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-sm text-[var(--text-primary)] space-y-1">
+              {latestSnapshot.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

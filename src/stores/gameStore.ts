@@ -1032,10 +1032,12 @@ export const useGameStore = create<GameState & GameActions>()(
         state.ui.theme = newTheme;
         localStorage.setItem('theme', newTheme);
         // 更新 document class
-        if (newTheme === 'dark') {
-          document.documentElement.classList.add('dark');
-        } else {
+        if (newTheme === 'light') {
+          document.documentElement.classList.add('light');
           document.documentElement.classList.remove('dark');
+        } else {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
         }
       });
     },
@@ -1044,10 +1046,12 @@ export const useGameStore = create<GameState & GameActions>()(
       set((state) => {
         state.ui.theme = theme;
         localStorage.setItem('theme', theme);
-        if (theme === 'dark') {
-          document.documentElement.classList.add('dark');
-        } else {
+        if (theme === 'light') {
+          document.documentElement.classList.add('light');
           document.documentElement.classList.remove('dark');
+        } else {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
         }
       });
     },

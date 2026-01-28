@@ -23,12 +23,15 @@ const badgeVariants = cva(
         error: 'bg-[var(--error-muted)] text-[var(--error)]',
         info: 'bg-[var(--info-muted)] text-[var(--info)]',
         outline: 'bg-transparent border border-[var(--border-default)] text-[var(--text-secondary)]',
+        // 毛玻璃风格
+        glass: 'bg-white/[0.08] backdrop-blur-sm border border-white/[0.12] text-white/90',
+        subtle: 'bg-white/[0.05] text-white/60 border border-white/[0.08]',
         // 游戏风格
-        gold: 'bg-yellow-500/15 text-yellow-400',
-        legendary: 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300',
-        epic: 'bg-purple-500/15 text-purple-400',
-        rare: 'bg-blue-500/15 text-blue-400',
-        common: 'bg-gray-500/15 text-gray-400',
+        gold: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30',
+        legendary: 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30',
+        epic: 'bg-purple-500/15 text-purple-400 border border-purple-500/30',
+        rare: 'bg-blue-500/15 text-blue-400 border border-blue-500/30',
+        common: 'bg-gray-500/15 text-gray-400 border border-gray-500/30',
       },
       size: {
         xs: 'text-[9px] px-1 py-0.5 rounded',

@@ -3,3 +3,5 @@
  */
 
 export { useSound, useSoundEffects } from './useSound';
+export { useMobile, useIsMobile, useMediaQuery, BREAKPOINTS } from './useMobile';
+export type { MobileState, BreakpointKey } from './useMobile';

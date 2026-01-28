@@ -1,6 +1,7 @@
 /**
  * 🎮 主菜单专用样式
  * 包含动画、背景效果、霓虹发光等
+ * 支持深色/浅色主题
  */
 
 /* ==================== 背景层样式 ==================== */
@@ -12,6 +13,11 @@
   background: linear-gradient(135deg, #050505 0%, #0a0a12 50%, #050508 100%);
 }
 
+/* 浅色主题背景 */
+.light .menu-background {
+  background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #f8fafc 100%);
+}
+
 /* 网格背景 */
 .menu-grid {
   position: absolute;
@@ -21,6 +27,12 @@
     linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
   background-size: 60px 60px;
   animation: gridMove 20s linear infinite;
+}
+
+.light .menu-grid {
+  background-image:
+    linear-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.08) 1px, transparent 1px);
 }
 
 @keyframes gridMove {
@@ -50,6 +62,15 @@
   animation: glowPulse 4s ease-in-out infinite;
 }
 
+.light .menu-glow-top {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(37, 99, 235, 0.12) 0%,
+    rgba(99, 102, 241, 0.06) 30%,
+    transparent 70%
+  );
+}
+
 @keyframes glowPulse {
   0%, 100% {
     opacity: 0.8;
@@ -74,6 +95,14 @@
     transparent 100%
   );
   pointer-events: none;
+}
+
+.light .menu-gradient-bottom {
+  background: linear-gradient(
+    to top,
+    rgba(248, 250, 252, 0.9) 0%,
+    transparent 100%
+  );
 }
 
 /* ==================== 粒子效果 ==================== */
@@ -110,6 +139,18 @@
   animation: lineExpand 0.6s ease-out 0.2s forwards;
 }
 
+.light .menu-decorative-line {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(37, 99, 235, 0.5) 20%,
+    rgba(37, 99, 235, 0.7) 50%,
+    rgba(37, 99, 235, 0.5) 80%,
+    transparent 100%
+  );
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);
+}
+
 @keyframes lineExpand {
   0% {
     transform: scaleX(0);
@@ -135,8 +176,19 @@
   line-height: 1.2;
 }
 
+.light .menu-title-main {
+  color: #2563EB;
+  text-shadow:
+    0 2px 4px rgba(37, 99, 235, 0.2),
+    0 4px 8px rgba(37, 99, 235, 0.1);
+}
+
 .menu-title-main.glow-animation {
   animation: textGlow 3s ease-in-out infinite;
+}
+
+.light .menu-title-main.glow-animation {
+  animation: textGlowLight 3s ease-in-out infinite;
 }
 
 @keyframes textGlow {
@@ -157,6 +209,21 @@
   }
 }
 
+@keyframes textGlowLight {
+  0%, 100% {
+    text-shadow:
+      0 2px 4px rgba(37, 99, 235, 0.2),
+      0 4px 8px rgba(37, 99, 235, 0.1);
+    filter: brightness(1);
+  }
+  50% {
+    text-shadow:
+      0 2px 8px rgba(37, 99, 235, 0.3),
+      0 4px 16px rgba(37, 99, 235, 0.2);
+    filter: brightness(1.05);
+  }
+}
+
 /* 副标题 */
 .menu-title-sub {
   font-family: 'Space Grotesk', 'Inter', sans-serif;
@@ -170,6 +237,10 @@
   animation: fadeSlideIn 0.5s ease-out 0.7s forwards;
 }
 
+.light .menu-title-sub {
+  color: #1e293b;
+}
+
 /* 口号 */
 .menu-tagline {
   font-family: 'Inter', sans-serif;
@@ -180,6 +251,10 @@
   margin-top: 8px;
   opacity: 0;
   animation: fadeIn 0.5s ease-out 1s forwards;
+}
+
+.light .menu-tagline {
+  color: #64748b;
 }
 
 /* 逐字动画 */
@@ -262,7 +337,7 @@
   }
 }
 
-/* 主要按钮 - 霓虹风格 */
+/* 主要按钮 - 霓虹风格（深色） */
 .menu-button--primary {
   background: transparent;
   border: 2px solid rgba(0, 212, 255, 0.6);
@@ -286,6 +361,26 @@
 
 .menu-button--primary:active {
   background: rgba(0, 212, 255, 0.15);
+  transform: scale(0.98);
+}
+
+/* 主要按钮 - 浅色版 */
+.light .menu-button--primary {
+  background: #2563EB;
+  border: 2px solid #2563EB;
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.light .menu-button--primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+  transform: scale(1.02);
+}
+
+.light .menu-button--primary:active {
+  background: #1e40af;
   transform: scale(0.98);
 }
 
@@ -315,6 +410,22 @@
   transform: scale(0.99);
 }
 
+/* 次要按钮 - 浅色版 */
+.light .menu-button--secondary {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+}
+
+.light .menu-button--secondary:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.light .menu-button--secondary:active {
+  background: #cbd5e1;
+}
+
 /* 幽灵按钮 */
 .menu-button--ghost {
   background: transparent;
@@ -331,6 +442,21 @@
 
 .menu-button--ghost:active {
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* 幽灵按钮 - 浅色版 */
+.light .menu-button--ghost {
+  color: #64748b;
+}
+
+.light .menu-button--ghost:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1e293b;
+}
+
+.light .menu-button--ghost:active {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 /* 危险按钮（退出） */
@@ -351,6 +477,21 @@
   background: rgba(239, 68, 68, 0.15);
 }
 
+/* 危险按钮 - 浅色版 */
+.light .menu-button--danger {
+  color: #94a3b8;
+}
+
+.light .menu-button--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: #dc2626;
+}
+
+.light .menu-button--danger:active {
+  background: rgba(220, 38, 38, 0.12);
+}
+
 /* 禁用状态 */
 .menu-button:disabled {
   opacity: 0.4;
@@ -362,6 +503,10 @@
   background: transparent;
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: none;
+}
+
+.light .menu-button:disabled:hover {
+  border-color: #e2e8f0;
 }
 
 /* ==================== 底部信息 ==================== */
@@ -385,16 +530,28 @@
   color: #52525B;
 }
 
+.light .menu-footer-version {
+  color: #94a3b8;
+}
+
 .menu-footer-credits {
   font-family: 'Inter', sans-serif;
   font-size: 12px;
   color: #52525B;
 }
 
+.light .menu-footer-credits {
+  color: #94a3b8;
+}
+
 .menu-footer-credits .heart {
   color: #EF4444;
   display: inline-block;
   animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+.light .menu-footer-credits .heart {
+  color: #dc2626;
 }
 
 @keyframes heartbeat {

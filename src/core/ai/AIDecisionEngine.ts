@@ -2301,7 +2301,13 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       return false;
     }
     
-    // 执行升级
+    // 执行升级 - 添加原子性保护，再次检查防止并发降级
+    const currentLevelNow = world.buildings.levels[buildingId];
+    if (targetLevel <= currentLevelNow) {
+      console.log(`[AI升级] 跳过：建筑#${buildingId}等级${currentLevelNow}已>=目标${targetLevel}`);
+      return false;
+    }
+    
     world.companies.cash[companyId] -= cost;
     world.buildings.levels[buildingId] = targetLevel;
     
@@ -3854,10 +3860,11 @@ function getCompanyPersonalityForSubsidiary(companyId: number): AIPersonality {
 /**
  * 战略物资定义
  * 这些商品是其他产业链必需的，如果供应中断会导致经济停滞
- * 
- * 包含两类：
+ *
+ * 包含三类：
  * 1. 建材类：建造建筑所需（钢材、水泥、玻璃、木材等）
  * 2. 中间品类：生产其他商品所需（橡胶、化学品、塑料等）
+ * 3. 关键零部件：高端产品必需（电子元件、芯片、电池等）
  */
 const STRATEGIC_BUILDING_MATERIALS = [
   // === 建筑材料 ===
@@ -3875,11 +3882,22 @@ const STRATEGIC_BUILDING_MATERIALS = [
   { goodsId: 15, name: '铜材', minSupply: 200, buildingTypeId: 8 },      // 钢铁厂
   { goodsId: 16, name: '铝材', minSupply: 200, buildingTypeId: 15 },     // 铝冶炼厂
   
+  // === 关键零部件（高端产品必需）===
+  { goodsId: 26, name: '电子元件', minSupply: 200, buildingTypeId: 16 }, // 电子厂 - 手机、电脑、汽车、家电等必需
+  { goodsId: 27, name: '芯片', minSupply: 100, buildingTypeId: 17 },     // 芯片厂 - 高端电子产品必需
+  { goodsId: 28, name: '电池', minSupply: 150, buildingTypeId: 20 },     // 电池厂 - 电动车、手机、储能必需
+  { goodsId: 29, name: '电机', minSupply: 100, buildingTypeId: 21 },     // 机械厂 - 电动设备必需
+  { goodsId: 30, name: '屏幕', minSupply: 100, buildingTypeId: 21 },     // 机械厂 - 手机、电脑必需
+  { goodsId: 31, name: '机械部件', minSupply: 150, buildingTypeId: 21 }, // 机械厂 - 工业机器人等必需
+  { goodsId: 32, name: '汽车零部件', minSupply: 100, buildingTypeId: 21 }, // 机械厂 - 汽车生产必需
+  
   // === 原材料（上游供应）===
   { goodsId: 0, name: '铁矿石', minSupply: 500, buildingTypeId: 0 },     // 铁矿
+  { goodsId: 1, name: '铜矿石', minSupply: 300, buildingTypeId: 1 },     // 铜矿 - 铜材的上游
   { goodsId: 3, name: '煤炭', minSupply: 500, buildingTypeId: 2 },       // 煤矿
   { goodsId: 9, name: '硅石', minSupply: 300, buildingTypeId: 7 },       // 矿场
   { goodsId: 12, name: '化工原料', minSupply: 300, buildingTypeId: 9 },  // 炼油厂（副产品）
+  { goodsId: 13, name: '锂矿', minSupply: 200, buildingTypeId: 33 },     // 锂矿 - 电池生产必需
 ];
 
 /**

@@ -212,9 +212,15 @@ function processConstructionTick(world: GameWorld): {
           
           // 创建或升级建筑
           if (existingBuildingId >= 0) {
-            // 升级现有建筑
-            buildingsData.levels[existingBuildingId] = targetLevel;
-            upgradedBuildings.push(existingBuildingId);
+            // 升级现有建筑 - 添加等级保护，防止降级
+            const currentLevel = buildingsData.levels[existingBuildingId];
+            if (targetLevel > currentLevel) {
+              buildingsData.levels[existingBuildingId] = targetLevel;
+              upgradedBuildings.push(existingBuildingId);
+            } else {
+              // 目标等级不高于当前等级，跳过升级（可能建筑已被其他方式升级）
+              console.log(`[建造系统] 跳过升级：建筑#${existingBuildingId}当前等级${currentLevel}已>=目标等级${targetLevel}`);
+            }
           } else {
             // 创建新建筑
             if (buildingsData.count < buildingsData.maxCount) {

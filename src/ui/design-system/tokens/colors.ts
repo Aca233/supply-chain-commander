@@ -1,6 +1,6 @@
 /**
  * 🎨 颜色系统
- * 设计理念：游戏化深色主题，霓虹发光效果
+ * 设计理念：现代毛玻璃风格，半透明层次感
  */
 
 export const colors = {
@@ -116,22 +116,57 @@ export const colors = {
     orange: '#FF6600',
     yellow: '#FFE600',
   },
+  // 毛玻璃效果专用色
+  glass: {
+    bg: {
+      light: 'rgba(255, 255, 255, 0.05)',
+      medium: 'rgba(255, 255, 255, 0.08)',
+      strong: 'rgba(255, 255, 255, 0.12)',
+      hover: 'rgba(255, 255, 255, 0.15)',
+    },
+    border: {
+      subtle: 'rgba(255, 255, 255, 0.08)',
+      default: 'rgba(255, 255, 255, 0.12)',
+      strong: 'rgba(255, 255, 255, 0.2)',
+      hover: 'rgba(255, 255, 255, 0.25)',
+    },
+    highlight: 'rgba(255, 255, 255, 0.15)',
+    shadow: {
+      default: '0 8px 32px rgba(0, 0, 0, 0.3)',
+      hover: '0 12px 40px rgba(0, 0, 0, 0.4)',
+      elevated: '0 16px 48px rgba(0, 0, 0, 0.5)',
+    },
+  },
 } as const;
 
-// 深色主题 CSS 变量
+// 深色主题 CSS 变量 - 毛玻璃风格
 export const darkTheme = {
-  // 背景层级
-  '--bg-base': '#050505',           // 最底层
-  '--bg-surface': '#0A0A0B',        // 表面层
-  '--bg-elevated': '#111113',       // 浮起层
-  '--bg-overlay': '#18181B',        // 覆盖层
-  '--bg-muted': '#27272A',          // 静音层
-  '--bg-subtle': '#3F3F46',         // 微妙层
+  // 背景层级 - 稍微提亮以支持毛玻璃层次
+  '--bg-base': '#0c0c0e',           // 最底层（从#050505提亮）
+  '--bg-surface': '#12121a',        // 表面层
+  '--bg-elevated': '#1c1c24',       // 浮起层
+  '--bg-overlay': '#262632',        // 覆盖层
+  '--bg-muted': '#363644',          // 静音层
+  '--bg-subtle': '#464656',         // 微妙层
   
   // 背景渐变
-  '--bg-gradient-dark': 'linear-gradient(135deg, #0A0A0B 0%, #111118 50%, #0A0A0B 100%)',
-  '--bg-gradient-card': 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 100%)',
-  '--bg-gradient-glow': 'radial-gradient(ellipse at top, rgba(59,130,246,0.15) 0%, transparent 50%)',
+  '--bg-gradient-dark': 'linear-gradient(135deg, #0c0c0e 0%, #141420 50%, #0c0c0e 100%)',
+  '--bg-gradient-card': 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%)',
+  '--bg-gradient-glow': 'radial-gradient(ellipse at top, rgba(59,130,246,0.12) 0%, transparent 50%)',
+  
+  // 毛玻璃效果
+  '--glass-blur-sm': '8px',
+  '--glass-blur-md': '16px',
+  '--glass-blur-lg': '24px',
+  '--glass-bg-light': 'rgba(255, 255, 255, 0.05)',
+  '--glass-bg-medium': 'rgba(255, 255, 255, 0.08)',
+  '--glass-bg-strong': 'rgba(255, 255, 255, 0.12)',
+  '--glass-border-subtle': 'rgba(255, 255, 255, 0.08)',
+  '--glass-border-default': 'rgba(255, 255, 255, 0.12)',
+  '--glass-border-strong': 'rgba(255, 255, 255, 0.2)',
+  '--glass-highlight': 'rgba(255, 255, 255, 0.15)',
+  '--glass-shadow': '0 8px 32px rgba(0, 0, 0, 0.3)',
+  '--glass-shadow-hover': '0 12px 40px rgba(0, 0, 0, 0.4)',
   
   // 文字色
   '--text-primary': '#FAFAFA',
@@ -153,15 +188,25 @@ export const darkTheme = {
   '--accent-muted': 'rgba(59, 130, 246, 0.15)',
   '--accent-glow': 'rgba(59, 130, 246, 0.4)',
   
+  // 渐变色
+  '--gradient-primary': 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
+  '--gradient-success': 'linear-gradient(90deg, #22C55E 0%, #4ADE80 100%)',
+  '--gradient-warning': 'linear-gradient(90deg, #F59E0B 0%, #FBBF24 100%)',
+  '--gradient-error': 'linear-gradient(90deg, #EF4444 0%, #F87171 100%)',
+  
   // 语义色
   '--success': '#22C55E',
   '--success-muted': 'rgba(34, 197, 94, 0.15)',
+  '--success-glow': 'rgba(34, 197, 94, 0.3)',
   '--warning': '#F59E0B',
   '--warning-muted': 'rgba(245, 158, 11, 0.15)',
+  '--warning-glow': 'rgba(245, 158, 11, 0.3)',
   '--error': '#EF4444',
   '--error-muted': 'rgba(239, 68, 68, 0.15)',
+  '--error-glow': 'rgba(239, 68, 68, 0.3)',
   '--info': '#3B82F6',
   '--info-muted': 'rgba(59, 130, 246, 0.15)',
+  '--info-glow': 'rgba(59, 130, 246, 0.3)',
 } as const;
 
 // 浅色主题 CSS 变量（备用）

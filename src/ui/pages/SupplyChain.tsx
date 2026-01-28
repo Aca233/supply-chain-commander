@@ -19,8 +19,11 @@ import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from '@/ui/de
 import { cn } from '@/ui/design-system/utils/cn';
 import { ALL_GOODS, GOODS_BY_ID } from '@/data/goods';
 import { INDUSTRY_INFO, FilterState } from '@/ui/utils/supplyChainUtils';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 export const SupplyChainPage: React.FC = () => {
+  const { isMobile, isTablet } = useMobile();
+  
   // 视图状态
   const [viewMode, setViewMode] = useState<ViewMode>('tier');
   const [selectedGoodsId, setSelectedGoodsId] = useState<number | null>(null);

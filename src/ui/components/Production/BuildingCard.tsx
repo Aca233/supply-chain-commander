@@ -1,6 +1,6 @@
 /**
  * 建筑卡片组件
- * 使用设计系统组件重构
+ * 现代毛玻璃风格设计
  */
 
 import React, { useMemo } from 'react';
@@ -24,11 +24,37 @@ interface BuildingCardProps {
 
 type BuildingStatus = 'active' | 'warning' | 'error' | 'idle';
 
-const statusConfig: Record<BuildingStatus, { variant: 'success' | 'warning' | 'error' | 'outline'; text: string; glow: string }> = {
-  active: { variant: 'success', text: '生产中', glow: 'shadow-green-500/20' },
-  warning: { variant: 'warning', text: '效率降低', glow: 'shadow-yellow-500/20' },
-  error: { variant: 'error', text: '资源不足', glow: 'shadow-red-500/20' },
-  idle: { variant: 'outline', text: '已暂停', glow: '' },
+// 毛玻璃风格状态配置
+const statusConfig: Record<BuildingStatus, {
+  variant: 'success' | 'warning' | 'error' | 'outline';
+  text: string;
+  badgeClass: string;
+  cardStatus: 'success' | 'warning' | 'error' | 'none';
+}> = {
+  active: {
+    variant: 'success',
+    text: '生产中',
+    badgeClass: 'bg-green-500/20 text-green-400 border border-green-500/30',
+    cardStatus: 'success'
+  },
+  warning: {
+    variant: 'warning',
+    text: '效率降低',
+    badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+    cardStatus: 'warning'
+  },
+  error: {
+    variant: 'error',
+    text: '资源不足',
+    badgeClass: 'bg-red-500/20 text-red-400 border border-red-500/30',
+    cardStatus: 'error'
+  },
+  idle: {
+    variant: 'outline',
+    text: '已暂停',
+    badgeClass: 'bg-white/10 text-white/50 border border-white/20',
+    cardStatus: 'none'
+  },
 };
 
 export const BuildingCard: React.FC<BuildingCardProps> = ({
@@ -165,31 +191,38 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
   };
 
   if (compact) {
-    // 紧凑模式 - 用于列表视图
+    // 紧凑模式 - 毛玻璃风格
     return (
       <Card
-        variant="game"
+        variant="glass"
         padding="sm"
-        status={buildingData.status === 'active' ? 'success' : buildingData.status === 'warning' ? 'warning' : buildingData.status === 'error' ? 'error' : undefined}
+        status={config.cardStatus}
         interactive
         selected={isSelected}
         onClick={onClick}
         className="flex items-center gap-3"
       >
-        <BuildingIcon buildingId={buildingData.typeId} size={32} autoColor />
+        {/* 图标容器 - 毛玻璃效果 */}
+        <div className="w-10 h-10 rounded-xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] flex items-center justify-center flex-shrink-0">
+          <BuildingIcon buildingId={buildingData.typeId} size={24} autoColor />
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm truncate text-[var(--text-primary)]">{buildingData.name}</span>
-            <Badge variant="outline" size="sm">Lv.{buildingData.level}</Badge>
-            <Badge variant={config.variant} size="sm">{config.text}</Badge>
+            <span className="font-medium text-sm truncate text-white">{buildingData.name}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 border border-white/10">
+              Lv.{buildingData.level}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${config.badgeClass}`}>
+              {config.text}
+            </span>
           </div>
-          <div className="text-xs text-[var(--text-muted)] truncate">{buildingData.recipeName}</div>
+          <div className="text-xs text-white/50 truncate">{buildingData.recipeName}</div>
         </div>
         <div className="text-right">
-          <div className={`text-sm font-medium tabular-nums ${buildingData.dailyProfit >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
+          <div className={`text-sm font-medium tabular-nums ${buildingData.dailyProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatMoney(buildingData.dailyProfit)}/日
           </div>
-          <div className="text-xs text-[var(--text-muted)] tabular-nums">
+          <div className="text-xs text-white/40 tabular-nums">
             效率 {(buildingData.efficiency * 100).toFixed(0)}%
           </div>
         </div>
@@ -197,36 +230,41 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     );
   }
 
-  // 标准卡片模式
+  // 标准卡片模式 - 完整毛玻璃设计
   return (
     <Card
-      variant="game"
+      variant="glass"
       padding="none"
-      status={buildingData.status === 'active' ? 'success' : buildingData.status === 'warning' ? 'warning' : buildingData.status === 'error' ? 'error' : undefined}
+      status={config.cardStatus}
       interactive
       selected={isSelected}
       onClick={onClick}
-      className={`overflow-hidden ${config.glow}`}
+      className="overflow-hidden"
     >
-      {/* 头部 */}
+      {/* 头部 - 建筑信息 */}
       <div className="p-4 pb-3">
         <div className="flex items-start gap-3">
-          <div className="w-12 h-12 rounded-lg bg-[var(--bg-muted)] flex items-center justify-center flex-shrink-0">
-            <BuildingIcon buildingId={buildingData.typeId} size={32} autoColor />
+          {/* 图标容器 - 毛玻璃圆角方形 */}
+          <div className="w-12 h-12 rounded-xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] flex items-center justify-center flex-shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
+            <BuildingIcon buildingId={buildingData.typeId} size={28} autoColor />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-semibold text-sm truncate text-[var(--text-primary)]">{buildingData.name}</span>
-              <Badge variant="outline" size="sm">Lv.{buildingData.level}</Badge>
+              <span className="font-semibold text-sm truncate text-white">{buildingData.name}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/10 text-white/70 border border-white/10 font-medium">
+                Lv.{buildingData.level}
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={config.variant} size="sm">{config.text}</Badge>
-              <span className="text-xs text-[var(--text-muted)] truncate">{buildingData.recipeName}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-md ${config.badgeClass} font-medium`}>
+                {config.text}
+              </span>
+              <span className="text-xs text-white/50 truncate">{buildingData.recipeName}</span>
             </div>
           </div>
         </div>
         
-        {/* 效率进度条 */}
+        {/* 效率进度条 - 发光效果 */}
         <div className="mt-3">
           <ProgressBar
             value={buildingData.efficiency * 100}
@@ -234,23 +272,25 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
             showValue
             label="效率"
             size="sm"
+            variant="ghost"
+            glow
             color={buildingData.efficiency >= 0.8 ? 'success' : buildingData.efficiency >= 0.5 ? 'warning' : 'error'}
           />
         </div>
       </div>
       
-      {/* 输入/输出区域 */}
+      {/* 输入/输出区域 - 半透明分隔 */}
       {!buildingData.isRetail && (
-        <div className="px-4 py-3 border-t border-[var(--border-muted)] bg-[var(--bg-subtle)]">
+        <div className="px-4 py-3 border-t border-white/[0.06] bg-black/20">
           <div className="grid grid-cols-2 gap-4">
             {/* 输入 */}
             <div>
               <div className="flex items-center gap-1 mb-2">
-                <span className="text-[10px] text-[var(--text-muted)]">📥 输入</span>
+                <span className="text-[10px] text-white/40">📥 输入</span>
               </div>
               <div className="space-y-1.5">
                 {buildingData.inputs.length === 0 ? (
-                  <span className="text-[10px] text-[var(--success)]">无需原料</span>
+                  <span className="text-[10px] text-green-400/80">无需原料</span>
                 ) : (
                   buildingData.inputs.slice(0, 3).map((input) => (
                     <CompactResourceBar
@@ -266,13 +306,13 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
             {/* 输出 */}
             <div>
               <div className="flex items-center gap-1 mb-2">
-                <span className="text-[10px] text-[var(--text-muted)]">📤 输出</span>
+                <span className="text-[10px] text-white/40">📤 输出</span>
               </div>
               <div className="space-y-1">
                 {buildingData.outputs.slice(0, 3).map((output) => (
                   <div key={output.goodsId} className="flex items-center gap-1">
                     <GoodsIcon goodsId={output.goodsId} size={12} />
-                    <span className="text-xs text-[var(--success)] tabular-nums">
+                    <span className="text-xs text-green-400 tabular-nums font-medium">
                       +{output.dailyAmount.toFixed(0)}/日
                     </span>
                   </div>
@@ -284,7 +324,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       )}
       
       {/* 生产方式槽位 */}
-      <div className="px-4 py-2 border-t border-[var(--border-muted)]">
+      <div className="px-4 py-2 border-t border-white/[0.06]">
         <ProductionMethodsPanel
           buildingId={buildingIndex}
           buildingTypeId={buildingData.typeId}
@@ -292,12 +332,12 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
         />
       </div>
       
-      {/* 底部操作栏 */}
-      <div className="px-4 py-3 border-t border-[var(--border-muted)] bg-[var(--bg-subtle)] flex items-center justify-between">
+      {/* 底部操作栏 - 毛玻璃渐变 */}
+      <div className="px-4 py-3 border-t border-white/[0.06] bg-gradient-to-r from-black/30 to-black/20 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--text-muted)]">💰</span>
-          <span className={`text-sm font-medium tabular-nums ${
-            buildingData.dailyProfit >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'
+          <span className="text-xs text-white/40">💰</span>
+          <span className={`text-sm font-semibold tabular-nums ${
+            buildingData.dailyProfit >= 0 ? 'text-green-400' : 'text-red-400'
           }`}>
             {formatMoney(buildingData.dailyProfit)}/日
           </span>
@@ -305,7 +345,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
         
         <Button
           size="xs"
-          variant={buildingData.canUpgrade ? 'primary' : 'secondary'}
+          variant={buildingData.canUpgrade ? 'primary' : 'glass'}
           disabled={!buildingData.canUpgrade}
           onClick={handleUpgrade}
         >

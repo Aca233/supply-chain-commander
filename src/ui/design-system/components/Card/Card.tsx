@@ -1,6 +1,6 @@
 /**
  * 🃏 Card 组件
- * 游戏风格卡片，支持发光效果和状态指示
+ * 现代毛玻璃风格卡片，支持发光效果和状态指示
  */
 
 import { forwardRef, type HTMLAttributes, type ReactNode } from 'react';
@@ -9,8 +9,7 @@ import { cn } from '../../utils/cn';
 
 const cardVariants = cva(
   [
-    'rounded-xl border transition-all duration-200',
-    'backdrop-blur-sm',
+    'rounded-2xl border transition-all duration-200',
   ],
   {
     variants: {
@@ -24,17 +23,21 @@ const cardVariants = cva(
         elevated: [
           'bg-[var(--bg-elevated)]',
           'border-[var(--border-muted)]',
-          'shadow-card',
+          'shadow-[var(--glass-shadow)]',
         ],
-        // 游戏风格卡片
+        // 毛玻璃卡片（新增）
+        glass: [
+          'bg-gradient-to-br from-white/[0.08] to-white/[0.03]',
+          'backdrop-blur-[16px] saturate-[180%]',
+          'border-[rgba(255,255,255,0.12)]',
+          'shadow-[0_8px_32px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15)]',
+        ],
+        // 游戏风格卡片（保留兼容）
         game: [
-          'bg-gradient-to-br from-[var(--bg-surface)] to-[var(--bg-elevated)]',
-          'border-[var(--border-muted)]',
-          'shadow-card',
-          'before:absolute before:inset-0 before:rounded-xl',
-          'before:bg-gradient-to-b before:from-white/[0.03] before:to-transparent',
-          'before:pointer-events-none',
-          'relative',
+          'bg-gradient-to-br from-white/[0.08] to-white/[0.03]',
+          'backdrop-blur-[16px] saturate-[180%]',
+          'border-[rgba(255,255,255,0.12)]',
+          'shadow-[0_8px_32px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.15)]',
         ],
         // 透明卡片
         ghost: [
@@ -43,27 +46,47 @@ const cardVariants = cva(
         ],
         // 发光卡片
         glow: [
-          'bg-[var(--bg-surface)]',
+          'bg-gradient-to-br from-white/[0.08] to-white/[0.03]',
+          'backdrop-blur-[16px]',
           'border-[var(--accent)]/30',
-          'shadow-[0_0_20px_var(--accent-glow)]',
+          'shadow-[0_0_20px_var(--accent-glow),0_8px_32px_rgba(0,0,0,0.3)]',
         ],
       },
       interactive: {
         true: [
           'cursor-pointer',
-          'hover:border-[var(--border-strong)]',
-          'hover:shadow-card-hover',
+          'hover:bg-gradient-to-br hover:from-white/[0.12] hover:to-white/[0.05]',
+          'hover:border-[rgba(255,255,255,0.2)]',
+          'hover:shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.2)]',
+          'hover:-translate-y-0.5',
           'active:scale-[0.99]',
+          'active:translate-y-0',
         ],
         false: [],
       },
       status: {
         none: [],
-        success: ['border-l-4 border-l-[var(--success)]'],
-        warning: ['border-l-4 border-l-[var(--warning)]'],
-        error: ['border-l-4 border-l-[var(--error)]'],
-        info: ['border-l-4 border-l-[var(--info)]'],
-        active: ['border-l-4 border-l-[var(--accent)]'],
+        // 发光边框状态（替代粗边条）
+        success: [
+          'border-[rgba(34,197,94,0.3)]',
+          'shadow-[0_0_20px_rgba(34,197,94,0.2),0_8px_32px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(34,197,94,0.1)]',
+        ],
+        warning: [
+          'border-[rgba(245,158,11,0.3)]',
+          'shadow-[0_0_20px_rgba(245,158,11,0.2),0_8px_32px_rgba(0,0,0,0.3)]',
+        ],
+        error: [
+          'border-[rgba(239,68,68,0.3)]',
+          'shadow-[0_0_20px_rgba(239,68,68,0.2),0_8px_32px_rgba(0,0,0,0.3)]',
+        ],
+        info: [
+          'border-[rgba(59,130,246,0.3)]',
+          'shadow-[0_0_20px_rgba(59,130,246,0.2),0_8px_32px_rgba(0,0,0,0.3)]',
+        ],
+        active: [
+          'border-[rgba(59,130,246,0.4)]',
+          'shadow-[0_0_25px_rgba(59,130,246,0.3),0_8px_32px_rgba(0,0,0,0.3)]',
+        ],
       },
       padding: {
         none: 'p-0',
@@ -74,7 +97,7 @@ const cardVariants = cva(
       },
     },
     defaultVariants: {
-      variant: 'default',
+      variant: 'glass',
       interactive: false,
       status: 'none',
       padding: 'none',
@@ -96,7 +119,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         className={cn(
           cardVariants({ variant, interactive, status, padding }),
-          selected && 'ring-2 ring-[var(--accent)] ring-offset-2 ring-offset-[var(--bg-base)]',
+          selected && 'ring-2 ring-[var(--accent)]/50 ring-offset-2 ring-offset-[var(--bg-base)] shadow-[0_0_30px_rgba(59,130,246,0.3)]',
           className
         )}
         {...props}
@@ -163,9 +186,9 @@ export const CardFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivEleme
       ref={ref}
       className={cn(
         'px-4 py-3',
-        'border-t border-[var(--border-muted)]',
+        'border-t border-[rgba(255,255,255,0.08)]',
         'flex items-center gap-3',
-        'bg-[var(--bg-base)]/50',
+        'bg-black/20',
         className
       )}
       {...props}

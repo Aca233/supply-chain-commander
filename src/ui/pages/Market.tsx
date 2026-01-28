@@ -1,7 +1,7 @@
 /**
  * 市场页面
  * 商品交易、价格走势、订单管理
- * 使用新设计系统组件重构
+ * 支持响应式布局
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -15,6 +15,7 @@ import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { findBestSubstitutes, findBestComplements } from '@/core/economy/SubstitutionSystem';
 import { tickToDate, formatGameDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 设计系统组件
 import {
@@ -79,6 +80,7 @@ interface MemoizedPriceChartProps {
   tick: number;
   historyIndex: number;
   tradesCount: number;
+  height?: number;
 }
 
 const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
@@ -88,6 +90,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
   tick,
   historyIndex,
   tradesCount,
+  height = 280,
 }) => {
   const priceHistoryData = useMemo(() => {
     if (!world) return [];
@@ -95,8 +98,6 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
     const t = world.trades;
     const maxTrades = t.maxTrades;
     
-    // 从成交记录中提取该商品的所有成交数据
-    // 按tick聚合，计算OHLCV
     interface TickData {
       prices: number[];
       volumes: number[];
@@ -105,7 +106,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
     }
     
     const tickDataMap = new Map<number, TickData>();
-    const searchLimit = Math.min(t.count, 50000); // 搜索最近5万条记录
+    const searchLimit = Math.min(t.count, 50000);
     
     for (let i = 0; i < searchLimit; i++) {
       const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
@@ -122,15 +123,12 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
           }
           data.prices.push(tradePrice);
           data.volumes.push(tradeQty);
-          // 因为我们是从最新向后遍历，所以先遇到的是"最后"的交易
-          // lastPrice 已在第一次设置，firstPrice 需要更新为最早的
           data.firstPrice = tradePrice;
         }
       }
     }
     
     if (tickDataMap.size === 0) {
-      // 如果没有成交记录，使用均衡价格作为fallback
       const basePrice = selectedGoods?.basePrice || world.goods.prices[selectedGoodsId];
       if (basePrice > 0) {
         const date = tickToDate(tick);
@@ -148,10 +146,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       return [];
     }
     
-    // 将Map转换为有序数组，按tick排序
     const sortedTicks = Array.from(tickDataMap.keys()).sort((a, b) => a - b);
-    
-    // 只取最近200个时间点
     const recentTicks = sortedTicks.slice(-200);
     
     const data: PriceDataPoint[] = [];
@@ -161,14 +156,12 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       const prices = tickData.prices;
       const volumes = tickData.volumes;
       
-      // 计算OHLCV
-      const open = tickData.firstPrice;  // 该tick的第一笔成交价
-      const close = tickData.lastPrice;  // 该tick的最后一笔成交价
+      const open = tickData.firstPrice;
+      const close = tickData.lastPrice;
       const high = Math.max(...prices);
       const low = Math.min(...prices);
       const volume = volumes.reduce((sum, v) => sum + v, 0);
       
-      // 加权平均价格
       let totalValue = 0;
       let totalQty = 0;
       for (let j = 0; j < prices.length; j++) {
@@ -182,7 +175,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       
       data.push({
         time: timeStr,
-        price: avgPrice,  // 使用加权平均价作为主价格
+        price: avgPrice,
         open,
         high,
         low,
@@ -196,7 +189,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
   
   if (!world || priceHistoryData.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[280px] text-[var(--text-muted)]">
+      <div className="flex items-center justify-center text-foreground-muted" style={{ height }}>
         暂无价格数据
       </div>
     );
@@ -206,7 +199,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
     <PriceChart
       data={priceHistoryData}
       title="📈 价格走势"
-      height={280}
+      height={height}
       showVolume={true}
       showMA={true}
       showTimeRangeSelector={true}
@@ -218,6 +211,50 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
 });
 
 MemoizedPriceChart.displayName = 'MemoizedPriceChart';
+
+// ==================== 商品选择器组件（移动端用）====================
+interface GoodsSelectorProps {
+  goods: GoodsDefinition[];
+  selectedGoodsId: number;
+  onSelect: (goodsId: number) => void;
+  playerStockMap: Map<number, number>;
+}
+
+const GoodsSelector = React.memo<GoodsSelectorProps>(({
+  goods,
+  selectedGoodsId,
+  onSelect,
+  playerStockMap,
+}) => {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+      {goods.map(g => {
+        const hasStock = (playerStockMap.get(g.id) || 0) > 0;
+        const isSelected = selectedGoodsId === g.id;
+        
+        return (
+          <button
+            key={g.id}
+            className={`
+              flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl transition-all
+              ${isSelected
+                ? 'bg-accent text-white shadow-md'
+                : 'bg-background-muted text-foreground-secondary'
+              }
+            `}
+            onClick={() => onSelect(g.id)}
+          >
+            <GoodsIcon goodsId={g.id} size={16} autoColor={!isSelected} />
+            {hasStock && <span className="w-1.5 h-1.5 rounded-full bg-success" />}
+            <span className="text-sm font-medium whitespace-nowrap">{g.name}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+});
+
+GoodsSelector.displayName = 'GoodsSelector';
 
 // ==================== 商品分类树组件 ====================
 interface GoodsCategoryTreeProps {
@@ -251,22 +288,20 @@ const GoodsCategoryTree = React.memo<GoodsCategoryTreeProps>(({
         
         return (
           <div key={category} className="mb-3">
-            {/* 分类标题 - 增强样式 */}
             <button
-              className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-muted)] rounded-xl transition-all duration-200 group"
+              className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-foreground hover:bg-background-muted rounded-xl transition-all duration-200 group"
               onClick={() => onToggleCategory(category)}
             >
               <div className="flex items-center gap-2.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${categoryConfig.color} shadow-sm ring-2 ring-offset-1 ring-offset-[var(--bg-surface)] ring-${categoryConfig.color.replace('bg-', '')}/30`}></span>
-                <span className="group-hover:translate-x-0.5 transition-transform duration-200">{categoryConfig.name}</span>
+                <span className={`w-2.5 h-2.5 rounded-full ${categoryConfig.color}`}></span>
+                <span>{categoryConfig.name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--bg-subtle)] text-[var(--text-muted)] font-medium">{goods.length}</span>
-                <span className={`text-[var(--text-muted)] text-xs transition-transform duration-200 ${expandedCategories[category] ? 'rotate-0' : '-rotate-90'}`}>▼</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background-subtle text-foreground-muted font-medium">{goods.length}</span>
+                <span className={`text-foreground-muted text-xs transition-transform duration-200 ${expandedCategories[category] ? 'rotate-0' : '-rotate-90'}`}>▼</span>
               </div>
             </button>
             
-            {/* 商品列表 - 增强动画和样式 */}
             {expandedCategories[category] && (
               <div className="mt-1.5 space-y-1 pl-1">
                 {goods.map(g => {
@@ -275,39 +310,21 @@ const GoodsCategoryTree = React.memo<GoodsCategoryTreeProps>(({
                   const isSelected = selectedGoodsId === g.id;
                   
                   return (
-                    <Tooltip
+                    <button
                       key={g.id}
-                      content={
-                        <div className="text-xs">
-                          <p className="font-semibold text-[var(--text-primary)]">{g.name}</p>
-                          <p className="text-[var(--text-muted)] mt-1">库存: {playerStockMap.get(g.id) || 0}</p>
-                          {hasOrders && <p className="text-yellow-400 mt-1">有挂单</p>}
-                        </div>
-                      }
-                      side="right"
-                      variant="game"
-                      delayDuration={300}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl transition-all duration-200 ${
+                        isSelected
+                          ? 'bg-accent text-white shadow-md'
+                          : 'hover:bg-background-muted text-foreground'
+                      }`}
+                      onClick={() => onSelectGoods(g.id)}
                     >
-                      <button
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-xl transition-all duration-200 ${
-                          isSelected
-                            ? 'bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] text-white shadow-md shadow-[var(--accent)]/25 scale-[1.02]'
-                            : 'hover:bg-[var(--bg-muted)] text-[var(--text-primary)] hover:translate-x-1'
-                        }`}
-                        onClick={() => onSelectGoods(g.id)}
-                      >
-                        <GoodsIcon goodsId={g.id} size={18} autoColor={!isSelected} />
-                        {/* 状态指示点 - 增强样式 */}
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          hasStock
-                            ? 'bg-green-400 ring-2 ring-green-400/30 animate-pulse'
-                            : hasOrders
-                              ? 'bg-yellow-400 ring-2 ring-yellow-400/30'
-                              : 'bg-gray-500/50'
-                        }`}></span>
-                        <span className="truncate font-medium">{g.name}</span>
-                      </button>
-                    </Tooltip>
+                      <GoodsIcon goodsId={g.id} size={18} autoColor={!isSelected} />
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        hasStock ? 'bg-success' : hasOrders ? 'bg-warning' : 'bg-gray-500/50'
+                      }`}></span>
+                      <span className="truncate font-medium">{g.name}</span>
+                    </button>
                   );
                 })}
               </div>
@@ -321,8 +338,123 @@ const GoodsCategoryTree = React.memo<GoodsCategoryTreeProps>(({
 
 GoodsCategoryTree.displayName = 'GoodsCategoryTree';
 
+// ==================== 交易面板组件 ====================
+interface TradePanelProps {
+  selectedGoodsId: number;
+  selectedGoods: GoodsDefinition | undefined;
+  currentPrice: number;
+  playerCash: number;
+  playerStock: number;
+  tradeType: 'buy' | 'sell';
+  tradeQuantity: string;
+  tradePrice: string;
+  onTradeTypeChange: (type: 'buy' | 'sell') => void;
+  onQuantityChange: (value: string) => void;
+  onPriceChange: (value: string) => void;
+  onSubmit: () => void;
+  compact?: boolean;
+}
+
+const TradePanel = React.memo<TradePanelProps>(({
+  selectedGoodsId,
+  selectedGoods,
+  currentPrice,
+  playerCash,
+  playerStock,
+  tradeType,
+  tradeQuantity,
+  tradePrice,
+  onTradeTypeChange,
+  onQuantityChange,
+  onPriceChange,
+  onSubmit,
+  compact = false,
+}) => {
+  const effectivePrice = tradePrice ? parseFloat(tradePrice) : currentPrice;
+  const totalCost = effectivePrice * (parseFloat(tradeQuantity) || 0);
+
+  return (
+    <div className={compact ? 'space-y-3' : 'space-y-4'}>
+      {/* 买卖切换 */}
+      <div className="flex gap-2 p-1 bg-background-muted rounded-xl">
+        <Button
+          variant={tradeType === 'buy' ? 'success' : 'ghost'}
+          size="sm"
+          className="flex-1"
+          onClick={() => onTradeTypeChange('buy')}
+        >
+          📈 买入
+        </Button>
+        <Button
+          variant={tradeType === 'sell' ? 'danger' : 'ghost'}
+          size="sm"
+          className="flex-1"
+          onClick={() => onTradeTypeChange('sell')}
+        >
+          📉 卖出
+        </Button>
+      </div>
+      
+      {/* 数量输入 */}
+      <Input
+        label="数量"
+        type="number"
+        value={tradeQuantity}
+        onChange={(e) => onQuantityChange(e.target.value)}
+        size="sm"
+        variant="filled"
+      />
+      
+      {/* 单价输入 */}
+      <Input
+        label="单价"
+        type="number"
+        placeholder={`¥${currentPrice.toFixed(2)}`}
+        value={tradePrice}
+        onChange={(e) => onPriceChange(e.target.value)}
+        size="sm"
+        variant="filled"
+      />
+      
+      {/* 总价 */}
+      <div className={`flex justify-between p-3 rounded-xl border-2 ${
+        tradeType === 'buy'
+          ? 'bg-success/5 border-success/30'
+          : 'bg-error/5 border-error/30'
+      }`}>
+        <span className="text-foreground-muted">总价</span>
+        <span className={`font-bold ${
+          tradeType === 'buy' ? 'text-success' : 'text-error'
+        }`}>
+          ¥{totalCost.toFixed(2)}
+        </span>
+      </div>
+      
+      {/* 余额/库存 */}
+      <div className="text-xs text-foreground-muted flex justify-between p-2 rounded-lg bg-background-muted/50">
+        <span>{tradeType === 'buy' ? '可用资金' : '可售库存'}</span>
+        <span className="font-semibold text-foreground">
+          {tradeType === 'buy' ? `¥${playerCash.toLocaleString()}` : playerStock.toFixed(0)}
+        </span>
+      </div>
+      
+      {/* 提交按钮 */}
+      <Button
+        variant={tradeType === 'buy' ? 'success' : 'danger'}
+        className="w-full"
+        onClick={onSubmit}
+      >
+        {tradeType === 'buy' ? '确认买入' : '确认卖出'}
+      </Button>
+    </div>
+  );
+});
+
+TradePanel.displayName = 'TradePanel';
+
 export const Market: React.FC = () => {
   const storeTick = useGameStore((state) => state.tick);
+  const { isMobile, isTablet } = useMobile();
   
   const {
     getWorld,
@@ -342,6 +474,8 @@ export const Market: React.FC = () => {
   const world = getWorld();
   
   const [selectedGoodsId, setSelectedGoodsIdLocal] = useState<number>(ui.selectedGoodsId ?? 14);
+  const [showGoodsSelector, setShowGoodsSelector] = useState(false);
+  const [showTradePanel, setShowTradePanel] = useState(false);
   
   useEffect(() => {
     if (ui.selectedGoodsId !== null && ui.selectedGoodsId !== selectedGoodsId) {
@@ -352,6 +486,7 @@ export const Market: React.FC = () => {
   const setSelectedGoodsId = (goodsId: number) => {
     setSelectedGoodsIdLocal(goodsId);
     setStoreSelectedGoods(goodsId);
+    setShowGoodsSelector(false);
   };
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -385,6 +520,11 @@ export const Market: React.FC = () => {
     
     return result;
   }, [searchQuery, classifyMode]);
+
+  // 所有商品列表（用于移动端选择器）
+  const allGoodsList = useMemo(() => {
+    return ALL_GOODS.slice(0, 50); // 限制数量
+  }, []);
 
   // 价格获取函数
   const getCurrentPrice = (goodsId: number) => {
@@ -433,32 +573,6 @@ export const Market: React.FC = () => {
     return { buyOrders: buyOrders.slice(0, 5), sellOrders: sellOrders.slice(0, 5) };
   };
 
-  // 最近成交
-  const getRecentTrades = (goodsId: number) => {
-    if (!world) return [];
-    
-    const trades: { tick: number; time: string; price: number; quantity: number }[] = [];
-    const t = world.trades;
-    
-    const searchLimit = Math.min(t.count, 10000);
-    for (let i = t.count - 1; i >= Math.max(0, t.count - searchLimit); i--) {
-      const idx = i % t.maxTrades;
-      if (t.goodsIds[idx] === goodsId) {
-        const tradeTick = t.ticks[idx];
-        const date = tickToDate(tradeTick);
-        trades.push({
-          tick: tradeTick,
-          time: `${date.month}月${date.day}日 ${date.hour}:00`,
-          price: t.prices[idx],
-          quantity: t.quantities[idx],
-        });
-        if (trades.length >= 10) break;
-      }
-    }
-    
-    return trades;
-  };
-
   // 玩家订单
   const getPlayerOrders = (goodsId: number) => {
     if (!world) return [];
@@ -479,45 +593,6 @@ export const Market: React.FC = () => {
     
     return orders;
   };
-  
-
-
-  // 生产/消费建筑
-  const getProducerBuildings = (goodsId: number) => {
-    return RECIPES.filter(r => r.outputs.some(o => o.goodsId === goodsId))
-      .map(r => ({
-        recipe: r,
-        building: ALL_BUILDINGS.find(b => b.id === r.buildingTypeId),
-        output: r.outputs.find(o => o.goodsId === goodsId),
-      }))
-      .filter(item => item.building);
-  };
-
-  const getConsumerBuildings = (goodsId: number) => {
-    return RECIPES.filter(r => r.inputs.some(i => i.goodsId === goodsId))
-      .map(r => ({
-        recipe: r,
-        building: ALL_BUILDINGS.find(b => b.id === r.buildingTypeId),
-        input: r.inputs.find(i => i.goodsId === goodsId),
-      }))
-      .filter(item => item.building);
-  };
-
-  const getPlayerBuildingsOfType = useCallback((buildingTypeId: number): PlayerBuildingInfo[] => {
-    if (!world) return [];
-    const buildings: PlayerBuildingInfo[] = [];
-    for (let i = 0; i < world.buildings.count; i++) {
-      if (world.buildings.owners[i] === 0 && world.buildings.types[i] === buildingTypeId) {
-        buildings.push({ buildingIndex: i, typeId: buildingTypeId, level: world.buildings.levels[i] });
-      }
-    }
-    return buildings;
-  }, [world]);
-
-  const navigateToBuilding = useCallback((buildingIndex: number) => {
-    setSelectedBuilding(buildingIndex);
-    setCurrentPage('production');
-  }, [setSelectedBuilding, setCurrentPage]);
 
   // 提交订单
   const handleSubmitOrder = () => {
@@ -533,6 +608,7 @@ export const Market: React.FC = () => {
     if (success) {
       setTradeQuantity('10');
       setTradePrice('');
+      setShowTradePanel(false);
     }
   };
 
@@ -549,87 +625,8 @@ export const Market: React.FC = () => {
   const currentPrice = useMemo(() => getCurrentPrice(selectedGoodsId), [selectedGoodsId, tick]);
   const lastTradePrice = useMemo(() => getLastTradePrice(selectedGoodsId), [selectedGoodsId, tradesCount]);
   const playerStock = useMemo(() => getPlayerStock(selectedGoodsId), [selectedGoodsId, tick]);
-  
-  const marketRanking = useMemo(() => {
-    const w = getWorld();
-    if (!w) return [];
-    
-    const t = w.trades;
-    const rankings: { companyId: number; name: string; quantity: number; share: number }[] = [];
-    let totalSales = 0;
-    
-    for (let companyId = 0; companyId < w.companies.count; companyId++) {
-      const statsIdx = companyId * GOODS_COUNT + selectedGoodsId;
-      const quantity = t.cumulativeSalesQuantity[statsIdx];
-      
-      if (quantity > 0) {
-        totalSales += quantity;
-        rankings.push({
-          companyId,
-          name: companyId === 0 ? '玩家公司' : w.companies.names[companyId] || `公司#${companyId}`,
-          quantity,
-          share: 0,
-        });
-      }
-    }
-    
-    for (const ranking of rankings) {
-      ranking.share = totalSales > 0 ? (ranking.quantity / totalSales) * 100 : 0;
-    }
-    
-    rankings.sort((a, b) => b.quantity - a.quantity);
-    return rankings.slice(0, 5);
-  }, [selectedGoodsId, storeTick, tradesCount]);
-  
   const orderBook = useMemo(() => getOrderBook(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
-  const recentTrades = useMemo(() => getRecentTrades(selectedGoodsId), [selectedGoodsId, tradesCount]);
   const playerOrders = useMemo(() => getPlayerOrders(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
-  const producerBuildings = useMemo(() => getProducerBuildings(selectedGoodsId), [selectedGoodsId]);
-  const consumerBuildings = useMemo(() => getConsumerBuildings(selectedGoodsId), [selectedGoodsId]);
-  
-  const substitutes = useMemo(() => findBestSubstitutes(selectedGoodsId, 5), [selectedGoodsId]);
-  const complements = useMemo(() => findBestComplements(selectedGoodsId, 5), [selectedGoodsId]);
-
-  // 上下游商品
-  const upstreamGoods = useMemo(() => {
-    const upstream: { goodsId: number; name: string; amount: number; recipe: string }[] = [];
-    const seen = new Set<number>();
-    
-    for (const recipe of RECIPES) {
-      if (recipe.outputs.some(o => o.goodsId === selectedGoodsId)) {
-        for (const input of recipe.inputs) {
-          if (!seen.has(input.goodsId)) {
-            seen.add(input.goodsId);
-            const goods = ALL_GOODS.find(g => g.id === input.goodsId);
-            if (goods) {
-              upstream.push({ goodsId: input.goodsId, name: goods.name, amount: input.amount, recipe: recipe.name });
-            }
-          }
-        }
-      }
-    }
-    return upstream;
-  }, [selectedGoodsId]);
-
-  const downstreamGoods = useMemo(() => {
-    const downstream: { goodsId: number; name: string; amount: number; recipe: string }[] = [];
-    const seen = new Set<number>();
-    
-    for (const recipe of RECIPES) {
-      if (recipe.inputs.some(i => i.goodsId === selectedGoodsId)) {
-        for (const output of recipe.outputs) {
-          if (!seen.has(output.goodsId)) {
-            seen.add(output.goodsId);
-            const goods = ALL_GOODS.find(g => g.id === output.goodsId);
-            if (goods) {
-              downstream.push({ goodsId: output.goodsId, name: goods.name, amount: output.amount, recipe: recipe.name });
-            }
-          }
-        }
-      }
-    }
-    return downstream;
-  }, [selectedGoodsId]);
 
   const playerStockMap = useMemo(() => {
     const map = new Map<number, number>();
@@ -650,15 +647,354 @@ export const Market: React.FC = () => {
     return set;
   }, [ordersActiveCount]);
 
-  const effectivePrice = tradePrice ? parseFloat(tradePrice) : currentPrice;
-  const totalCost = effectivePrice * (parseFloat(tradeQuantity) || 0);
+  // ==================== 移动端布局 ====================
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* 商品选择栏 */}
+        <div className="flex-shrink-0 p-3 border-b border-border bg-background-surface">
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              onClick={() => setShowGoodsSelector(true)}
+              className="flex-1 flex items-center gap-2 p-2 rounded-xl bg-background-muted"
+            >
+              <GoodsIcon goodsId={selectedGoodsId} size={24} autoColor />
+              <span className="font-medium">{selectedGoods?.name || '选择商品'}</span>
+              <span className="ml-auto text-foreground-muted">▼</span>
+            </button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowTradePanel(true)}
+            >
+              交易
+            </Button>
+          </div>
+          
+          {/* 快速价格信息 */}
+          <div className="flex gap-2 text-xs">
+            <div className="flex-1 p-2 rounded-lg bg-background-muted">
+              <span className="text-foreground-muted">成交价</span>
+              <span className="ml-2 font-semibold">
+                {lastTradePrice ? `¥${lastTradePrice.toFixed(2)}` : '-'}
+              </span>
+            </div>
+            <div className="flex-1 p-2 rounded-lg bg-background-muted">
+              <span className="text-foreground-muted">库存</span>
+              <span className="ml-2 font-semibold">{playerStock.toFixed(0)}</span>
+            </div>
+          </div>
+        </div>
 
+        {/* 主内容区 */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {selectedGoods && (
+            <>
+              {/* 价格走势 */}
+              <Card variant="game" padding="sm">
+                <MemoizedPriceChart
+                  world={world}
+                  selectedGoodsId={selectedGoodsId}
+                  selectedGoods={selectedGoods}
+                  tick={tick}
+                  historyIndex={world?.goods.historyIndex ?? 0}
+                  tradesCount={tradesCount}
+                  height={200}
+                />
+              </Card>
+
+              {/* 订单簿 */}
+              <Card variant="game" padding="sm">
+                <CardTitle className="text-sm mb-2">📋 市场挂单</CardTitle>
+                <div className="grid grid-cols-2 gap-2">
+                  {/* 卖单 */}
+                  <div className="p-2 rounded-lg bg-error/5">
+                    <p className="text-xs text-error mb-1 font-medium">卖方</p>
+                    {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
+                      <div key={idx} className="flex justify-between text-xs py-1">
+                        <span className="text-error">¥{order.price.toFixed(2)}</span>
+                        <span>{order.quantity.toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {orderBook.sellOrders.length === 0 && (
+                      <p className="text-xs text-foreground-muted text-center py-2">无</p>
+                    )}
+                  </div>
+                  {/* 买单 */}
+                  <div className="p-2 rounded-lg bg-success/5">
+                    <p className="text-xs text-success mb-1 font-medium">买方</p>
+                    {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
+                      <div key={idx} className="flex justify-between text-xs py-1">
+                        <span className="text-success">¥{order.price.toFixed(2)}</span>
+                        <span>{order.quantity.toFixed(0)}</span>
+                      </div>
+                    ))}
+                    {orderBook.buyOrders.length === 0 && (
+                      <p className="text-xs text-foreground-muted text-center py-2">无</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+
+              {/* 我的订单 */}
+              {playerOrders.length > 0 && (
+                <Card variant="game" padding="sm">
+                  <CardTitle className="text-sm mb-2">📝 我的挂单</CardTitle>
+                  <div className="space-y-1">
+                    {playerOrders.map((order) => (
+                      <div
+                        key={order.index}
+                        className={`flex items-center justify-between p-2 rounded-lg ${
+                          order.type === 'buy' ? 'bg-success/10' : 'bg-error/10'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
+                            {order.type === 'buy' ? '买' : '卖'}
+                          </Badge>
+                          <span className="text-sm font-medium">¥{order.price.toFixed(2)}</span>
+                          <span className="text-sm text-foreground-muted">×{order.quantity.toFixed(0)}</span>
+                        </div>
+                        <button
+                          className="w-6 h-6 rounded-lg bg-background-muted text-foreground-muted text-xs"
+                          onClick={() => cancelPlayerOrder(order.index)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 商品选择弹窗 */}
+        {showGoodsSelector && (
+          <div 
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowGoodsSelector(false)}
+          >
+            <div 
+              className="absolute bottom-0 left-0 right-0 max-h-[70vh] bg-background-elevated rounded-t-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <h3 className="text-lg font-semibold">选择商品</h3>
+                <button 
+                  onClick={() => setShowGoodsSelector(false)}
+                  className="w-8 h-8 rounded-full bg-background-muted flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-3">
+                <Input
+                  placeholder="搜索商品..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  size="sm"
+                  variant="filled"
+                />
+              </div>
+              <div className="overflow-y-auto max-h-[50vh] p-3">
+                <GoodsCategoryTree
+                  filteredGoods={filteredGoods}
+                  expandedCategories={expandedCategories}
+                  selectedGoodsId={selectedGoodsId}
+                  playerStockMap={playerStockMap}
+                  goodsWithOrdersSet={goodsWithOrdersSet}
+                  onToggleCategory={toggleCategory}
+                  onSelectGoods={setSelectedGoodsId}
+                  classifyMode={classifyMode}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 交易面板弹窗 */}
+        {showTradePanel && (
+          <div 
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowTradePanel(false)}
+          >
+            <div 
+              className="absolute bottom-0 left-0 right-0 bg-background-elevated rounded-t-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <GoodsIcon goodsId={selectedGoodsId} size={24} autoColor />
+                  <h3 className="font-semibold">{selectedGoods?.name}</h3>
+                </div>
+                <button 
+                  onClick={() => setShowTradePanel(false)}
+                  className="w-8 h-8 rounded-full bg-background-muted flex items-center justify-center"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4">
+                <TradePanel
+                  selectedGoodsId={selectedGoodsId}
+                  selectedGoods={selectedGoods}
+                  currentPrice={currentPrice}
+                  playerCash={playerCash}
+                  playerStock={playerStock}
+                  tradeType={tradeType}
+                  tradeQuantity={tradeQuantity}
+                  tradePrice={tradePrice}
+                  onTradeTypeChange={setTradeType}
+                  onQuantityChange={setTradeQuantity}
+                  onPriceChange={setTradePrice}
+                  onSubmit={handleSubmitOrder}
+                  compact
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==================== 平板布局 ====================
+  if (isTablet) {
+    return (
+      <div className="flex flex-col h-full gap-4">
+        {/* 顶部商品选择 */}
+        <div className="flex-shrink-0">
+          <GoodsSelector
+            goods={allGoodsList}
+            selectedGoodsId={selectedGoodsId}
+            onSelect={setSelectedGoodsId}
+            playerStockMap={playerStockMap}
+          />
+        </div>
+
+        {/* 主内容 */}
+        <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
+          {/* 左侧：价格信息 */}
+          <div className="col-span-2 space-y-4 overflow-y-auto">
+            {selectedGoods && (
+              <>
+                {/* 商品头部 */}
+                <div className="flex items-center gap-4 p-4 bg-background-surface rounded-xl">
+                  <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                    <GoodsIcon goodsId={selectedGoodsId} size={32} autoColor />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold">{selectedGoods.name}</h2>
+                    <div className="flex gap-2 mt-1">
+                      <Badge className={CATEGORY_CONFIG[selectedGoods.category].color}>
+                        {CATEGORY_CONFIG[selectedGoods.category].name}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 价格信息 */}
+                <div className="grid grid-cols-3 gap-3">
+                  <StatWidget
+                    title="成交价"
+                    value={lastTradePrice ? `¥${lastTradePrice.toFixed(2)}` : '-'}
+                    icon="💰"
+                    variant="game"
+                    compact
+                  />
+                  <StatWidget
+                    title="均衡价"
+                    value={`¥${currentPrice.toFixed(2)}`}
+                    icon="📊"
+                    variant="elevated"
+                    compact
+                  />
+                  <StatWidget
+                    title="库存"
+                    value={playerStock.toFixed(0)}
+                    icon="📦"
+                    variant="elevated"
+                    compact
+                  />
+                </div>
+
+                {/* 价格走势 */}
+                <Card variant="game" padding="md">
+                  <MemoizedPriceChart
+                    world={world}
+                    selectedGoodsId={selectedGoodsId}
+                    selectedGoods={selectedGoods}
+                    tick={tick}
+                    historyIndex={world?.goods.historyIndex ?? 0}
+                    tradesCount={tradesCount}
+                    height={250}
+                  />
+                </Card>
+              </>
+            )}
+          </div>
+
+          {/* 右侧：交易 */}
+          <div className="space-y-4 overflow-y-auto">
+            {/* 订单簿 */}
+            <Card variant="game" padding="sm">
+              <CardTitle className="text-sm mb-2">📋 市场挂单</CardTitle>
+              {/* 卖单 */}
+              <div className="p-2 rounded-lg bg-error/5 mb-2">
+                <p className="text-xs text-error mb-1">卖方</p>
+                {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
+                  <div key={idx} className="flex justify-between text-xs py-1">
+                    <span className="text-error">¥{order.price.toFixed(2)}</span>
+                    <span>{order.quantity.toFixed(0)}</span>
+                  </div>
+                ))}
+              </div>
+              {/* 买单 */}
+              <div className="p-2 rounded-lg bg-success/5">
+                <p className="text-xs text-success mb-1">买方</p>
+                {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
+                  <div key={idx} className="flex justify-between text-xs py-1">
+                    <span className="text-success">¥{order.price.toFixed(2)}</span>
+                    <span>{order.quantity.toFixed(0)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* 交易面板 */}
+            <Card variant="glow" padding="md">
+              <CardTitle className="text-sm mb-3">🛒 下单</CardTitle>
+              <TradePanel
+                selectedGoodsId={selectedGoodsId}
+                selectedGoods={selectedGoods}
+                currentPrice={currentPrice}
+                playerCash={playerCash}
+                playerStock={playerStock}
+                tradeType={tradeType}
+                tradeQuantity={tradeQuantity}
+                tradePrice={tradePrice}
+                onTradeTypeChange={setTradeType}
+                onQuantityChange={setTradeQuantity}
+                onPriceChange={setTradePrice}
+                onSubmit={handleSubmitOrder}
+                compact
+              />
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==================== 桌面端布局 ====================
   return (
     <div className="min-h-[calc(100vh-80px)] flex gap-5 p-1">
-      {/* ==================== 左侧栏：商品分类树 ==================== */}
-      <div className="w-52 flex-shrink-0 flex flex-col bg-gradient-to-b from-[var(--bg-surface)] to-[var(--bg-elevated)] rounded-2xl overflow-hidden border border-[var(--border-muted)] max-h-[calc(100vh-100px)] shadow-card">
+      {/* 左侧栏：商品分类树 */}
+      <div className="w-52 flex-shrink-0 flex flex-col bg-gradient-to-b from-background-surface to-background-elevated rounded-2xl overflow-hidden border border-border-muted max-h-[calc(100vh-100px)] shadow-card">
         {/* 分类模式切换 */}
-        <div className="p-3 border-b border-[var(--border-muted)] bg-[var(--bg-surface)]/50">
+        <div className="p-3 border-b border-border-muted bg-background-surface/50">
           <Tabs value={classifyMode} onValueChange={(v) => setClassifyMode(v as ClassifyMode)}>
             <TabsList variant="game" size="sm" className="w-full">
               <TabsTrigger value="category" variant="game" className="flex-1 text-xs">按类别</TabsTrigger>
@@ -668,7 +1004,7 @@ export const Market: React.FC = () => {
         </div>
         
         {/* 搜索框 */}
-        <div className="p-3 border-b border-[var(--border-muted)]">
+        <div className="p-3 border-b border-border-muted">
           <Input
             placeholder="搜索商品..."
             value={searchQuery}
@@ -679,10 +1015,8 @@ export const Market: React.FC = () => {
           />
         </div>
         
-        {/* 分类树 - 添加渐变遮罩 */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin p-2 relative">
-          {/* 顶部渐变遮罩 */}
-          <div className="sticky top-0 left-0 right-0 h-3 bg-gradient-to-b from-[var(--bg-surface)] to-transparent pointer-events-none z-10 -mt-2 -mx-2 mb-1"></div>
+        {/* 分类树 */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
           <GoodsCategoryTree
             filteredGoods={filteredGoods}
             expandedCategories={expandedCategories}
@@ -693,133 +1027,30 @@ export const Market: React.FC = () => {
             onSelectGoods={setSelectedGoodsId}
             classifyMode={classifyMode}
           />
-          {/* 底部渐变遮罩 */}
-          <div className="sticky bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-[var(--bg-elevated)] to-transparent pointer-events-none z-10 -mb-2 -mx-2 mt-1"></div>
-        </div>
-        
-        {/* 图例 - 增强样式 */}
-        <div className="p-3 border-t border-[var(--border-muted)] bg-[var(--bg-surface)]/30">
-          <div className="flex items-center justify-around">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-green-400 ring-2 ring-green-400/30 animate-pulse"></span>
-              <span className="text-[10px] text-[var(--text-muted)] font-medium">有库存</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 ring-2 ring-yellow-400/30"></span>
-              <span className="text-[10px] text-[var(--text-muted)] font-medium">有挂单</span>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* ==================== 主内容区：商品详情 ==================== */}
+      {/* 主内容区 */}
       <div className="flex-1 space-y-5">
         {selectedGoods && (
           <>
-            {/* 商品头部 - 增强视觉效果 */}
-            <div className="flex items-center gap-5 p-4 bg-gradient-to-r from-[var(--bg-elevated)] via-[var(--bg-surface)] to-transparent rounded-2xl border border-[var(--border-muted)] shadow-card">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent)]/5 flex items-center justify-center shadow-lg shadow-[var(--accent)]/10 border border-[var(--accent)]/20 group hover:scale-105 transition-transform duration-300">
+            {/* 商品头部 */}
+            <div className="flex items-center gap-5 p-4 bg-gradient-to-r from-background-elevated via-background-surface to-transparent rounded-2xl border border-border-muted shadow-card">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center shadow-lg shadow-accent/10 border border-accent/20">
                 <GoodsIcon goodsId={selectedGoodsId} size={40} autoColor />
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{selectedGoods.name}</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{selectedGoods.name}</h2>
                 <div className="flex gap-2 mt-2">
                   <Badge className={`${CATEGORY_CONFIG[selectedGoods.category].color} shadow-sm`} size="md">
                     {CATEGORY_CONFIG[selectedGoods.category].name}
                   </Badge>
-                  <Badge variant="outline" className="border-[var(--border-strong)]">{selectedGoods.unit}</Badge>
+                  <Badge variant="outline" className="border-border-strong">{selectedGoods.unit}</Badge>
                 </div>
               </div>
             </div>
 
-            {/* 产业链导航 - 增强视觉效果 */}
-            <TooltipProvider>
-              <div className="grid grid-cols-2 gap-4">
-                {/* 上游原料 */}
-                <Card variant="game" padding="md" className="relative overflow-hidden">
-                  {/* 背景装饰 */}
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full pointer-events-none"></div>
-                  <h3 className="text-sm font-semibold mb-3 text-amber-400 flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs">⬆</span>
-                    上一级（原料）
-                  </h3>
-                  {upstreamGoods.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {upstreamGoods.slice(0, 10).map((item) => (
-                        <Tooltip
-                          key={item.goodsId}
-                          content={
-                            <div className="text-xs">
-                              <p className="font-semibold text-[var(--text-primary)]">{item.name}</p>
-                              <p className="text-[var(--text-muted)] mt-1">需要 {item.amount} · {item.recipe}</p>
-                              <p className="text-amber-400 font-medium mt-1">¥{getCurrentPrice(item.goodsId).toFixed(2)}</p>
-                            </div>
-                          }
-                          side="top"
-                          variant="game"
-                        >
-                          <button
-                            className="w-14 h-12 rounded-xl bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] hover:from-amber-500/20 hover:to-amber-500/10 border border-transparent hover:border-amber-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-amber-500/10 hover:scale-105"
-                            onClick={() => setSelectedGoodsId(item.goodsId)}
-                          >
-                            <GoodsIcon goodsId={item.goodsId} size={20} autoColor />
-                            <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.name}</span>
-                          </button>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] py-2">
-                      <span className="text-lg">🌱</span>
-                      <span>原始资源，无需原料</span>
-                    </div>
-                  )}
-                </Card>
-
-                {/* 下游产品 */}
-                <Card variant="game" padding="md" className="relative overflow-hidden">
-                  {/* 背景装饰 */}
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none"></div>
-                  <h3 className="text-sm font-semibold mb-3 text-green-400 flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">⬇</span>
-                    下一级（产品）
-                  </h3>
-                  {downstreamGoods.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {downstreamGoods.slice(0, 10).map((item) => (
-                        <Tooltip
-                          key={item.goodsId}
-                          content={
-                            <div className="text-xs">
-                              <p className="font-semibold text-[var(--text-primary)]">{item.name}</p>
-                              <p className="text-[var(--text-muted)] mt-1">产出 {item.amount} · {item.recipe}</p>
-                              <p className="text-green-400 font-medium mt-1">¥{getCurrentPrice(item.goodsId).toFixed(2)}</p>
-                            </div>
-                          }
-                          side="top"
-                          variant="game"
-                        >
-                          <button
-                            className="w-14 h-12 rounded-xl bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] hover:from-green-500/20 hover:to-green-500/10 border border-transparent hover:border-green-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-green-500/10 hover:scale-105"
-                            onClick={() => setSelectedGoodsId(item.goodsId)}
-                          >
-                            <GoodsIcon goodsId={item.goodsId} size={20} autoColor />
-                            <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.name}</span>
-                          </button>
-                        </Tooltip>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] py-2">
-                      <span className="text-lg">🎁</span>
-                      <span>终端产品，无下游</span>
-                    </div>
-                  )}
-                </Card>
-              </div>
-            </TooltipProvider>
-
-            {/* 价格信息 - 增强视觉层次 */}
+            {/* 价格信息 */}
             <div className="grid grid-cols-4 gap-4">
               <StatWidget
                 title="最新成交价"
@@ -827,7 +1058,6 @@ export const Market: React.FC = () => {
                 change={lastTradePrice && selectedGoods ? (lastTradePrice / selectedGoods.basePrice - 1) : undefined}
                 icon="💰"
                 variant="game"
-                status={lastTradePrice && selectedGoods && lastTradePrice > selectedGoods.basePrice ? 'success' : lastTradePrice && selectedGoods && lastTradePrice < selectedGoods.basePrice ? 'error' : 'none'}
                 glow={lastTradePrice !== null}
                 compact
               />
@@ -844,7 +1074,6 @@ export const Market: React.FC = () => {
                 value={`¥${selectedGoods.basePrice.toFixed(2)}`}
                 icon="📌"
                 variant="default"
-                className="border-dashed border-[var(--border-default)]"
                 compact
               />
               <StatWidget
@@ -858,82 +1087,8 @@ export const Market: React.FC = () => {
               />
             </div>
 
-            {/* 销售排行榜 - 增强视觉效果 */}
-            <Card variant="game" padding="md" className="relative">
-              {/* 背景装饰 */}
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--accent)]/30 to-transparent"></div>
-              <div className="flex items-center justify-between mb-4">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-lg bg-[var(--accent)]/20 flex items-center justify-center">📊</span>
-                  销售排行榜
-                </CardTitle>
-                <Badge variant="primary" size="sm" glow>
-                  总销量 {marketRanking.reduce((sum, r) => sum + r.quantity, 0).toFixed(0)}
-                </Badge>
-              </div>
-              
-              {marketRanking.length > 0 ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  <div className="min-h-[200px]">
-                    <MarketShareChart
-                      data={marketRanking.map(r => ({
-                        name: r.name,
-                        value: r.quantity,
-                        color: r.companyId === 0 ? '#3b82f6' : undefined,
-                      }))}
-                      title=""
-                      height={200}
-                      showLegend={false}
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    {marketRanking.map((r, idx) => (
-                      <div key={r.companyId} className="flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--bg-muted)]/50 transition-colors">
-                        <Badge
-                          variant={idx === 0 ? 'gold' : idx === 1 ? 'outline' : idx === 2 ? 'warning' : 'outline'}
-                          size="sm"
-                          glow={idx === 0}
-                          className={idx === 0 ? 'animate-pulse' : ''}
-                        >
-                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
-                        </Badge>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className={`text-sm truncate font-medium ${r.companyId === 0 ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-                              {r.name}
-                            </span>
-                            <span className="text-sm font-bold tabular-nums">{r.quantity.toFixed(0)}</span>
-                          </div>
-                          <div className="h-2 bg-[var(--bg-subtle)] rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                r.companyId === 0
-                                  ? 'bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)]'
-                                  : 'bg-gradient-to-r from-[var(--success)] to-emerald-400'
-                              }`}
-                              style={{ width: `${r.share}%` }}
-                            />
-                          </div>
-                        </div>
-                        <span className="text-sm text-[var(--text-muted)] tabular-nums w-14 text-right font-medium">
-                          {r.share.toFixed(1)}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <span className="text-3xl mb-2 block">📭</span>
-                  <p className="text-sm text-[var(--text-muted)]">暂无销售记录</p>
-                </div>
-              )}
-            </Card>
-
-            {/* 价格走势图 - 增强卡片样式 */}
-            <Card variant="game" padding="md" className="relative overflow-hidden">
-              {/* 顶部装饰线 */}
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[var(--success)]/30 to-transparent"></div>
+            {/* 价格走势图 */}
+            <Card variant="game" padding="md">
               <MemoizedPriceChart
                 world={world}
                 selectedGoodsId={selectedGoodsId}
@@ -943,203 +1098,43 @@ export const Market: React.FC = () => {
                 tradesCount={tradesCount}
               />
             </Card>
-
-            {/* 相关建筑 - 增强视觉效果 */}
-            <TooltipProvider>
-              <div className="grid grid-cols-2 gap-4">
-                {/* 生产建筑 */}
-                <Card variant="game" padding="md" className="relative overflow-hidden">
-                  {/* 背景装饰 */}
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none"></div>
-                  <h3 className="text-sm font-semibold mb-3 text-[var(--success)] flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">🏭</span>
-                    生产建筑
-                  </h3>
-                  {producerBuildings.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {producerBuildings.slice(0, 10).map((item, idx) => {
-                        const playerBuildings = getPlayerBuildingsOfType(item.building!.id);
-                        const hasBuilding = playerBuildings.length > 0;
-                        return (
-                          <Tooltip
-                            key={idx}
-                            content={
-                              <div className="text-xs">
-                                <p className="font-semibold text-[var(--text-primary)]">{item.building?.name}</p>
-                                <p className="text-[var(--text-muted)] mt-1">产出 {item.output?.amount}/{item.recipe.ticksRequired}h</p>
-                                <p className="text-[var(--text-muted)]">成本 ¥{item.building?.buildCost.toLocaleString()}</p>
-                                {hasBuilding && <p className="text-green-400 font-medium mt-1">已拥有 {playerBuildings.length} 座</p>}
-                              </div>
-                            }
-                            side="top"
-                            variant="game"
-                          >
-                            <div
-                              className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
-                                hasBuilding
-                                  ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10'
-                                  : 'bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] border border-transparent hover:border-[var(--border-strong)]'
-                              } hover:scale-110 hover:shadow-lg`}
-                              onClick={() => {
-                                if (hasBuilding) {
-                                  navigateToBuilding(playerBuildings[0].buildingIndex);
-                                } else {
-                                  // 检查资金是否足够
-                                  if (playerCash < item.building!.buildCost) {
-                                    addNotification('error', `资金不足！建造${item.building!.name}需要 ¥${item.building!.buildCost.toLocaleString()}`);
-                                  } else {
-                                    navigateToBuildBuilding(item.building!.id);
-                                  }
-                                }
-                              }}
-                            >
-                              <BuildingIcon buildingId={item.building!.id} size={20} autoColor />
-                              <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.building?.name}</span>
-                              {/* 拥有数量徽章 */}
-                              {hasBuilding && (
-                                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-green-400 to-green-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-green-500/30 ring-2 ring-[var(--bg-surface)]">
-                                  {playerBuildings.length}
-                                </span>
-                              )}
-                            </div>
-                          </Tooltip>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] py-2">
-                      <span className="text-lg">🚫</span>
-                      <span>无可生产建筑</span>
-                    </div>
-                  )}
-                </Card>
-
-                {/* 消耗建筑 */}
-                <Card variant="game" padding="md" className="relative overflow-hidden">
-                  {/* 背景装饰 */}
-                  <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-orange-500/10 to-transparent rounded-bl-full pointer-events-none"></div>
-                  <h3 className="text-sm font-semibold mb-3 text-[var(--warning)] flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-orange-500/20 flex items-center justify-center text-xs">⚡</span>
-                    消耗建筑
-                  </h3>
-                  {consumerBuildings.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {consumerBuildings.slice(0, 10).map((item, idx) => {
-                        const playerBuildings = getPlayerBuildingsOfType(item.building!.id);
-                        const hasBuilding = playerBuildings.length > 0;
-                        return (
-                          <Tooltip
-                            key={idx}
-                            content={
-                              <div className="text-xs">
-                                <p className="font-semibold text-[var(--text-primary)]">{item.building?.name}</p>
-                                <p className="text-[var(--text-muted)] mt-1">消耗 {item.input?.amount}/{item.recipe.ticksRequired}h</p>
-                                <p className="text-[var(--text-muted)]">成本 ¥{item.building?.buildCost.toLocaleString()}</p>
-                                {hasBuilding && <p className="text-orange-400 font-medium mt-1">已拥有 {playerBuildings.length} 座</p>}
-                              </div>
-                            }
-                            side="top"
-                            variant="game"
-                          >
-                            <div
-                              className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
-                                hasBuilding
-                                  ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10'
-                                  : 'bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] border border-transparent hover:border-[var(--border-strong)]'
-                              } hover:scale-110 hover:shadow-lg`}
-                              onClick={() => {
-                                if (hasBuilding) {
-                                  navigateToBuilding(playerBuildings[0].buildingIndex);
-                                } else {
-                                  // 检查资金是否足够
-                                  if (playerCash < item.building!.buildCost) {
-                                    addNotification('error', `资金不足！建造${item.building!.name}需要 ¥${item.building!.buildCost.toLocaleString()}`);
-                                  } else {
-                                    navigateToBuildBuilding(item.building!.id);
-                                  }
-                                }
-                              }}
-                            >
-                              <BuildingIcon buildingId={item.building!.id} size={20} autoColor />
-                              <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.building?.name}</span>
-                              {/* 拥有数量徽章 */}
-                              {hasBuilding && (
-                                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-orange-500/30 ring-2 ring-[var(--bg-surface)]">
-                                  {playerBuildings.length}
-                                </span>
-                              )}
-                            </div>
-                          </Tooltip>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] py-2">
-                      <span className="text-lg">🚫</span>
-                      <span>无消耗建筑</span>
-                    </div>
-                  )}
-                </Card>
-              </div>
-            </TooltipProvider>
           </>
         )}
       </div>
 
-      {/* ==================== 右侧栏：交易面板 ==================== */}
+      {/* 右侧栏：交易面板 */}
       <div className="w-80 flex-shrink-0 flex flex-col gap-3 h-[calc(100vh-100px)]">
-        {/* 市场挂单 - 固定高度，内容可滚动 */}
-        <Card variant="game" padding="md" className="relative flex-1 min-h-0 flex flex-col">
-          {/* 顶部装饰线 */}
-          <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/50 to-transparent"></div>
+        {/* 市场挂单 */}
+        <Card variant="game" padding="md" className="flex-1 min-h-0 flex flex-col">
+          <CardTitle className="text-sm mb-4 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">📋</span>
+            市场挂单
+          </CardTitle>
           
-          <div className="flex items-center justify-between mb-4">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-[var(--accent)]/20 flex items-center justify-center">📋</span>
-              市场挂单
-            </CardTitle>
-          </div>
-          
-          {/* 订单内容区域 - 可滚动 */}
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-3">
-            {/* 我的挂单 - 蓝色主题 */}
+            {/* 我的挂单 */}
             {playerOrders.length > 0 && (
-              <div className="p-2.5 rounded-xl bg-[var(--accent)]/5 border border-[var(--accent)]/30">
-                <p className="text-xs text-[var(--accent)] mb-2 font-semibold flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse"></span>
-                  我的挂单
-                  <Badge variant="primary" size="sm" className="ml-auto">{playerOrders.length}</Badge>
-                </p>
+              <div className="p-2.5 rounded-xl bg-accent/5 border border-accent/30">
+                <p className="text-xs text-accent mb-2 font-semibold">我的挂单</p>
                 <div className="space-y-1.5">
                   {playerOrders.map((order) => (
                     <div
                       key={order.index}
-                      className={`flex items-center justify-between text-xs p-2 rounded-lg tabular-nums transition-all border ${
-                        order.type === 'buy'
-                          ? 'bg-[var(--success)]/10 border-[var(--success)]/20 hover:border-[var(--success)]/40'
-                          : 'bg-[var(--error)]/10 border-[var(--error)]/20 hover:border-[var(--error)]/40'
+                      className={`flex items-center justify-between text-xs p-2 rounded-lg ${
+                        order.type === 'buy' ? 'bg-success/10' : 'bg-error/10'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <Badge
-                          variant={order.type === 'buy' ? 'success' : 'error'}
-                          size="sm"
-                          className="text-[10px] px-1.5"
-                        >
-                          {order.type === 'buy' ? '买入' : '卖出'}
+                        <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
+                          {order.type === 'buy' ? '买' : '卖'}
                         </Badge>
-                        <span className={`font-semibold ${
-                          order.type === 'buy' ? 'text-[var(--success)]' : 'text-[var(--error)]'
-                        }`}>
-                          ¥{order.price.toFixed(2)}
-                        </span>
+                        <span className="font-semibold">¥{order.price.toFixed(2)}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{order.quantity.toFixed(0)}</span>
+                        <span>{order.quantity.toFixed(0)}</span>
                         <button
-                          className="w-5 h-5 rounded-lg bg-[var(--bg-muted)] hover:bg-[var(--error)]/20 text-[var(--text-muted)] hover:text-[var(--error)] transition-colors flex items-center justify-center text-xs"
+                          className="w-5 h-5 rounded-lg bg-background-muted hover:bg-error/20 text-foreground-muted hover:text-error transition-colors flex items-center justify-center text-xs"
                           onClick={() => cancelPlayerOrder(order.index)}
-                          title="取消订单"
                         >
                           ✕
                         </button>
@@ -1150,178 +1145,71 @@ export const Market: React.FC = () => {
               </div>
             )}
             
-            {/* 卖方报价 - 红色主题 */}
-            <div className="p-2.5 rounded-xl bg-[var(--error)]/5 border border-[var(--error)]/20">
-              <p className="text-xs text-[var(--error)] mb-2 font-semibold flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--error)] animate-pulse"></span>
-                卖方报价 (点击买入)
-              </p>
+            {/* 卖方报价 */}
+            <div className="p-2.5 rounded-xl bg-error/5 border border-error/20">
+              <p className="text-xs text-error mb-2 font-semibold">卖方报价</p>
               {orderBook.sellOrders.length > 0 ? (
                 <div className="space-y-1">
                   {orderBook.sellOrders.map((order, idx) => (
                     <div
                       key={idx}
-                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-[var(--error)]/10 cursor-pointer tabular-nums transition-colors border border-transparent hover:border-[var(--error)]/30"
+                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-error/10 cursor-pointer"
                       onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                     >
-                      <span className="text-[var(--error)] font-semibold w-16">¥{order.price.toFixed(2)}</span>
-                      <span className="w-12 text-right font-medium">{order.quantity.toFixed(0)}</span>
-                      <span className="text-[var(--text-muted)] truncate w-20 text-right text-[10px]">{order.companyName}</span>
+                      <span className="text-error font-semibold">¥{order.price.toFixed(2)}</span>
+                      <span>{order.quantity.toFixed(0)}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-2">
-                  <span className="text-sm">📭</span>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">暂无卖单</p>
-                </div>
+                <p className="text-xs text-foreground-muted text-center py-2">暂无卖单</p>
               )}
             </div>
             
-            {/* 买方报价 - 绿色主题 */}
-            <div className="p-2.5 rounded-xl bg-[var(--success)]/5 border border-[var(--success)]/20">
-              <p className="text-xs text-[var(--success)] mb-2 font-semibold flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse"></span>
-                买方报价 (点击卖出)
-              </p>
+            {/* 买方报价 */}
+            <div className="p-2.5 rounded-xl bg-success/5 border border-success/20">
+              <p className="text-xs text-success mb-2 font-semibold">买方报价</p>
               {orderBook.buyOrders.length > 0 ? (
                 <div className="space-y-1">
                   {orderBook.buyOrders.map((order, idx) => (
                     <div
                       key={idx}
-                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-[var(--success)]/10 cursor-pointer tabular-nums transition-colors border border-transparent hover:border-[var(--success)]/30"
+                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-success/10 cursor-pointer"
                       onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                     >
-                      <span className="text-[var(--success)] font-semibold w-16">¥{order.price.toFixed(2)}</span>
-                      <span className="w-12 text-right font-medium">{order.quantity.toFixed(0)}</span>
-                      <span className="text-[var(--text-muted)] truncate w-20 text-right text-[10px]">{order.companyName}</span>
+                      <span className="text-success font-semibold">¥{order.price.toFixed(2)}</span>
+                      <span>{order.quantity.toFixed(0)}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-2">
-                  <span className="text-sm">📭</span>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">暂无买单</p>
-                </div>
+                <p className="text-xs text-foreground-muted text-center py-2">暂无买单</p>
               )}
             </div>
           </div>
         </Card>
 
-        {/* 成交记录 - 固定高度，内容可滚动 */}
-        <Card variant="game" padding="md" className="relative h-40 flex flex-col">
-          {/* 顶部装饰线 */}
-          <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-[var(--info)]/50 to-transparent"></div>
-          
-          <CardTitle className="text-sm mb-2 flex items-center gap-2 flex-shrink-0">
-            <span className="w-5 h-5 rounded-lg bg-[var(--info)]/20 flex items-center justify-center text-xs">📝</span>
-            成交记录
-          </CardTitle>
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-            {recentTrades.length > 0 ? (
-              <div className="space-y-1">
-                {recentTrades.map((trade, idx) => (
-                  <div key={idx} className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-[var(--bg-muted)]/50 tabular-nums transition-colors">
-                    <span className="text-[var(--text-muted)] w-20 text-[10px]">{trade.time}</span>
-                    <span className="w-10 text-right font-medium">{trade.quantity.toFixed(0)}</span>
-                    <span className="font-bold w-14 text-right text-[var(--text-primary)]">¥{trade.price.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-3">
-                <span className="text-xl">📭</span>
-                <p className="text-[10px] text-[var(--text-muted)] mt-1">暂无成交记录</p>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* 自定义下单 - 固定高度 */}
-        <Card variant="glow" padding="md" className="relative flex-shrink-0 border-[var(--accent)]/30">
-          {/* 顶部装饰线 */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[var(--accent)] via-[var(--accent-hover)] to-[var(--accent)]"></div>
-          
+        {/* 自定义下单 */}
+        <Card variant="glow" padding="md" className="flex-shrink-0 border-accent/30">
           <CardTitle className="text-sm mb-4 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-lg bg-[var(--accent)]/20 flex items-center justify-center">🛒</span>
+            <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">🛒</span>
             自定义下单
           </CardTitle>
           
-          {/* 买卖切换 - 更明显的视觉区分 */}
-          <div className="flex gap-2 mb-4 p-1 bg-[var(--bg-muted)] rounded-xl">
-            <Button
-              variant={tradeType === 'buy' ? 'success' : 'ghost'}
-              size="sm"
-              className={`flex-1 ${tradeType === 'buy' ? 'shadow-md shadow-[var(--success)]/30' : ''}`}
-              onClick={() => setTradeType('buy')}
-            >
-              <span className="mr-1">📈</span> 买入
-            </Button>
-            <Button
-              variant={tradeType === 'sell' ? 'danger' : 'ghost'}
-              size="sm"
-              className={`flex-1 ${tradeType === 'sell' ? 'shadow-md shadow-[var(--error)]/30' : ''}`}
-              onClick={() => setTradeType('sell')}
-            >
-              <span className="mr-1">📉</span> 卖出
-            </Button>
-          </div>
-          
-          {/* 数量输入 */}
-          <Input
-            label="数量"
-            type="number"
-            value={tradeQuantity}
-            onChange={(e) => setTradeQuantity(e.target.value)}
-            size="sm"
-            variant="filled"
-            className="mb-3"
+          <TradePanel
+            selectedGoodsId={selectedGoodsId}
+            selectedGoods={selectedGoods}
+            currentPrice={currentPrice}
+            playerCash={playerCash}
+            playerStock={playerStock}
+            tradeType={tradeType}
+            tradeQuantity={tradeQuantity}
+            tradePrice={tradePrice}
+            onTradeTypeChange={setTradeType}
+            onQuantityChange={setTradeQuantity}
+            onPriceChange={setTradePrice}
+            onSubmit={handleSubmitOrder}
           />
-          
-          {/* 单价输入 */}
-          <Input
-            label="单价 (选填)"
-            type="number"
-            placeholder={`¥${currentPrice.toFixed(2)}`}
-            value={tradePrice}
-            onChange={(e) => setTradePrice(e.target.value)}
-            size="sm"
-            variant="filled"
-            className="mb-4"
-          />
-          
-          {/* 总价显示 - 更突出 */}
-          <div className={`flex justify-between text-sm mb-4 p-3 rounded-xl border-2 transition-colors ${
-            tradeType === 'buy'
-              ? 'bg-[var(--success)]/5 border-[var(--success)]/30'
-              : 'bg-[var(--error)]/5 border-[var(--error)]/30'
-          }`}>
-            <span className="text-[var(--text-muted)] font-medium">总价</span>
-            <span className={`tabular-nums font-bold text-lg ${
-              tradeType === 'buy' ? 'text-[var(--success)]' : 'text-[var(--error)]'
-            }`}>
-              ¥{totalCost.toFixed(2)}
-            </span>
-          </div>
-          
-          {/* 余额 */}
-          <div className="text-xs text-[var(--text-muted)] mb-4 tabular-nums flex items-center justify-between p-2 rounded-lg bg-[var(--bg-muted)]/50">
-            <span>可用资金</span>
-            <span className="font-semibold text-[var(--text-primary)]">¥{playerCash.toLocaleString()}</span>
-          </div>
-          
-          {/* 提交按钮 */}
-          <Button
-            variant={tradeType === 'buy' ? 'success' : 'danger'}
-            className={`w-full font-bold ${
-              tradeType === 'buy'
-                ? 'shadow-lg shadow-[var(--success)]/30'
-                : 'shadow-lg shadow-[var(--error)]/30'
-            }`}
-            onClick={handleSubmitOrder}
-          >
-            {tradeType === 'buy' ? '📈 确认买入' : '📉 确认卖出'}
-          </Button>
         </Card>
       </div>
     </div>

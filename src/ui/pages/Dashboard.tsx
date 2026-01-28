@@ -1,11 +1,13 @@
 /**
  * 仪表盘主页面
  * 混合型管理控制台 - 整合所有关键业务信息
+ * 支持响应式布局：移动端单列、平板双列、桌面三列
  */
 
 import React, { useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { formatGameDate } from '@/core/world/GameWorld';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 导入仪表盘组件
 import {
@@ -21,6 +23,7 @@ import {
 
 export const Dashboard: React.FC = () => {
   const { tick, performance, setCurrentPage, setSelectedGoods } = useGameStore();
+  const { isMobile, isTablet } = useMobile();
 
   // 获取聚合的仪表盘数据
   const {
@@ -62,8 +65,10 @@ export const Dashboard: React.FC = () => {
     // TODO: 打开卖出面板
   }, [setCurrentPage]);
 
-  // 快捷键支持
+  // 快捷键支持 (仅桌面端)
   useEffect(() => {
+    if (isMobile || isTablet) return;
+    
     const handleKeyDown = (e: KeyboardEvent) => {
       // 忽略输入框
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -91,8 +96,131 @@ export const Dashboard: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNavigate]);
+  }, [handleNavigate, isMobile, isTablet]);
 
+  // 移动端布局
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-3 pb-4">
+        {/* 顶部信息栏 - 简化版 */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">控制台</h2>
+          <span className="text-xs text-foreground-muted tabular-nums">
+            {formatGameDate(tick)}
+          </span>
+        </div>
+
+        {/* KPI 栏 - 移动端优化 */}
+        <KPIBar kpi={kpi} changes={kpiChanges} />
+
+        {/* 单列滚动布局 */}
+        <div className="space-y-3">
+          {/* 告警中心 - 移动端放在顶部 */}
+          <AlertCenter
+            onNavigate={handleNavigate}
+            maxAlerts={3}
+          />
+          
+          {/* 财务趋势 */}
+          <FinancialTrends
+            data={financialTrends}
+            dailyProfit={kpi.dailyProfit}
+          />
+          
+          {/* 生产概览 */}
+          <ProductionOverviewPanel
+            stats={productionStats}
+            onNavigate={handleNavigate}
+            onGoodsClick={handleGoodsClick}
+          />
+          
+          {/* 市场动态 */}
+          <MarketDynamicsPanel
+            stats={marketStats}
+            onNavigate={handleNavigate}
+            onTrade={handleTrade}
+          />
+          
+          {/* 库存概览 */}
+          <InventoryOverview
+            stats={inventoryStats}
+            onNavigate={handleNavigate}
+            onSellItem={handleSellItem}
+          />
+          
+          {/* 投资组合 */}
+          <InvestmentPanel
+            stats={investmentStats}
+            onNavigate={handleNavigate}
+            onViewCompany={handleViewCompany}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // 平板布局 - 双列
+  if (isTablet) {
+    return (
+      <div className="flex flex-col gap-4 pb-4">
+        {/* 顶部信息栏 */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">控制台</h2>
+          <div className="flex items-center gap-3 text-sm text-foreground-muted">
+            <span className="tabular-nums">{formatGameDate(tick)}</span>
+            <span>|</span>
+            <span className="tabular-nums">
+              {performance?.avgTickTime.toFixed(2) || '0.00'}ms/tick
+            </span>
+          </div>
+        </div>
+
+        {/* KPI 栏 */}
+        <KPIBar kpi={kpi} changes={kpiChanges} />
+
+        {/* 双列布局 */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* 左列 */}
+          <div className="space-y-4">
+            <AlertCenter
+              onNavigate={handleNavigate}
+              maxAlerts={4}
+            />
+            <FinancialTrends
+              data={financialTrends}
+              dailyProfit={kpi.dailyProfit}
+            />
+            <ProductionOverviewPanel
+              stats={productionStats}
+              onNavigate={handleNavigate}
+              onGoodsClick={handleGoodsClick}
+            />
+          </div>
+          
+          {/* 右列 */}
+          <div className="space-y-4">
+            <MarketDynamicsPanel
+              stats={marketStats}
+              onNavigate={handleNavigate}
+              onTrade={handleTrade}
+            />
+            <InventoryOverview
+              stats={inventoryStats}
+              onNavigate={handleNavigate}
+              onSellItem={handleSellItem}
+            />
+            <InvestmentPanel
+              stats={investmentStats}
+              onNavigate={handleNavigate}
+              onViewCompany={handleViewCompany}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 桌面端布局 - 三列
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* 顶部信息栏 */}

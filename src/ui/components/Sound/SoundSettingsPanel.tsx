@@ -1,11 +1,13 @@
 /**
  * 音效设置面板组件
  * 提供完整的音效控制界面
+ * 使用统一设计系统，支持主题切换
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useSound } from '@/ui/hooks/useSound';
 import { soundManager } from '@/core/sound';
+import { Card, CardHeader, CardTitle, CardContent, Button, Switch } from '@/ui/design-system';
 
 interface VolumeSliderProps {
   label: string;
@@ -31,8 +33,8 @@ function VolumeSlider({
       <div className="flex items-center gap-3">
         {icon && <div className="text-xl">{icon}</div>}
         <div>
-          <div className="text-white font-medium">{label}</div>
-          <div className="text-sm text-slate-400">{description}</div>
+          <div className="text-[var(--text-primary)] font-medium">{label}</div>
+          <div className="text-sm text-[var(--text-muted)]">{description}</div>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -43,17 +45,12 @@ function VolumeSlider({
           value={percentage}
           onChange={(e) => onChange(Number(e.target.value) / 100)}
           disabled={disabled}
-          className="w-32 h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer
-                     [&::-webkit-slider-thumb]:appearance-none
-                     [&::-webkit-slider-thumb]:w-4
-                     [&::-webkit-slider-thumb]:h-4
-                     [&::-webkit-slider-thumb]:rounded-full
-                     [&::-webkit-slider-thumb]:bg-blue-500
-                     [&::-webkit-slider-thumb]:cursor-pointer
-                     [&::-webkit-slider-thumb]:hover:bg-blue-400
-                     disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-32 h-2 rounded-full appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${percentage}%, var(--bg-muted) ${percentage}%, var(--bg-muted) 100%)`,
+          }}
         />
-        <span className="text-white w-12 text-right tabular-nums">{percentage}%</span>
+        <span className="text-[var(--text-primary)] w-12 text-right tabular-nums">{percentage}%</span>
       </div>
     </div>
   );
@@ -70,7 +67,6 @@ export function SoundSettingsPanel({ className = '' }: SoundSettingsPanelProps) 
     setMasterVolume, 
     setSFXVolume, 
     setUIVolume,
-    playClick 
   } = useSound();
   
   // 测试音效
@@ -95,41 +91,34 @@ export function SoundSettingsPanel({ className = '' }: SoundSettingsPanelProps) 
   }, []);
   
   return (
-    <div className={`bg-slate-800 rounded-lg border border-slate-700 ${className}`}>
-      <div className="p-4 border-b border-slate-700">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          🔊 音效设置
-        </h3>
-      </div>
+    <Card variant="elevated" className={className}>
+      <CardHeader>
+        <CardTitle>🔊 音效设置</CardTitle>
+      </CardHeader>
       
-      <div className="p-4 space-y-4">
+      <CardContent className="space-y-4">
         {/* 总开关 */}
         <div className="flex items-center justify-between py-2">
           <div className="flex items-center gap-3">
             <div className="text-xl">{settings.enabled ? '🔔' : '🔕'}</div>
             <div>
-              <div className="text-white font-medium">启用音效</div>
-              <div className="text-sm text-slate-400">开启/关闭所有游戏音效</div>
+              <div className="text-[var(--text-primary)] font-medium">启用音效</div>
+              <div className="text-sm text-[var(--text-muted)]">开启/关闭所有游戏音效</div>
             </div>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.enabled}
-              onChange={(e) => {
-                setEnabled(e.target.checked);
-                if (e.target.checked) {
-                  // 开启时播放测试音效
-                  setTimeout(() => soundManager.playClick(), 100);
-                }
-              }}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-slate-600 peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-          </label>
+          <Switch
+            checked={settings.enabled}
+            onCheckedChange={(checked) => {
+              setEnabled(checked);
+              if (checked) {
+                setTimeout(() => soundManager.playClick(), 100);
+              }
+            }}
+            variant="game"
+          />
         </div>
         
-        <div className="border-t border-slate-700 pt-4 space-y-2">
+        <div className="border-t border-[var(--border-default)] pt-4 space-y-2">
           {/* 主音量 */}
           <VolumeSlider
             label="主音量"
@@ -162,64 +151,59 @@ export function SoundSettingsPanel({ className = '' }: SoundSettingsPanelProps) 
         </div>
         
         {/* 测试音效 */}
-        <div className="border-t border-slate-700 pt-4">
-          <div className="text-sm text-slate-400 mb-3">测试音效</div>
+        <div className="border-t border-[var(--border-default)] pt-4">
+          <div className="text-sm text-[var(--text-muted)] mb-3">测试音效</div>
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
+              size="xs"
+              variant="secondary"
               onClick={() => testSound('click')}
               disabled={!settings.enabled}
-              className="px-3 py-1.5 bg-slate-700 text-white text-sm rounded-lg 
-                       hover:bg-slate-600 transition-colors disabled:opacity-50
-                       disabled:cursor-not-allowed"
             >
               🖱️ 点击
-            </button>
-            <button
+            </Button>
+            <Button
+              size="xs"
+              variant="success"
               onClick={() => testSound('success')}
               disabled={!settings.enabled}
-              className="px-3 py-1.5 bg-green-600/20 text-green-400 text-sm rounded-lg 
-                       hover:bg-green-600/30 transition-colors disabled:opacity-50
-                       disabled:cursor-not-allowed"
             >
               ✅ 成功
-            </button>
-            <button
+            </Button>
+            <Button
+              size="xs"
+              variant="danger"
               onClick={() => testSound('error')}
               disabled={!settings.enabled}
-              className="px-3 py-1.5 bg-red-600/20 text-red-400 text-sm rounded-lg 
-                       hover:bg-red-600/30 transition-colors disabled:opacity-50
-                       disabled:cursor-not-allowed"
             >
               ❌ 错误
-            </button>
-            <button
+            </Button>
+            <Button
+              size="xs"
+              variant="warning"
               onClick={() => testSound('coin')}
               disabled={!settings.enabled}
-              className="px-3 py-1.5 bg-yellow-600/20 text-yellow-400 text-sm rounded-lg 
-                       hover:bg-yellow-600/30 transition-colors disabled:opacity-50
-                       disabled:cursor-not-allowed"
             >
               💰 金币
-            </button>
-            <button
+            </Button>
+            <Button
+              size="xs"
+              variant="primary"
               onClick={() => testSound('build')}
               disabled={!settings.enabled}
-              className="px-3 py-1.5 bg-blue-600/20 text-blue-400 text-sm rounded-lg 
-                       hover:bg-blue-600/30 transition-colors disabled:opacity-50
-                       disabled:cursor-not-allowed"
             >
               🏗️ 建造
-            </button>
+            </Button>
           </div>
         </div>
         
         {/* 提示信息 */}
-        <div className="text-xs text-slate-500 pt-2">
+        <div className="text-xs text-[var(--text-subtle)] pt-2">
           <p>💡 音效设置会自动保存，下次启动游戏时会恢复。</p>
           <p className="mt-1">⚠️ 浏览器需要用户首次点击后才能播放音效。</p>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 

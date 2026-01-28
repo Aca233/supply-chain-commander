@@ -7,6 +7,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { formatNumber } from '@/ui/utils/format';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 设计系统组件
 import {
@@ -22,6 +23,7 @@ import {
 } from '@/ui/design-system';
 
 const Retail: React.FC = () => {
+  const { isMobile, isTablet } = useMobile();
   const {
     getPlayerRetailStores,
     getRetailStoreDetails,
@@ -64,8 +66,8 @@ const Retail: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
+      <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
         🏪 零售管理
       </h1>
 

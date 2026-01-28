@@ -515,12 +515,14 @@ export function getCompanyProfile(world: GameWorld, companyId: number): CompanyP
   const name = world.companies.names[companyId] || `公司#${companyId}`;
   const personality = isPlayer ? 'diversified' : getCompanyPersonality(companyId);
   
-  // 财务数据
-  const cash = world.companies.cash[companyId];
+  // 财务数据 - 使用 safeNumber 防止 NaN
+  const cash = safeNumber(world.companies.cash[companyId], 0);
   
   let inventoryValue = 0;
   for (let i = 0; i < GOODS_COUNT; i++) {
-    inventoryValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
+    const qty = safeNumber(world.companies.inventories[companyId * GOODS_COUNT + i], 0);
+    const price = safeNumber(world.goods.prices[i], 0);
+    inventoryValue += qty * price;
   }
   
   let buildingValue = 0;
@@ -532,7 +534,7 @@ export function getCompanyProfile(world: GameWorld, companyId: number): CompanyP
     }
   }
   
-  const totalAssets = cash + inventoryValue + buildingValue;
+  const totalAssets = safeNumber(cash + inventoryValue + buildingValue, 0);
   
   // 市场份额
   const totalCash = calculateTotalCash(world);

@@ -115,12 +115,12 @@ export default {
         'lg': '0 8px 24px rgba(0, 0, 0, 0.5)',
         'xl': '0 12px 40px rgba(0, 0, 0, 0.5)',
         '2xl': '0 20px 60px rgba(0, 0, 0, 0.6)',
-        // 卡片阴影
-        'card': '0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05)',
-        'card-hover': '0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-        'card-elevated': '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+        // 卡片阴影 - 使用CSS变量支持主题切换
+        'card': 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
+        'card-elevated': 'var(--shadow-elevated)',
         // 弹窗阴影
-        'modal': '0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+        'modal': 'var(--shadow-modal)',
         'dropdown': '0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)',
         // 发光阴影
         'glow-blue': '0 0 20px rgba(59, 130, 246, 0.4)',

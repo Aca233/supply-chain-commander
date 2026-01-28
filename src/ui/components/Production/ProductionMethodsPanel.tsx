@@ -31,25 +31,25 @@ const SLOT_ICONS: Record<ProductionSlotType, string> = {
   'environment': '🌿',
 };
 
-// 槽位类型对应的颜色（旧系统）
-const SLOT_COLORS: Record<ProductionSlotType, { bg: string; border: string; active: string }> = {
-  'process': { bg: 'bg-blue-900/60', border: 'border-blue-500/50', active: 'border-blue-400' },
-  'automation': { bg: 'bg-purple-900/60', border: 'border-purple-500/50', active: 'border-purple-400' },
-  'energy': { bg: 'bg-yellow-900/60', border: 'border-yellow-500/50', active: 'border-yellow-400' },
-  'quality': { bg: 'bg-amber-900/60', border: 'border-amber-500/50', active: 'border-amber-400' },
-  'environment': { bg: 'bg-green-900/60', border: 'border-green-500/50', active: 'border-green-400' },
+// 槽位类型对应的颜色（旧系统）- 毛玻璃风格
+const SLOT_COLORS: Record<ProductionSlotType, { bg: string; border: string; active: string; glow: string }> = {
+  'process': { bg: 'bg-blue-500/20', border: 'border-blue-400/30', active: 'border-blue-400/60', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' },
+  'automation': { bg: 'bg-purple-500/20', border: 'border-purple-400/30', active: 'border-purple-400/60', glow: 'shadow-[0_0_12px_rgba(139,92,246,0.4)]' },
+  'energy': { bg: 'bg-amber-500/20', border: 'border-amber-400/30', active: 'border-amber-400/60', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.4)]' },
+  'quality': { bg: 'bg-rose-500/20', border: 'border-rose-400/30', active: 'border-rose-400/60', glow: 'shadow-[0_0_12px_rgba(244,63,94,0.4)]' },
+  'environment': { bg: 'bg-green-500/20', border: 'border-green-400/30', active: 'border-green-400/60', glow: 'shadow-[0_0_12px_rgba(34,197,94,0.4)]' },
 };
 
-// 新系统槽位颜色（根据槽位索引循环使用）
-const NEW_SLOT_COLORS: { bg: string; border: string; active: string }[] = [
-  { bg: 'bg-blue-900/60', border: 'border-blue-500/50', active: 'border-blue-400' },
-  { bg: 'bg-purple-900/60', border: 'border-purple-500/50', active: 'border-purple-400' },
-  { bg: 'bg-yellow-900/60', border: 'border-yellow-500/50', active: 'border-yellow-400' },
-  { bg: 'bg-amber-900/60', border: 'border-amber-500/50', active: 'border-amber-400' },
-  { bg: 'bg-green-900/60', border: 'border-green-500/50', active: 'border-green-400' },
-  { bg: 'bg-cyan-900/60', border: 'border-cyan-500/50', active: 'border-cyan-400' },
-  { bg: 'bg-rose-900/60', border: 'border-rose-500/50', active: 'border-rose-400' },
-  { bg: 'bg-indigo-900/60', border: 'border-indigo-500/50', active: 'border-indigo-400' },
+// 毛玻璃风格槽位颜色
+const GLASS_SLOT_COLORS: { bg: string; border: string; active: string; glow: string }[] = [
+  { bg: 'bg-blue-500/20', border: 'border-blue-400/30', active: 'border-blue-400/60', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' },
+  { bg: 'bg-purple-500/20', border: 'border-purple-400/30', active: 'border-purple-400/60', glow: 'shadow-[0_0_12px_rgba(139,92,246,0.4)]' },
+  { bg: 'bg-amber-500/20', border: 'border-amber-400/30', active: 'border-amber-400/60', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.4)]' },
+  { bg: 'bg-green-500/20', border: 'border-green-400/30', active: 'border-green-400/60', glow: 'shadow-[0_0_12px_rgba(34,197,94,0.4)]' },
+  { bg: 'bg-cyan-500/20', border: 'border-cyan-400/30', active: 'border-cyan-400/60', glow: 'shadow-[0_0_12px_rgba(6,182,212,0.4)]' },
+  { bg: 'bg-rose-500/20', border: 'border-rose-400/30', active: 'border-rose-400/60', glow: 'shadow-[0_0_12px_rgba(244,63,94,0.4)]' },
+  { bg: 'bg-indigo-500/20', border: 'border-indigo-400/30', active: 'border-indigo-400/60', glow: 'shadow-[0_0_12px_rgba(99,102,241,0.4)]' },
+  { bg: 'bg-teal-500/20', border: 'border-teal-400/30', active: 'border-teal-400/60', glow: 'shadow-[0_0_12px_rgba(20,184,166,0.4)]' },
 ];
 
 export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
@@ -353,25 +353,29 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
     return createPortal(
       <div
         className="fixed z-[9999] min-w-[220px] overflow-y-auto
-                   bg-slate-800/98 backdrop-blur-sm border border-slate-600 rounded-lg shadow-2xl"
+                   bg-gradient-to-br from-white/[0.12] to-white/[0.06]
+                   backdrop-blur-xl border border-white/[0.15] rounded-xl
+                   shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
         style={{
           top: Math.max(10, dropdownPos.top),
           left: dropdownPos.left,
           maxHeight: `${maxHeight}px`,
         }}
       >
-        <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800">
-          <div className="text-xs font-medium text-text-secondary">{getSlotTypeName(slot.slotType)}</div>
+        <div className="p-2 border-b border-white/[0.1] sticky top-0 bg-black/20 backdrop-blur-sm">
+          <div className="text-xs font-medium text-white/70">{getSlotTypeName(slot.slotType)}</div>
         </div>
         <div className="p-1">
           {/* 空选项 */}
           <button
-            className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors
-                        ${currentMethodId === 0 ? 'bg-accent/20 text-accent' : 'hover:bg-slate-700'}`}
+            className={`w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-all
+                        ${currentMethodId === 0
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
+                          : 'hover:bg-white/[0.08]'}`}
             onClick={(e) => handleMethodSelect(activeSlot, 0, e)}
           >
             <span className="w-6 text-center">❌</span>
-            <span className="text-text-tertiary">未选择</span>
+            <span className="text-white/50">未选择</span>
           </button>
           
           {/* 可用方法 */}
@@ -382,8 +386,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             return (
               <button
                 key={method.id}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors
-                            ${isSelected ? 'bg-accent/20 text-accent' : 'hover:bg-slate-700'}`}
+                className={`w-full text-left px-2 py-1.5 rounded-lg text-sm transition-all
+                            ${isSelected
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
+                              : 'hover:bg-white/[0.08] border border-transparent'}`}
                 onClick={(e) => handleMethodSelect(activeSlot, method.id, e)}
               >
                 <div className="flex items-center gap-2">
@@ -391,10 +397,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
                     {getMethodIcon(method, slot.slotType)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">
+                    <div className="font-medium truncate text-white/90">
                       {method.name}
                       {method.requiredLevel > 1 && (
-                        <span className="ml-1 text-xs text-text-tertiary">(Lv.{method.requiredLevel}+)</span>
+                        <span className="ml-1 text-xs text-white/40">(Lv.{method.requiredLevel}+)</span>
                       )}
                     </div>
                     {effects.length > 0 && (
@@ -437,20 +443,22 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
     return createPortal(
       <div
         className="fixed z-[9999] min-w-[260px] overflow-y-auto
-                   bg-slate-800/98 backdrop-blur-sm border border-slate-600 rounded-lg shadow-2xl"
+                   bg-gradient-to-br from-white/[0.12] to-white/[0.06]
+                   backdrop-blur-xl border border-white/[0.15] rounded-xl
+                   shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
         style={{
           top: Math.max(10, dropdownPos.top),
           left: dropdownPos.left,
           maxHeight: `${maxHeight}px`,
         }}
       >
-        <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800">
+        <div className="p-2.5 border-b border-white/[0.1] sticky top-0 bg-black/20 backdrop-blur-sm">
           <div className="flex items-center gap-2">
-            <span className="text-base">{slot.icon}</span>
+            <span className="text-lg">{slot.icon}</span>
             <div>
-              <div className="text-sm font-medium text-text-primary">{slot.name}</div>
+              <div className="text-sm font-medium text-white">{slot.name}</div>
               {slot.description && (
-                <div className="text-xs text-text-tertiary">{slot.description}</div>
+                <div className="text-xs text-white/50">{slot.description}</div>
               )}
             </div>
           </div>
@@ -458,12 +466,14 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
         <div className="p-1">
           {/* 空选项 */}
           <button
-            className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center gap-2 transition-colors
-                        ${currentMethodId === 0 ? 'bg-accent/20 text-accent' : 'hover:bg-slate-700'}`}
+            className={`w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-all
+                        ${currentMethodId === 0
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
+                          : 'hover:bg-white/[0.08] border border-transparent'}`}
             onClick={(e) => handleMethodSelect(activeSlot, 0, e)}
           >
             <span className="w-6 text-center">❌</span>
-            <span className="text-text-tertiary">未选择</span>
+            <span className="text-white/50">未选择</span>
           </button>
           
           {/* 可用方法 */}
@@ -476,8 +486,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
               <button
                 key={method.id}
                 disabled={isLocked}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors
-                            ${isSelected ? 'bg-accent/20 text-accent' : 'hover:bg-slate-700'}
+                className={`w-full text-left px-2 py-1.5 rounded-lg text-sm transition-all
+                            ${isSelected
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
+                              : 'hover:bg-white/[0.08] border border-transparent'}
                             ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                 onClick={(e) => !isLocked && handleMethodSelect(activeSlot, method.id, e)}
               >
@@ -486,16 +498,16 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
                     {getNewMethodIcon(method, slot)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate flex items-center gap-1">
+                    <div className="font-medium truncate flex items-center gap-1 text-white/90">
                       {method.name}
                       {method.requiredLevel > 1 && (
-                        <span className={`text-xs ${isLocked ? 'text-red-400' : 'text-text-tertiary'}`}>
+                        <span className={`text-xs ${isLocked ? 'text-red-400' : 'text-white/40'}`}>
                           (Lv.{method.requiredLevel}+)
                         </span>
                       )}
                     </div>
                     {method.description && (
-                      <div className="text-xs text-text-tertiary truncate">{method.description}</div>
+                      <div className="text-xs text-white/50 truncate">{method.description}</div>
                     )}
                     {effects.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
@@ -546,15 +558,17 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             
             return (
               <div key={slotIndex} className="relative">
-                {/* 槽位按钮 */}
+                {/* 毛玻璃槽位按钮 */}
                 <button
                   ref={el => buttonRefs.current[slotIndex] = el}
                   className={`
-                    w-10 h-10 rounded border-2 flex items-center justify-center text-lg
-                    transition-all duration-150 hover:scale-105
-                    ${colors.bg} ${isActive ? colors.active : colors.border}
-                    ${isActive ? 'ring-2 ring-white/30 scale-105' : ''}
-                    ${!hasMethod ? 'opacity-60' : ''}
+                    w-10 h-10 rounded-xl flex items-center justify-center text-lg
+                    transition-all duration-200 hover:scale-105
+                    backdrop-blur-sm border
+                    ${isActive
+                      ? `${colors.bg} ${colors.active} ${colors.glow} scale-105`
+                      : `bg-white/[0.08] ${colors.border} hover:bg-white/[0.12]`}
+                    ${!hasMethod ? 'opacity-50' : ''}
                   `}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -567,16 +581,16 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
                   {hasMethod ? getMethodIcon(currentMethod, slot.slotType) : SLOT_ICONS[slot.slotType]}
                 </button>
                 
-                {/* Tooltip 悬浮提示 */}
+                {/* 毛玻璃Tooltip */}
                 {showTooltip === slotIndex && !isActive && (
                   <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap">
-                    <div className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs shadow-lg">
-                      <div className="font-medium">{getSlotTypeName(slot.slotType)}</div>
+                    <div className="bg-gradient-to-br from-white/[0.15] to-white/[0.08] backdrop-blur-xl border border-white/[0.15] rounded-lg px-2.5 py-1.5 text-xs shadow-lg">
+                      <div className="font-medium text-white">{getSlotTypeName(slot.slotType)}</div>
                       {currentMethod && (
-                        <div className="text-text-tertiary">{currentMethod.name}</div>
+                        <div className="text-white/60">{currentMethod.name}</div>
                       )}
                     </div>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-white/[0.15]" />
                   </div>
                 )}
               </div>
@@ -584,7 +598,7 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
           })}
         </div>
         
-        {/* 当前选中方式的效果摘要 */}
+        {/* 效果摘要标签 - 毛玻璃风格 */}
         <div className="flex-1 min-w-0 ml-2 hidden md:flex items-center gap-1 flex-wrap">
           {slotConfig.slots.map((slot, slotIndex) => {
             const currentMethodId = currentMethods[slotIndex] || 0;
@@ -594,8 +608,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             return effects.map((effect, i) => (
               <span
                 key={`${slotIndex}-${i}`}
-                className={`text-xs px-1.5 py-0.5 rounded ${
-                  effect.isPositive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                className={`text-xs px-1.5 py-0.5 rounded-md backdrop-blur-sm border ${
+                  effect.isPositive
+                    ? 'bg-green-500/15 text-green-400 border-green-500/30'
+                    : 'bg-red-500/15 text-red-400 border-red-500/30'
                 }`}
               >
                 {effect.label}{effect.value}
@@ -618,21 +634,23 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
           {newBuildingConfig.slots.map((slot: BuildingSlotType, slotIndex: number) => {
             const currentMethodId = currentMethods[slotIndex] || 0;
             const currentMethod = currentMethodId > 0 ? getMethodByIdNew(currentMethodId) as BuildingProductionMethod | undefined : undefined;
-            const colors = NEW_SLOT_COLORS[slotIndex % NEW_SLOT_COLORS.length];
+            const colors = GLASS_SLOT_COLORS[slotIndex % GLASS_SLOT_COLORS.length];
             const isActive = activeSlot === slotIndex;
             const hasMethod = currentMethodId > 0 && currentMethod;
             
             return (
               <div key={slotIndex} className="relative">
-                {/* 槽位按钮 */}
+                {/* 毛玻璃槽位按钮 */}
                 <button
                   ref={el => buttonRefs.current[slotIndex] = el}
                   className={`
-                    w-10 h-10 rounded border-2 flex items-center justify-center text-lg
-                    transition-all duration-150 hover:scale-105
-                    ${colors.bg} ${isActive ? colors.active : colors.border}
-                    ${isActive ? 'ring-2 ring-white/30 scale-105' : ''}
-                    ${!hasMethod ? 'opacity-60' : ''}
+                    w-10 h-10 rounded-xl flex items-center justify-center text-lg
+                    transition-all duration-200 hover:scale-105
+                    backdrop-blur-sm border
+                    ${isActive
+                      ? `${colors.bg} ${colors.active} ${colors.glow} scale-105`
+                      : `bg-white/[0.08] ${colors.border} hover:bg-white/[0.12]`}
+                    ${!hasMethod ? 'opacity-50' : ''}
                   `}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -645,24 +663,24 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
                   {hasMethod ? getNewMethodIcon(currentMethod, slot) : (slot.icon || '⚙️')}
                 </button>
                 
-                {/* Tooltip 悬浮提示 */}
+                {/* 毛玻璃Tooltip */}
                 {showTooltip === slotIndex && !isActive && (
                   <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap max-w-[200px]">
-                    <div className="bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-xs shadow-lg">
-                      <div className="font-medium flex items-center gap-1">
+                    <div className="bg-gradient-to-br from-white/[0.15] to-white/[0.08] backdrop-blur-xl border border-white/[0.15] rounded-lg px-2.5 py-1.5 text-xs shadow-lg">
+                      <div className="font-medium flex items-center gap-1 text-white">
                         <span>{slot.icon}</span>
                         <span>{slot.name}</span>
                       </div>
                       {currentMethod ? (
-                        <div className="text-accent mt-0.5">{currentMethod.name}</div>
+                        <div className="text-blue-400 mt-0.5">{currentMethod.name}</div>
                       ) : (
-                        <div className="text-text-tertiary mt-0.5">未选择</div>
+                        <div className="text-white/50 mt-0.5">未选择</div>
                       )}
                       {slot.description && (
-                        <div className="text-text-tertiary mt-0.5 text-[10px]">{slot.description}</div>
+                        <div className="text-white/40 mt-0.5 text-[10px]">{slot.description}</div>
                       )}
                     </div>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-white/[0.15]" />
                   </div>
                 )}
               </div>
@@ -670,7 +688,7 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
           })}
         </div>
         
-        {/* 当前选中方式的效果摘要 */}
+        {/* 效果摘要标签 - 毛玻璃风格 */}
         <div className="flex-1 min-w-0 ml-2 hidden md:flex items-center gap-1 flex-wrap">
           {newBuildingConfig.slots.map((slot: BuildingSlotType, slotIndex: number) => {
             const currentMethodId = currentMethods[slotIndex] || 0;
@@ -680,8 +698,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             return effects.map((effect, i) => (
               <span
                 key={`${slotIndex}-${i}`}
-                className={`text-xs px-1.5 py-0.5 rounded ${
-                  effect.isPositive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                className={`text-xs px-1.5 py-0.5 rounded-md backdrop-blur-sm border ${
+                  effect.isPositive
+                    ? 'bg-green-500/15 text-green-400 border-green-500/30'
+                    : 'bg-red-500/15 text-red-400 border-red-500/30'
                 }`}
               >
                 {effect.label}{effect.value}
@@ -695,10 +715,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
 
   return (
     <div className="mt-3">
-      {/* 生产方式槽位 - 维多利亚3风格水平排列 */}
-      <div className="flex items-center gap-1 relative">
+      {/* 生产方式槽位 - 毛玻璃风格水平排列 */}
+      <div className="flex items-center gap-1.5 relative">
         {/* 槽位标签 */}
-        <span className="text-xs text-text-tertiary mr-1 hidden sm:inline">
+        <span className="text-xs text-white/40 mr-1 hidden sm:inline font-medium">
           {useNewSystem ? '专属方式' : '方式'}
         </span>
         

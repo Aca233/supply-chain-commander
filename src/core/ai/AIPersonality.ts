@@ -407,86 +407,87 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 1,
     name: '中钢矿业',
     personality: 'conservative',
-    initialCash: 50000000,
+    initialCash: 80000000,
     focusGoods: [0],  // 铁矿石
     category: 'extraction',
     description: '铁矿开采',
     initialBuildings: [
-      { typeId: 0, recipeId: 0, count: 4 },
+      { typeId: 0, recipeId: 0, count: 15 },  // 铁矿×15
     ],
   },
   {
     id: 2,
     name: '神华煤炭',
     personality: 'conservative',
-    initialCash: 80000000,
+    initialCash: 150000000,
     focusGoods: [3],  // 煤炭
     category: 'extraction',
     description: '煤炭开采',
     initialBuildings: [
-      { typeId: 2, recipeId: 2, count: 10 },
+      { typeId: 2, recipeId: 2, count: 25 },  // 煤矿×25
     ],
   },
   {
     id: 3,
     name: '国投煤业',
     personality: 'conservative',
-    initialCash: 50000000,
+    initialCash: 70000000,
     focusGoods: [3],  // 煤炭
     category: 'extraction',
     description: '煤炭开采',
     initialBuildings: [
-      { typeId: 2, recipeId: 2, count: 5 },
+      { typeId: 2, recipeId: 2, count: 12 },  // 煤矿×12
     ],
   },
   {
     id: 4,
     name: '五矿铜业',
     personality: 'conservative',
-    initialCash: 40000000,
+    initialCash: 80000000,
     focusGoods: [1],  // 铜矿石
     category: 'extraction',
     description: '铜矿开采',
     initialBuildings: [
-      { typeId: 1, recipeId: 1, count: 3 },
+      { typeId: 1, recipeId: 1, count: 14 },  // 铜矿×14
     ],
   },
   {
     id: 5,
     name: '中石油',
     personality: 'conservative',
-    initialCash: 150000000,
+    initialCash: 250000000,
     focusGoods: [4, 5],  // 原油、天然气
     category: 'extraction',
     description: '石油天然气开采',
     initialBuildings: [
-      { typeId: 3, recipeId: 3, count: 3 },
-      { typeId: 4, recipeId: 4, count: 2 },
+      { typeId: 3, recipeId: 3, count: 12 },  // 油田×12
+      { typeId: 4, recipeId: 4, count: 10 },  // 气田×10
     ],
   },
   {
     id: 6,
     name: '林业集团',
     personality: 'conservative',
-    initialCash: 25000000,
+    initialCash: 60000000,
     focusGoods: [6],  // 木材
     category: 'extraction',
     description: '木材采伐',
     initialBuildings: [
-      { typeId: 5, recipeId: 5, count: 4 },
+      { typeId: 5, recipeId: 5, count: 14 },  // 伐木场×14
     ],
   },
   {
     id: 7,
     name: '硅海矿业',
     personality: 'conservative',
-    initialCash: 50000000,
+    initialCash: 90000000,
     focusGoods: [9, 10],  // 硅石、稀土
     category: 'extraction',
     description: '硅石稀土开采',
     initialBuildings: [
-      { typeId: 7, recipeId: 8, count: 3 },
-      { typeId: 7, recipeId: 9, count: 1 },
+      { typeId: 7, recipeId: 8, count: 10 },   // 硅石矿×10
+      { typeId: 7, recipeId: 9, count: 4 },    // 稀土矿×4
+      { typeId: 7, recipeId: 102, count: 2 },  // 铝土矿×2
     ],
   },
   
@@ -495,29 +496,29 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 8,
     name: '中粮集团',
     personality: 'diversified',
-    initialCash: 35000000,
+    initialCash: 100000000,
     focusGoods: [7, 8, 58, 59],  // 棉花、粮食、蔬菜、水果
     category: 'agriculture',
     description: '粮食蔬果种植',
     initialBuildings: [
-      { typeId: 6, recipeId: 6, count: 2 },
-      { typeId: 6, recipeId: 7, count: 1 },
-      { typeId: 25, recipeId: 35, count: 1 },
-      { typeId: 25, recipeId: 36, count: 1 },
+      { typeId: 6, recipeId: 6, count: 8 },   // 粮食种植×8
+      { typeId: 6, recipeId: 7, count: 4 },   // 棉花种植×4
+      { typeId: 25, recipeId: 35, count: 3 }, // 蔬菜农场×3
+      { typeId: 25, recipeId: 36, count: 3 }, // 水果农场×3
     ],
   },
   {
     id: 9,
     name: '新希望牧业',
     personality: 'specialist',
-    initialCash: 40000000,
+    initialCash: 80000000,
     focusGoods: [60, 61, 62],  // 牲畜、家禽、水产
     category: 'agriculture',
     description: '畜牧水产养殖',
     initialBuildings: [
-      { typeId: 26, recipeId: 37, count: 1 },
-      { typeId: 26, recipeId: 38, count: 1 },
-      { typeId: 27, recipeId: 39, count: 2 },
+      { typeId: 26, recipeId: 37, count: 4 }, // 牲畜养殖×4
+      { typeId: 26, recipeId: 38, count: 5 }, // 家禽养殖×5
+      { typeId: 27, recipeId: 39, count: 6 }, // 水产养殖×6
     ],
   },
   
@@ -526,101 +527,112 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 10,
     name: '宝钢集团',
     personality: 'cost_leader',
-    initialCash: 80000000,
+    initialCash: 200000000,
     focusGoods: [14],  // 钢材
     category: 'processing',
-    description: '钢铁冶炼',
+    description: '钢铁冶炼（垂直整合）',
     initialBuildings: [
-      { typeId: 8, recipeId: 10, count: 3 },
-      { typeId: 8, recipeId: 11, count: 1 },
+      { typeId: 0, recipeId: 0, count: 8 },   // 自有铁矿×8
+      { typeId: 2, recipeId: 2, count: 4 },   // 自有煤矿×4
+      { typeId: 8, recipeId: 10, count: 8 },  // 高炉炼钢×8
+      { typeId: 8, recipeId: 11, count: 4 },  // 电弧炉炼钢×4
     ],
   },
   {
     id: 11,
     name: '江铜冶炼',
     personality: 'specialist',
-    initialCash: 50000000,
+    initialCash: 100000000,
     focusGoods: [15],  // 铜材
     category: 'processing',
-    description: '铜材冶炼',
+    description: '铜材冶炼（垂直整合）',
     initialBuildings: [
-      { typeId: 8, recipeId: 78, count: 3 },
+      { typeId: 1, recipeId: 1, count: 6 },   // 自有铜矿×6
+      { typeId: 8, recipeId: 78, count: 10 }, // 铜冶炼×10
     ],
   },
   {
     id: 12,
     name: '中石化',
     personality: 'cost_leader',
-    initialCash: 150000000,
+    initialCash: 250000000,
     focusGoods: [25, 12],  // 燃油、化工原料
     category: 'processing',
-    description: '石油炼化',
+    description: '石油炼化（垂直整合）',
     initialBuildings: [
-      { typeId: 9, recipeId: 12, count: 4 },
+      { typeId: 3, recipeId: 3, count: 6 },   // 自有油田×6
+      { typeId: 9, recipeId: 12, count: 14 }, // 石油精炼×14
     ],
   },
   {
     id: 13,
     name: '塑料化工',
     personality: 'specialist',
-    initialCash: 60000000,
+    initialCash: 120000000,
     focusGoods: [18, 20],  // 塑料、化学品
     category: 'processing',
     description: '塑料化工生产',
     initialBuildings: [
-      { typeId: 10, recipeId: 13, count: 2 },
-      { typeId: 10, recipeId: 14, count: 2 },
+      { typeId: 10, recipeId: 13, count: 8 },  // 塑料生产×8
+      { typeId: 10, recipeId: 14, count: 6 },  // 化学品生产×6
+      { typeId: 10, recipeId: 68, count: 4 },  // 橡胶制品×4
     ],
   },
   {
     id: 14,
     name: '福耀玻璃',
     personality: 'specialist',
-    initialCash: 40000000,
+    initialCash: 80000000,
     focusGoods: [17],  // 玻璃
     category: 'processing',
-    description: '玻璃制造',
+    description: '玻璃制造（垂直整合）',
     initialBuildings: [
-      { typeId: 11, recipeId: 15, count: 3 },
+      { typeId: 7, recipeId: 8, count: 4 },   // 自有硅矿×4
+      { typeId: 11, recipeId: 15, count: 8 }, // 玻璃生产×8
     ],
   },
   {
     id: 15,
     name: '魏桥纺织',
     personality: 'cost_leader',
-    initialCash: 35000000,
+    initialCash: 100000000,
     focusGoods: [23],  // 纺织品
     category: 'processing',
-    description: '纺织加工',
+    description: '纺织加工（垂直整合）',
     initialBuildings: [
-      { typeId: 12, recipeId: 16, count: 3 },
+      { typeId: 6, recipeId: 7, count: 4 },   // 自有棉花×4
+      { typeId: 12, recipeId: 16, count: 6 }, // 纺织品生产×6
+      { typeId: 12, recipeId: 99, count: 2 }, // 丝绸生产×2
+      { typeId: 12, recipeId: 69, count: 4 }, // 服装生产×4
     ],
   },
   {
     id: 16,
     name: '海螺水泥',
     personality: 'cost_leader',
-    initialCash: 60000000,  // 增加初始资金以支持更多生产
+    initialCash: 120000000,
     focusGoods: [21, 36, 47],  // 水泥、建筑材料、建材成品
     category: 'processing',
-    description: '水泥及建材生产',
+    description: '水泥及建材生产（垂直整合）',
     initialBuildings: [
-      { typeId: 14, recipeId: 19, count: 3 },  // 水泥生产
-      { typeId: 14, recipeId: 71, count: 2 },  // 建筑材料生产
-      { typeId: 14, recipeId: 72, count: 2 },  // 建材成品生产
+      { typeId: 7, recipeId: 8, count: 4 },   // 自有硅矿×4
+      { typeId: 2, recipeId: 2, count: 2 },   // 自有煤矿×2
+      { typeId: 14, recipeId: 19, count: 6 }, // 水泥生产×6
+      { typeId: 14, recipeId: 71, count: 4 }, // 建筑材料×4
+      { typeId: 14, recipeId: 72, count: 2 }, // 建材成品×2
     ],
   },
   {
     id: 17,
     name: '中铝集团',
     personality: 'specialist',
-    initialCash: 60000000,
+    initialCash: 100000000,
     focusGoods: [2, 16],  // 铝土矿、铝材
     category: 'processing',
-    description: '铝材冶炼',
+    description: '铝材冶炼（垂直整合）',
     initialBuildings: [
-      { typeId: 15, recipeId: 102, count: 1 },
-      { typeId: 15, recipeId: 20, count: 2 },
+      { typeId: 7, recipeId: 102, count: 6 }, // 铝土矿开采×6
+      { typeId: 15, recipeId: 20, count: 9 }, // 铝冶炼×9
     ],
   },
   
@@ -629,123 +641,167 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 18,
     name: '统一食品',
     personality: 'cost_leader',
-    initialCash: 40000000,
+    initialCash: 80000000,
     focusGoods: [44, 45],  // 食品、饮料
     category: 'processing',
     description: '食品饮料加工',
     initialBuildings: [
-      { typeId: 13, recipeId: 17, count: 2 },
-      { typeId: 13, recipeId: 18, count: 2 },
+      { typeId: 13, recipeId: 17, count: 5 },  // 食品加工×5
+      { typeId: 13, recipeId: 18, count: 4 },  // 饮料生产×4
+      { typeId: 13, recipeId: 86, count: 3 },  // 零食生产×3
+      { typeId: 13, recipeId: 103, count: 2 }, // 包装食品×2
     ],
   },
   {
     id: 19,
     name: '双汇食品',
     personality: 'specialist',
-    initialCash: 45000000,
+    initialCash: 90000000,
     focusGoods: [63, 64],  // 肉制品、乳制品
     category: 'processing',
-    description: '肉类乳品加工',
+    description: '肉类乳品加工（垂直整合）',
     initialBuildings: [
-      { typeId: 28, recipeId: 40, count: 2 },
-      { typeId: 28, recipeId: 41, count: 1 },
+      { typeId: 26, recipeId: 37, count: 2 }, // 自有牲畜养殖×2
+      { typeId: 26, recipeId: 38, count: 2 }, // 自有家禽养殖×2
+      { typeId: 28, recipeId: 40, count: 5 }, // 肉类加工×5
+      { typeId: 28, recipeId: 41, count: 3 }, // 乳制品生产×3
+      { typeId: 13, recipeId: 85, count: 1 }, // 罐头生产×1
     ],
   },
   {
     id: 20,
     name: '冷冻零食',
     personality: 'opportunist',
-    initialCash: 35000000,
+    initialCash: 70000000,
     focusGoods: [65, 67, 69],  // 冷冻食品、零食、即食食品
     category: 'processing',
     description: '冷冻零食生产',
     initialBuildings: [
-      { typeId: 13, recipeId: 42, count: 1 },
-      { typeId: 13, recipeId: 86, count: 1 },
-      { typeId: 13, recipeId: 88, count: 1 },
+      { typeId: 13, recipeId: 42, count: 5 },  // 冷冻食品×5
+      { typeId: 13, recipeId: 86, count: 4 },  // 零食生产×4
+      { typeId: 13, recipeId: 88, count: 3 },  // 宠物食品×3
     ],
   },
   
-  // ==================== E. 电子与制造公司 (6家) ====================
+  // ==================== E. 电子与制造公司 (8家) ====================
   {
     id: 21,
     name: '立讯精密',
     personality: 'specialist',
-    initialCash: 70000000,
+    initialCash: 150000000,
     focusGoods: [26],  // 电子元件
     category: 'manufacturing',
-    description: '电子元件制造',
+    description: '电子元件制造（垂直整合）',
     initialBuildings: [
-      { typeId: 16, recipeId: 21, count: 4 },
+      { typeId: 1, recipeId: 1, count: 4 },    // 自有铜矿×4
+      { typeId: 8, recipeId: 78, count: 4 },   // 自有铜冶炼×4
+      { typeId: 16, recipeId: 21, count: 12 }, // 电子元件生产×12
     ],
   },
   {
     id: 22,
     name: '中芯国际',
     personality: 'innovator',
-    initialCash: 100000000,
+    initialCash: 180000000,
     focusGoods: [27],  // 芯片
     category: 'manufacturing',
-    description: '半导体芯片制造',
+    description: '半导体芯片制造（垂直整合）',
     initialBuildings: [
-      { typeId: 17, recipeId: 24, count: 3 },
+      { typeId: 7, recipeId: 8, count: 6 },   // 自有硅矿×6
+      { typeId: 7, recipeId: 9, count: 2 },   // 自有稀土矿×2
+      { typeId: 17, recipeId: 24, count: 10 }, // 芯片生产×10
+    ],
+  },
+  {
+    id: 44,
+    name: '富士康电子',
+    personality: 'cost_leader',
+    initialCash: 150000000,
+    focusGoods: [26],  // 电子元件
+    category: 'manufacturing',
+    description: '电子元件代工制造（垂直整合）',
+    initialBuildings: [
+      { typeId: 1, recipeId: 1, count: 4 },    // 自有铜矿×4
+      { typeId: 8, recipeId: 78, count: 4 },   // 自有铜冶炼×4
+      { typeId: 16, recipeId: 21, count: 10 }, // 电子元件生产×10
+    ],
+  },
+  {
+    id: 45,
+    name: '歌尔股份',
+    personality: 'specialist',
+    initialCash: 100000000,
+    focusGoods: [26, 30],  // 电子元件、屏幕
+    category: 'manufacturing',
+    description: '精密电子元件制造（垂直整合）',
+    initialBuildings: [
+      { typeId: 1, recipeId: 1, count: 3 },    // 自有铜矿×3
+      { typeId: 8, recipeId: 78, count: 3 },   // 自有铜冶炼×3
+      { typeId: 16, recipeId: 21, count: 6 },  // 电子元件生产×6
+      { typeId: 21, recipeId: 31, count: 3 },  // 屏幕生产×3
     ],
   },
   {
     id: 23,
     name: '华为终端',
     personality: 'innovator',
-    initialCash: 100000000,  // 增加资金
+    initialCash: 150000000,
     focusGoods: [55, 56, 39, 52],  // 高端手机、电脑、消费电子、无人机
     category: 'manufacturing',
-    description: '消费电子产品及无人机',
+    description: '消费电子产品及无人机（垂直整合）',
     initialBuildings: [
-      { typeId: 16, recipeId: 22, count: 2 },  // 平价手机
-      { typeId: 16, recipeId: 23, count: 2 },  // 电脑
-      { typeId: 16, recipeId: 82, count: 2 },  // 无人机生产
+      { typeId: 16, recipeId: 21, count: 3 },  // 自有电子元件×3
+      { typeId: 16, recipeId: 83, count: 4 },  // 高端手机生产×4
+      { typeId: 16, recipeId: 84, count: 4 },  // 平价手机生产×4
+      { typeId: 16, recipeId: 23, count: 3 },  // 电脑组装×3
+      { typeId: 16, recipeId: 82, count: 2 },  // 无人机生产×2
     ],
   },
   {
     id: 24,
     name: '海尔家电',
     personality: 'diversified',
-    initialCash: 60000000,
+    initialCash: 100000000,
     focusGoods: [40],  // 家电
     category: 'manufacturing',
-    description: '家用电器制造',
+    description: '家用电器制造（垂直整合）',
     initialBuildings: [
-      { typeId: 19, recipeId: 27, count: 3 },
+      { typeId: 16, recipeId: 21, count: 4 },  // 自有电子元件×4
+      { typeId: 19, recipeId: 27, count: 10 }, // 家电生产×10
     ],
   },
   {
     id: 25,
     name: '宁德时代',
     personality: 'innovator',
-    initialCash: 120000000,  // 增加资金支持更多产线
+    initialCash: 200000000,
     focusGoods: [28, 49, 50],  // 电池、光伏系统、储能系统
     category: 'manufacturing',
-    description: '动力电池及储能系统制造',
+    description: '动力电池及储能系统制造（垂直整合）',
     initialBuildings: [
-      { typeId: 20, recipeId: 28, count: 3 },  // 电池生产
-      { typeId: 20, recipeId: 77, count: 2 },  // 光伏系统组装
-      { typeId: 20, recipeId: 81, count: 2 },  // 储能系统生产
+      { typeId: 33, recipeId: 107, count: 6 }, // 自有锂矿×6
+      { typeId: 8, recipeId: 78, count: 3 },   // 自有铜冶炼×3
+      { typeId: 20, recipeId: 28, count: 8 },  // 电池生产×8
+      { typeId: 20, recipeId: 77, count: 3 },  // 光伏系统组装×3
+      { typeId: 20, recipeId: 81, count: 2 },  // 储能系统生产×2
     ],
   },
   {
     id: 26,
     name: '零部件集团',
     personality: 'specialist',
-    initialCash: 100000000,  // 增加资金支持更多产线
+    initialCash: 150000000,
     focusGoods: [31, 32, 29, 30, 46, 51],  // 机械部件、汽车零部件、电机、屏幕、家具、工业机器人
     category: 'manufacturing',
-    description: '机械零部件及工业设备制造',
+    description: '机械零部件及工业设备制造（垂直整合）',
     initialBuildings: [
-      { typeId: 21, recipeId: 79, count: 2 },  // 机械部件生产
-      { typeId: 21, recipeId: 29, count: 1 },  // 汽车零部件
-      { typeId: 21, recipeId: 30, count: 1 },  // 电机
-      { typeId: 21, recipeId: 31, count: 1 },  // 屏幕
-      { typeId: 21, recipeId: 70, count: 2 },  // 家具生产
-      { typeId: 21, recipeId: 73, count: 2 },  // 工业机器人生产
+      { typeId: 8, recipeId: 10, count: 3 },   // 自有炼钢×3
+      { typeId: 21, recipeId: 79, count: 5 },  // 机械部件生产×5
+      { typeId: 21, recipeId: 29, count: 4 },  // 汽车零部件×4
+      { typeId: 21, recipeId: 30, count: 3 },  // 电机×3
+      { typeId: 21, recipeId: 31, count: 2 },  // 屏幕×2
+      { typeId: 21, recipeId: 70, count: 2 },  // 家具生产×2
+      { typeId: 21, recipeId: 73, count: 1 },  // 工业机器人×1
     ],
   },
   
@@ -754,24 +810,33 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 27,
     name: '比亚迪',
     personality: 'innovator',
-    initialCash: 100000000,
+    initialCash: 250000000,
     focusGoods: [42],  // 电动汽车
     category: 'manufacturing',
-    description: '电动汽车制造',
+    description: '电动汽车制造（高度垂直整合）',
     initialBuildings: [
-      { typeId: 18, recipeId: 26, count: 2 },
+      { typeId: 33, recipeId: 107, count: 3 }, // 自有锂矿×3
+      { typeId: 20, recipeId: 28, count: 4 },  // 自有电池生产×4
+      { typeId: 8, recipeId: 10, count: 2 },   // 自有炼钢×2
+      { typeId: 21, recipeId: 29, count: 4 },  // 自有汽车零部件×4
+      { typeId: 16, recipeId: 21, count: 3 },  // 自有电子元件×3
+      { typeId: 18, recipeId: 26, count: 8 },  // 电动汽车组装×8
     ],
   },
   {
     id: 28,
     name: '吉利汽车',
     personality: 'aggressive',
-    initialCash: 120000000,
+    initialCash: 200000000,
     focusGoods: [41],  // 燃油汽车
     category: 'manufacturing',
-    description: '燃油汽车制造',
+    description: '燃油汽车制造（垂直整合）',
     initialBuildings: [
-      { typeId: 18, recipeId: 25, count: 2 },
+      { typeId: 8, recipeId: 10, count: 3 },   // 自有炼钢×3
+      { typeId: 21, recipeId: 29, count: 5 },  // 自有汽车零部件×5
+      { typeId: 16, recipeId: 21, count: 2 },  // 自有电子元件×2
+      { typeId: 18, recipeId: 25, count: 6 },  // 燃油汽车组装×6
+      { typeId: 18, recipeId: 26, count: 4 },  // 电动汽车组装×4
     ],
   },
   
@@ -780,40 +845,45 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 29,
     name: '同仁堂',
     personality: 'specialist',
-    initialCash: 80000000,
+    initialCash: 100000000,
     focusGoods: [70, 74],  // 中草药、仿制药
     category: 'pharma',
-    description: '中药制剂生产',
+    description: '中药制剂生产（垂直整合）',
     initialBuildings: [
-      { typeId: 29, recipeId: 43, count: 2 },
-      { typeId: 30, recipeId: 44, count: 2 },
+      { typeId: 29, recipeId: 43, count: 6 },  // 药材种植×6
+      { typeId: 30, recipeId: 44, count: 5 },  // 仿制药生产×5
+      { typeId: 30, recipeId: 91, count: 3 },  // OTC药品×3
     ],
   },
   {
     id: 30,
     name: '恒瑞医药',
     personality: 'innovator',
-    initialCash: 120000000,
+    initialCash: 150000000,
     focusGoods: [71, 73, 75],  // 医药化工、专利药、疫苗
     category: 'pharma',
-    description: '创新药物研发',
+    description: '创新药物研发（垂直整合）',
     initialBuildings: [
-      { typeId: 10, recipeId: 89, count: 1 },
-      { typeId: 30, recipeId: 45, count: 1 },
-      { typeId: 30, recipeId: 46, count: 1 },
+      { typeId: 29, recipeId: 43, count: 4 },  // 自有药材种植×4
+      { typeId: 10, recipeId: 89, count: 3 },  // 医药化工品×3
+      { typeId: 30, recipeId: 45, count: 4 },  // 专利药生产×4
+      { typeId: 30, recipeId: 46, count: 3 },  // 疫苗生产×3
+      { typeId: 30, recipeId: 90, count: 2 },  // 抗生素生产×2
     ],
   },
   {
     id: 31,
     name: '迈瑞医疗',
     personality: 'innovator',
-    initialCash: 100000000,
+    initialCash: 120000000,
     focusGoods: [77, 78],  // 医疗设备、医疗耗材
     category: 'pharma',
-    description: '医疗器械制造',
+    description: '医疗器械制造（垂直整合）',
     initialBuildings: [
-      { typeId: 31, recipeId: 47, count: 2 },
-      { typeId: 31, recipeId: 48, count: 1 },
+      { typeId: 16, recipeId: 21, count: 3 },  // 自有电子元件×3
+      { typeId: 31, recipeId: 47, count: 5 },  // 医用耗材生产×5
+      { typeId: 31, recipeId: 48, count: 4 },  // 诊断设备生产×4
+      { typeId: 31, recipeId: 92, count: 2 },  // 手术设备生产×2
     ],
   },
   
@@ -822,17 +892,17 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 32,
     name: '珠宝奢侈',
     personality: 'premium',
-    initialCash: 120000000,
+    initialCash: 150000000,
     focusGoods: [88, 89, 90, 91, 54, 94],  // 黄金、钻石、金饰、钻戒、珠宝、高级手表
     category: 'luxury',
-    description: '珠宝奢侈品制造',
+    description: '珠宝奢侈品制造（全产业链）',
     initialBuildings: [
-      { typeId: 35, recipeId: 54, count: 1 },
-      { typeId: 35, recipeId: 55, count: 1 },
-      { typeId: 35, recipeId: 97, count: 1 },
-      { typeId: 36, recipeId: 98, count: 1 },
-      { typeId: 36, recipeId: 56, count: 1 },
-      { typeId: 36, recipeId: 57, count: 1 },
+      { typeId: 35, recipeId: 54, count: 4 },  // 金矿开采×4
+      { typeId: 35, recipeId: 97, count: 3 },  // 钻石矿开采×3
+      { typeId: 35, recipeId: 55, count: 3 },  // 黄金精炼×3
+      { typeId: 36, recipeId: 98, count: 2 },  // 钻石切割×2
+      { typeId: 36, recipeId: 56, count: 2 },  // 珠宝制作×2
+      { typeId: 36, recipeId: 57, count: 2 },  // 奢侈腕表×2
     ],
   },
   
@@ -841,14 +911,16 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 33,
     name: '华能集团',
     personality: 'conservative',
-    initialCash: 100000000,
+    initialCash: 150000000,
     focusGoods: [57],  // 电力
     category: 'energy',
-    description: '电力生产供应',
+    description: '电力生产供应（垂直整合）',
     initialBuildings: [
-      { typeId: 24, recipeId: 32, count: 2 },
-      { typeId: 24, recipeId: 33, count: 1 },
-      { typeId: 24, recipeId: 34, count: 1 },
+      { typeId: 2, recipeId: 2, count: 4 },   // 自有煤矿×4
+      { typeId: 4, recipeId: 4, count: 2 },   // 自有气田×2
+      { typeId: 24, recipeId: 32, count: 6 }, // 燃煤发电×6
+      { typeId: 24, recipeId: 33, count: 4 }, // 燃气发电×4
+      { typeId: 24, recipeId: 34, count: 2 }, // 光伏发电×2
     ],
   },
   
@@ -857,120 +929,175 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     id: 34,
     name: '全家便利',
     personality: 'opportunist',
-    initialCash: 5000000,
+    initialCash: 20000000,
     focusGoods: [8, 44, 45, 67],  // 粮食、食品、饮料、零食
     category: 'retail',
     description: '便利店零售',
     initialBuildings: [
-      { typeId: 49, recipeId: -1, count: 3 },
+      { typeId: 49, recipeId: -1, count: 12 },  // 便利店×12
     ],
   },
   {
     id: 35,
     name: '永辉超市',
     personality: 'cost_leader',
-    initialCash: 20000000,
+    initialCash: 40000000,
     focusGoods: [44, 45, 58, 59, 63, 64],  // 食品、饮料、蔬菜、水果、肉制品、乳制品
     category: 'retail',
     description: '综合超市零售',
     initialBuildings: [
-      { typeId: 50, recipeId: -1, count: 2 },
+      { typeId: 50, recipeId: -1, count: 15 },  // 超市×15
     ],
   },
   {
     id: 36,
     name: '沃尔玛',
     personality: 'cost_leader',
-    initialCash: 50000000,
+    initialCash: 80000000,
     focusGoods: [44, 45, 40, 55, 56],  // 食品、饮料、家电、手机、电脑
     category: 'retail',
     description: '大型综合零售',
     initialBuildings: [
-      { typeId: 51, recipeId: -1, count: 1 },
+      { typeId: 51, recipeId: -1, count: 10 },  // 大卖场×10
     ],
   },
   {
     id: 37,
     name: '苏宁电器',
     personality: 'specialist',
-    initialCash: 30000000,
+    initialCash: 50000000,
     focusGoods: [39, 40, 55, 56],  // 消费电子、家电、手机、电脑
     category: 'retail',
     description: '电子产品零售',
     initialBuildings: [
-      { typeId: 52, recipeId: -1, count: 2 },
+      { typeId: 52, recipeId: -1, count: 12 },  // 电子商城×12
     ],
   },
   {
     id: 38,
     name: '广汽4S',
     personality: 'premium',
-    initialCash: 80000000,
+    initialCash: 120000000,
     focusGoods: [41, 42, 95],  // 燃油车、电动车、豪华车
     category: 'retail',
     description: '汽车销售服务',
     initialBuildings: [
-      { typeId: 53, recipeId: -1, count: 1 },
+      { typeId: 53, recipeId: -1, count: 10 },  // 汽车4S店×10
     ],
   },
   {
     id: 39,
     name: '优衣库',
     personality: 'cost_leader',
-    initialCash: 15000000,
+    initialCash: 30000000,
     focusGoods: [43, 23],  // 服装、纺织品
     category: 'retail',
     description: '服装零售',
     initialBuildings: [
-      { typeId: 54, recipeId: -1, count: 2 },
+      { typeId: 54, recipeId: -1, count: 14 },  // 服装店×14
     ],
   },
   {
     id: 40,
     name: '卡地亚精品',
     personality: 'premium',
-    initialCash: 100000000,
+    initialCash: 150000000,
     focusGoods: [54, 94, 93, 95],  // 珠宝、高级手表、设计师服装、豪华车
     category: 'retail',
     description: '奢侈品零售',
     initialBuildings: [
-      { typeId: 55, recipeId: -1, count: 1 },
+      { typeId: 55, recipeId: -1, count: 10 },  // 奢侈品店×10
     ],
   },
   {
     id: 41,
     name: '大参林药房',
     personality: 'specialist',
-    initialCash: 10000000,
+    initialCash: 30000000,
     focusGoods: [74, 75, 76, 77],  // 仿制药、疫苗、OTC药品、医疗设备
     category: 'retail',
     description: '药品零售',
     initialBuildings: [
-      { typeId: 56, recipeId: -1, count: 2 },
+      { typeId: 56, recipeId: -1, count: 15 },  // 药店×15
     ],
   },
   {
     id: 42,
     name: '中石化加油',
     personality: 'cost_leader',
-    initialCash: 40000000,
+    initialCash: 80000000,
     focusGoods: [25, 57],  // 燃油、电力
     category: 'retail',
     description: '加油站零售',
     initialBuildings: [
-      { typeId: 57, recipeId: -1, count: 3 },
+      { typeId: 57, recipeId: -1, count: 18 },  // 加油站×18
     ],
   },
   {
     id: 43,
     name: '红星美凯龙',
     personality: 'diversified',
-    initialCash: 60000000,
+    initialCash: 80000000,
     focusGoods: [46, 47, 40],  // 家具、建材成品、家电
     category: 'retail',
     description: '家居建材零售',
     initialBuildings: [
-      { typeId: 58, recipeId: -1, count: 1 },
+      { typeId: 58, recipeId: -1, count: 10 },  // 家居商城×10
+    ],
+  },
+  
+  // ==================== K. 新增公司 (4家) ====================
+  {
+    id: 46,
+    name: '华域橡胶',
+    personality: 'specialist',
+    initialCash: 100000000,
+    focusGoods: [11, 19],  // 天然橡胶、橡胶制品
+    category: 'processing',
+    description: '橡胶种植和橡胶制品生产',
+    initialBuildings: [
+      { typeId: 32, recipeId: 106, count: 10 }, // 橡胶园×10
+      { typeId: 10, recipeId: 68, count: 6 },   // 橡胶制品生产×6
+    ],
+  },
+  {
+    id: 47,
+    name: '天齐锂业',
+    personality: 'conservative',
+    initialCash: 120000000,
+    focusGoods: [13],  // 锂矿
+    category: 'extraction',
+    description: '锂矿开采',
+    initialBuildings: [
+      { typeId: 33, recipeId: 107, count: 14 }, // 锂矿场×14
+    ],
+  },
+  {
+    id: 48,
+    name: '山鹰纸业',
+    personality: 'cost_leader',
+    initialCash: 80000000,
+    focusGoods: [22, 37],  // 纸张、包装材料
+    category: 'processing',
+    description: '造纸和包装材料生产（垂直整合）',
+    initialBuildings: [
+      { typeId: 5, recipeId: 5, count: 6 },    // 自有伐木场×6
+      { typeId: 34, recipeId: 66, count: 6 },  // 纸张生产×6
+      { typeId: 34, recipeId: 67, count: 4 },  // 包装材料生产×4
+    ],
+  },
+  {
+    id: 49,
+    name: '申洲国际',
+    personality: 'cost_leader',
+    initialCash: 70000000,
+    focusGoods: [43],  // 服装
+    category: 'manufacturing',
+    description: '服装制造代工（垂直整合）',
+    initialBuildings: [
+      { typeId: 6, recipeId: 7, count: 4 },    // 自有棉花种植×4
+      { typeId: 12, recipeId: 16, count: 4 },  // 纺织品生产×4
+      { typeId: 12, recipeId: 69, count: 6 },  // 服装生产×6
     ],
   },
 ];
