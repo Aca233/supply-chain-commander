@@ -105,14 +105,14 @@ const Retail: React.FC = () => {
               />
             </div>
 
-            {/* 热销商品 */}
-            {marketOverview.topSellingGoods.length > 0 && (
-              <div className="mt-4">
-                <h3 className="text-sm font-medium text-[var(--text-muted)] mb-2">
-                  🔥 热销商品
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {marketOverview.topSellingGoods.slice(0, 5).map(item => (
+            {/* 热销商品 - 始终显示以避免布局跳动 */}
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-[var(--text-muted)] mb-2">
+                🔥 热销商品
+              </h3>
+              <div className="flex flex-wrap gap-2 min-h-[28px]">
+                {marketOverview.topSellingGoods.length > 0 ? (
+                  marketOverview.topSellingGoods.slice(0, 5).map(item => (
                     <Badge
                       key={item.goodsId}
                       variant="error"
@@ -121,10 +121,12 @@ const Retail: React.FC = () => {
                     >
                       {item.name}: {formatNumber(item.quantity)}
                     </Badge>
-                  ))}
-                </div>
+                  ))
+                ) : (
+                  <span className="text-sm text-[var(--text-subtle)]">暂无销售数据</span>
+                )}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       )}

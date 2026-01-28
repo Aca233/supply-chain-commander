@@ -30,7 +30,7 @@ import {
 type ViewMode = 'grid' | 'list';
 
 export const Production: React.FC = () => {
-  const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding } = useGameStore();
+  const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding, setPendingBuildTypeId } = useGameStore();
   const world = getWorld();
   
   // 状态
@@ -41,6 +41,16 @@ export const Production: React.FC = () => {
   const [showConstructionQueue, setShowConstructionQueue] = useState(true);
   
   const processedStoreSelectionRef = useRef<number | null>(null);
+  const processedPendingBuildRef = useRef<number | null>(null);
+  
+  // 监听从其他页面跳转来的建造请求
+  useEffect(() => {
+    if (ui.pendingBuildTypeId !== null && ui.pendingBuildTypeId !== processedPendingBuildRef.current) {
+      setBuildModalTypeId(ui.pendingBuildTypeId);
+      processedPendingBuildRef.current = ui.pendingBuildTypeId;
+      setPendingBuildTypeId(null);
+    }
+  }, [ui.pendingBuildTypeId, setPendingBuildTypeId]);
   
   useEffect(() => {
     if (ui.selectedBuildingId !== null && ui.selectedBuildingId !== processedStoreSelectionRef.current) {

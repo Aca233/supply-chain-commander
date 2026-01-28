@@ -145,6 +145,7 @@ import {
 interface UIState {
   selectedGoodsId: number | null;
   selectedBuildingId: number | null;
+  pendingBuildTypeId: number | null;  // 待打开建造弹窗的建筑类型ID
   currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings';
   sidebarCollapsed: boolean;
   notifications: Notification[];
@@ -254,6 +255,8 @@ interface GameActions {
   // UI
   setSelectedGoods: (goodsId: number | null) => void;
   setSelectedBuilding: (buildingId: number | null) => void;
+  setPendingBuildTypeId: (typeId: number | null) => void;
+  navigateToBuildBuilding: (buildingTypeId: number) => void;
   setCurrentPage: (page: UIState['currentPage']) => void;
   toggleSidebar: () => void;
   toggleTheme: () => void;
@@ -414,6 +417,7 @@ export const useGameStore = create<GameState & GameActions>()(
     ui: {
       selectedGoodsId: null,
       selectedBuildingId: null,
+      pendingBuildTypeId: null,
       currentPage: 'dashboard',
       sidebarCollapsed: false,
       notifications: [],
@@ -994,6 +998,19 @@ export const useGameStore = create<GameState & GameActions>()(
     setSelectedBuilding: (buildingId) => {
       set((state) => {
         state.ui.selectedBuildingId = buildingId;
+      });
+    },
+    
+    setPendingBuildTypeId: (typeId) => {
+      set((state) => {
+        state.ui.pendingBuildTypeId = typeId;
+      });
+    },
+    
+    navigateToBuildBuilding: (buildingTypeId) => {
+      set((state) => {
+        state.ui.pendingBuildTypeId = buildingTypeId;
+        state.ui.currentPage = 'production';
       });
     },
     

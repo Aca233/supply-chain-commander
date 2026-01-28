@@ -335,6 +335,8 @@ export const Market: React.FC = () => {
     setSelectedGoods: setStoreSelectedGoods,
     setCurrentPage,
     setSelectedBuilding,
+    navigateToBuildBuilding,
+    addNotification,
   } = useGameStore();
   
   const world = getWorld();
@@ -978,7 +980,18 @@ export const Market: React.FC = () => {
                                   ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10'
                                   : 'bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] border border-transparent hover:border-[var(--border-strong)]'
                               } hover:scale-110 hover:shadow-lg`}
-                              onClick={() => hasBuilding ? navigateToBuilding(playerBuildings[0].buildingIndex) : null}
+                              onClick={() => {
+                                if (hasBuilding) {
+                                  navigateToBuilding(playerBuildings[0].buildingIndex);
+                                } else {
+                                  // 检查资金是否足够
+                                  if (playerCash < item.building!.buildCost) {
+                                    addNotification('error', `资金不足！建造${item.building!.name}需要 ¥${item.building!.buildCost.toLocaleString()}`);
+                                  } else {
+                                    navigateToBuildBuilding(item.building!.id);
+                                  }
+                                }
+                              }}
                             >
                               <BuildingIcon buildingId={item.building!.id} size={20} autoColor />
                               <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.building?.name}</span>
@@ -1034,7 +1047,18 @@ export const Market: React.FC = () => {
                                   ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10'
                                   : 'bg-gradient-to-br from-[var(--bg-muted)] to-[var(--bg-surface)] border border-transparent hover:border-[var(--border-strong)]'
                               } hover:scale-110 hover:shadow-lg`}
-                              onClick={() => hasBuilding ? navigateToBuilding(playerBuildings[0].buildingIndex) : null}
+                              onClick={() => {
+                                if (hasBuilding) {
+                                  navigateToBuilding(playerBuildings[0].buildingIndex);
+                                } else {
+                                  // 检查资金是否足够
+                                  if (playerCash < item.building!.buildCost) {
+                                    addNotification('error', `资金不足！建造${item.building!.name}需要 ¥${item.building!.buildCost.toLocaleString()}`);
+                                  } else {
+                                    navigateToBuildBuilding(item.building!.id);
+                                  }
+                                }
+                              }}
                             >
                               <BuildingIcon buildingId={item.building!.id} size={20} autoColor />
                               <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{item.building?.name}</span>

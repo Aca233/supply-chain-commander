@@ -315,8 +315,12 @@ function executeAutoSell(
     let available = inventory - totalReserve;
     
     // 【关键修复】如果库存很大（>1000），强制可卖一部分
+    // 但必须保证建造材料不被卖掉
     if (inventory > 1000 && available < inventory * 0.5) {
-      available = Math.floor(inventory * 0.5); // 至少卖50%
+      // 计算建造保留后的上限
+      const maxSellable = inventory - constructionReserved;
+      // 取50%和建造保留后上限的较小值
+      available = Math.min(Math.floor(inventory * 0.5), maxSellable);
     }
     
     // 如果玩家自己有买单，且可用量很少，跳过
@@ -464,8 +468,12 @@ function executeTakeBuyOrders(
     let available = inventory - reserved - constructionReserve - productionReserve;
     
     // 【关键修复】如果库存很大（>5000），强制可卖一部分
+    // 但必须保证建造材料不被卖掉
     if (inventory > 5000 && available < inventory * 0.3) {
-      available = Math.floor(inventory * 0.3); // 至少卖30%
+      // 计算建造保留后的上限
+      const maxSellable = inventory - reserved - constructionReserve;
+      // 取30%和建造保留后上限的较小值
+      available = Math.min(Math.floor(inventory * 0.3), maxSellable);
     }
     
     // 如果玩家自己有买单，且可用量不多，跳过
