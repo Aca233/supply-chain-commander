@@ -7,6 +7,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useMobile } from '@/ui/hooks/useMobile';
 import {
   sendMessage,
   sendMessageStream,
@@ -389,6 +390,7 @@ const CODEGEN_QUICK_ACTIONS = [
 ];
 
 export function LLMChatDialog({ isOpen, onClose, onMinimize }: LLMChatDialogProps) {
+  const { isMobile, width: windowWidth, height: windowHeight } = useMobile();
   const [currentMode, setCurrentMode] = useState<LLMMode>(() => getLLMMode());
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -435,10 +437,26 @@ export function LLMChatDialog({ isOpen, onClose, onMinimize }: LLMChatDialogProp
   const inputRef = useRef<HTMLInputElement>(null);
   
   // 最小/最大尺寸
-  const MIN_WIDTH = 320;
-  const MIN_HEIGHT = 400;
-  const MAX_WIDTH = 800;
-  const MAX_HEIGHT = 900;
+  const MIN_WIDTH = isMobile ? windowWidth * 0.8 : 320;
+  const MIN_HEIGHT = isMobile ? windowHeight * 0.4 : 400;
+  const MAX_WIDTH = isMobile ? windowWidth : 800;
+  const MAX_HEIGHT = isMobile ? windowHeight : 900;
+
+  // 移动端适配
+  useEffect(() => {
+    if (isMobile) {
+      const newWidth = Math.min(windowWidth * 0.95, 400);
+      const newHeight = windowHeight * 0.6;
+      setSize({
+        width: newWidth,
+        height: newHeight
+      });
+      setPosition({
+        x: (windowWidth - newWidth) / 2,
+        y: (windowHeight - newHeight) / 2
+      });
+    }
+  }, [isMobile, windowWidth, windowHeight]);
   
   // 自动滚动到底部
   useEffect(() => {
@@ -454,6 +472,7 @@ export function LLMChatDialog({ isOpen, onClose, onMinimize }: LLMChatDialogProp
   
   // 拖拽逻辑
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isMobile) return; // 移动端禁用拖拽
     if ((e.target as HTMLElement).closest('.chat-header')) {
       setIsDragging(true);
       setDragOffset({
@@ -461,7 +480,7 @@ export function LLMChatDialog({ isOpen, onClose, onMinimize }: LLMChatDialogProp
         y: e.clientY - position.y,
       });
     }
-  }, [position]);
+  }, [position, isMobile]);
   
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -906,38 +925,42 @@ export function LLMChatDialog({ isOpen, onClose, onMinimize }: LLMChatDialogProp
       }}
       onMouseDown={handleMouseDown}
     >
-      {/* 调整大小的边框和角落 */}
-      {/* 右边 */}
-      <div
-        className="absolute right-0 top-4 bottom-4 w-2 cursor-e-resize hover:bg-blue-500/30 transition-colors"
-        onMouseDown={(e) => handleResizeStart('e', e)}
-      />
-      {/* 左边 */}
-      <div
-        className="absolute left-0 top-4 bottom-4 w-2 cursor-w-resize hover:bg-blue-500/30 transition-colors"
-        onMouseDown={(e) => handleResizeStart('w', e)}
-      />
-      {/* 下边 */}
-      <div
-        className="absolute bottom-0 left-4 right-4 h-2 cursor-s-resize hover:bg-blue-500/30 transition-colors"
-        onMouseDown={(e) => handleResizeStart('s', e)}
-      />
-      {/* 右下角 */}
-      <div
-        className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize hover:bg-blue-500/50 transition-colors rounded-br-2xl"
-        onMouseDown={(e) => handleResizeStart('se', e)}
-      >
-        <svg className="w-3 h-3 text-gray-500 absolute right-0.5 bottom-0.5" viewBox="0 0 10 10">
-          <path d="M0 10 L10 0 L10 10 Z" fill="currentColor" />
-        </svg>
-      </div>
-      {/* 左下角 */}
-      <div
-        className="absolute left-0 bottom-0 w-4 h-4 cursor-sw-resize hover:bg-blue-500/50 transition-colors rounded-bl-2xl"
-        onMouseDown={(e) => handleResizeStart('sw', e)}
-      />
+      {/* 调整大小的边框和角落 - 仅桌面端显示 */}
+      {!isMobile && (
+        <>
+          {/* 右边 */}
+          <div
+            className="absolute right-0 top-4 bottom-4 w-2 cursor-e-resize hover:bg-blue-500/30 transition-colors"
+            onMouseDown={(e) => handleResizeStart('e', e)}
+          />
+          {/* 左边 */}
+          <div
+            className="absolute left-0 top-4 bottom-4 w-2 cursor-w-resize hover:bg-blue-500/30 transition-colors"
+            onMouseDown={(e) => handleResizeStart('w', e)}
+          />
+          {/* 下边 */}
+          <div
+            className="absolute bottom-0 left-4 right-4 h-2 cursor-s-resize hover:bg-blue-500/30 transition-colors"
+            onMouseDown={(e) => handleResizeStart('s', e)}
+          />
+          {/* 右下角 */}
+          <div
+            className="absolute right-0 bottom-0 w-4 h-4 cursor-se-resize hover:bg-blue-500/50 transition-colors rounded-br-2xl"
+            onMouseDown={(e) => handleResizeStart('se', e)}
+          >
+            <svg className="w-3 h-3 text-gray-500 absolute right-0.5 bottom-0.5" viewBox="0 0 10 10">
+              <path d="M0 10 L10 0 L10 10 Z" fill="currentColor" />
+            </svg>
+          </div>
+          {/* 左下角 */}
+          <div
+            className="absolute left-0 bottom-0 w-4 h-4 cursor-sw-resize hover:bg-blue-500/50 transition-colors rounded-bl-2xl"
+            onMouseDown={(e) => handleResizeStart('sw', e)}
+          />
+        </>
+      )}
       {/* 标题栏 */}
-      <div className="chat-header flex items-center justify-between px-4 py-3 bg-gradient-to-r from-amber-600/30 to-yellow-600/20 border-b border-amber-700/50 cursor-grab">
+      <div className={`chat-header flex items-center justify-between px-4 py-3 bg-gradient-to-r from-amber-600/30 to-yellow-600/20 border-b border-amber-700/50 ${isMobile ? '' : 'cursor-grab'}`}>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${currentMode === 'codegen' ? 'bg-purple-400' : 'bg-amber-400'} animate-pulse`}></div>
           <button

@@ -6,8 +6,10 @@
 import React, { useState } from 'react';
 import { LLMChatDialog } from './LLMChatDialog';
 import { isLLMConfigured } from '@/core/llm';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 export function FloatingChatButton() {
+  const { isMobile } = useMobile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
@@ -36,7 +38,7 @@ export function FloatingChatButton() {
       <button
         onClick={handleOpen}
         className={`
-          fixed bottom-6 right-6 z-40
+          fixed ${isMobile ? 'bottom-20 right-4' : 'bottom-6 right-6'} z-40
           w-14 h-14 rounded-full
           flex items-center justify-center
           shadow-lg shadow-blue-500/25
