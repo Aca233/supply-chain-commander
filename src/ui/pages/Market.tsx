@@ -654,14 +654,15 @@ export const Market: React.FC = () => {
         {/* 商品选择栏 */}
         <div className="flex-shrink-0 p-3 border-b border-border bg-background-surface">
           <div className="flex items-center gap-2 mb-2">
-            <button
+            <Button
+              variant="ghost"
+              className="flex-1 justify-start gap-2 p-2 rounded-xl bg-background-muted"
               onClick={() => setShowGoodsSelector(true)}
-              className="flex-1 flex items-center gap-2 p-2 rounded-xl bg-background-muted"
             >
               <GoodsIcon goodsId={selectedGoodsId} size={24} autoColor />
               <span className="font-medium">{selectedGoods?.name || '选择商品'}</span>
               <span className="ml-auto text-foreground-muted">▼</span>
-            </button>
+            </Button>
             <Button
               variant="primary"
               size="sm"
@@ -755,12 +756,14 @@ export const Market: React.FC = () => {
                           <span className="text-sm font-medium">¥{order.price.toFixed(2)}</span>
                           <span className="text-sm text-foreground-muted">×{order.quantity.toFixed(0)}</span>
                         </div>
-                        <button
-                          className="w-6 h-6 rounded-lg bg-background-muted text-foreground-muted text-xs"
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-6 h-6"
                           onClick={() => cancelPlayerOrder(order.index)}
                         >
                           ✕
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -782,12 +785,14 @@ export const Market: React.FC = () => {
             >
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <h3 className="text-lg font-semibold">选择商品</h3>
-                <button 
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-full"
                   onClick={() => setShowGoodsSelector(false)}
-                  className="w-8 h-8 rounded-full bg-background-muted flex items-center justify-center"
                 >
                   ✕
-                </button>
+                </Button>
               </div>
               <div className="p-3">
                 <Input
@@ -829,12 +834,14 @@ export const Market: React.FC = () => {
                   <GoodsIcon goodsId={selectedGoodsId} size={24} autoColor />
                   <h3 className="font-semibold">{selectedGoods?.name}</h3>
                 </div>
-                <button 
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-8 h-8 rounded-full"
                   onClick={() => setShowTradePanel(false)}
-                  className="w-8 h-8 rounded-full bg-background-muted flex items-center justify-center"
                 >
                   ✕
-                </button>
+                </Button>
               </div>
               <div className="p-4">
                 <TradePanel
@@ -1050,6 +1057,81 @@ export const Market: React.FC = () => {
               </div>
             </div>
 
+            {/* 上下游产业链 */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* 上一级（原料） */}
+              <Card variant="game" padding="md" className="relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full pointer-events-none" />
+                <h3 className="text-sm font-semibold mb-3 text-amber-400 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs">⬆</span>
+                  上一级（原料）
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {(() => {
+                    const inputGoods = new Set<number>();
+                    RECIPES.filter(r => r.outputs.some(o => o.goodsId === selectedGoodsId))
+                      .forEach(r => r.inputs.forEach(i => inputGoods.add(i.goodsId)));
+                    const inputs = Array.from(inputGoods).slice(0, 6);
+                    if (inputs.length === 0) return (
+                      <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                        <span className="text-lg">🌱</span>
+                        <span>原始资源，无需原料</span>
+                      </div>
+                    );
+                    return inputs.map(gid => {
+                      const g = ALL_GOODS.find(x => x.id === gid);
+                      return g ? (
+                        <button
+                          key={gid}
+                          className="w-14 h-12 rounded-xl bg-gradient-to-br from-background-muted to-background-surface hover:from-green-500/20 hover:to-green-500/10 border border-transparent hover:border-green-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-green-500/10 hover:scale-105"
+                          onClick={() => setSelectedGoodsId(gid)}
+                        >
+                          <GoodsIcon goodsId={gid} size={20} autoColor />
+                          <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{g.name}</span>
+                        </button>
+                      ) : null;
+                    });
+                  })()}
+                </div>
+              </Card>
+
+              {/* 下一级（产品） */}
+              <Card variant="game" padding="md" className="relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none" />
+                <h3 className="text-sm font-semibold mb-3 text-green-400 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">⬇</span>
+                  下一级（产品）
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {(() => {
+                    const outputGoods = new Set<number>();
+                    RECIPES.filter(r => r.inputs.some(i => i.goodsId === selectedGoodsId))
+                      .forEach(r => r.outputs.forEach(o => outputGoods.add(o.goodsId)));
+                    const outputs = Array.from(outputGoods).slice(0, 8);
+                    if (outputs.length === 0) return (
+                      <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                        <span className="text-lg">🎯</span>
+                        <span>最终产品，无下游</span>
+                      </div>
+                    );
+                    return outputs.map(gid => {
+                      const g = ALL_GOODS.find(x => x.id === gid);
+                      return g ? (
+                        <button
+                          key={gid}
+                          className="w-14 h-12 rounded-xl bg-gradient-to-br from-background-muted to-background-surface hover:from-green-500/20 hover:to-green-500/10 border border-transparent hover:border-green-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-green-500/10 hover:scale-105"
+                          onClick={() => setSelectedGoodsId(gid)}
+                        >
+                          <GoodsIcon goodsId={gid} size={20} autoColor />
+                          <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{g.name}</span>
+                        </button>
+                      ) : null;
+                    });
+                  })()}
+                </div>
+              </Card>
+            </div>
+
             {/* 价格信息 */}
             <div className="grid grid-cols-4 gap-4">
               <StatWidget
@@ -1087,6 +1169,98 @@ export const Market: React.FC = () => {
               />
             </div>
 
+            {/* 销售排行榜 */}
+            <Card variant="game" padding="md">
+              <div className="flex items-center justify-between mb-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span>📊</span> 销售排行榜
+                </CardTitle>
+                <span className="text-xs text-accent">
+                  总销量 {(() => {
+                    if (!world) return 0;
+                    let total = 0;
+                    const t = world.trades;
+                    for (let i = Math.max(0, t.count - 5000); i < t.count; i++) {
+                      const idx = i % t.maxTrades;
+                      if (t.goodsIds[idx] === selectedGoodsId) total += t.quantities[idx];
+                    }
+                    return total.toLocaleString();
+                  })()}
+                </span>
+              </div>
+              {(() => {
+                // 计算各公司销售份额
+                if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
+                const companyVolumes = new Map<number, number>();
+                const t = world.trades;
+                for (let i = Math.max(0, t.count - 10000); i < t.count; i++) {
+                  const idx = i % t.maxTrades;
+                  if (t.goodsIds[idx] === selectedGoodsId) {
+                    const sellerId = t.sellCompanyIds[idx];
+                    companyVolumes.set(sellerId, (companyVolumes.get(sellerId) || 0) + t.quantities[idx]);
+                  }
+                }
+                const sortedCompanies = Array.from(companyVolumes.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 5);
+                if (sortedCompanies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
+                
+                const totalVolume = sortedCompanies.reduce((sum, [, v]) => sum + v, 0);
+                const chartData = sortedCompanies.map(([companyId, volume]) => ({
+                  name: companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`),
+                  value: volume,
+                }));
+                
+                return (
+                  <div className="flex gap-6">
+                    {/* 左侧饼图 */}
+                    <div className="w-48 flex-shrink-0">
+                      <MarketShareChart data={chartData} height={200} showLegend={false} />
+                    </div>
+                    {/* 右侧公司列表 */}
+                    <div className="flex-1 space-y-3">
+                      {sortedCompanies.map(([companyId, volume], index) => {
+                        const companyName = companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`);
+                        const percentage = totalVolume > 0 ? (volume / totalVolume * 100) : 0;
+                        const isPlayer = companyId === 0;
+                        return (
+                          <div key={companyId} className="flex items-center gap-3">
+                            {/* 排名/图标 */}
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
+                              isPlayer ? 'bg-accent/20 text-accent' : 'bg-background-muted text-foreground-muted'
+                            }`}>
+                              {isPlayer ? '🏠' : index + 1}
+                            </div>
+                            {/* 公司信息 */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className={`text-sm font-medium truncate ${
+                                  isPlayer ? 'text-accent' : 'text-foreground'
+                                }`}>
+                                  {companyName}
+                                </span>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-sm font-bold tabular-nums">{volume.toLocaleString()}</span>
+                                  <span className="text-xs text-foreground-muted w-12 text-right">{percentage.toFixed(1)}%</span>
+                                </div>
+                              </div>
+                              {/* 进度条 */}
+                              <div className="h-1.5 bg-background-muted rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-success rounded-full transition-all duration-500"
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </Card>
+
             {/* 价格走势图 */}
             <Card variant="game" padding="md">
               <MemoizedPriceChart
@@ -1098,6 +1272,115 @@ export const Market: React.FC = () => {
                 tradesCount={tradesCount}
               />
             </Card>
+
+            {/* 生产建筑与消耗建筑 */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* 生产建筑 */}
+              <Card variant="game" padding="md" className="relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none" />
+                <h3 className="text-sm font-semibold mb-3 text-success flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">🏭</span>
+                  生产建筑
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {(() => {
+                    // 找出可以生产此商品的建筑及玩家拥有数量
+                    const producerBuildings = ALL_BUILDINGS.filter(b => 
+                      RECIPES.some(r => 
+                        r.buildingTypeId === b.id && 
+                        r.outputs.some(o => o.goodsId === selectedGoodsId)
+                      )
+                    ).slice(0, 6);
+                    if (producerBuildings.length === 0) return (
+                      <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                        <span className="text-lg">🚫</span>
+                        <span>暂无生产建筑</span>
+                      </div>
+                    );
+                    return producerBuildings.map(b => {
+                      // 计算玩家拥有的此类型建筑数量
+                      const playerBuildingCount = world ? 
+                        Array.from({ length: world.buildings.maxCount }, (_, i) => i)
+                          .filter(i => world.buildings.isActive[i] && 
+                                      world.buildings.owners[i] === 0 && 
+                                      world.buildings.types[i] === b.id).length : 0;
+                      return (
+                        <div
+                          key={b.id}
+                          className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
+                            playerBuildingCount > 0 
+                              ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10' 
+                              : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
+                          } hover:scale-110 hover:shadow-lg`}
+                          onClick={() => navigateToBuildBuilding(b.id)}
+                        >
+                          <BuildingIcon buildingId={b.id} size={20} autoColor />
+                          <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{b.name}</span>
+                          {playerBuildingCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-green-400 to-green-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-green-500/30 ring-2 ring-background-surface">
+                              {playerBuildingCount}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </Card>
+
+              {/* 消耗建筑 */}
+              <Card variant="game" padding="md" className="relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-orange-500/10 to-transparent rounded-bl-full pointer-events-none" />
+                <h3 className="text-sm font-semibold mb-3 text-warning flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-orange-500/20 flex items-center justify-center text-xs">⚡</span>
+                  消耗建筑
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {(() => {
+                    // 找出消耗此商品的建筑及玩家拥有数量
+                    const consumerBuildings = ALL_BUILDINGS.filter(b => 
+                      RECIPES.some(r => 
+                        r.buildingTypeId === b.id && 
+                        r.inputs.some(i => i.goodsId === selectedGoodsId)
+                      )
+                    ).slice(0, 6);
+                    if (consumerBuildings.length === 0) return (
+                      <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                        <span className="text-lg">🎯</span>
+                        <span>最终产品，无消耗建筑</span>
+                      </div>
+                    );
+                    return consumerBuildings.map(b => {
+                      // 计算玩家拥有的此类型建筑数量
+                      const playerBuildingCount = world ? 
+                        Array.from({ length: world.buildings.maxCount }, (_, i) => i)
+                          .filter(i => world.buildings.isActive[i] && 
+                                      world.buildings.owners[i] === 0 && 
+                                      world.buildings.types[i] === b.id).length : 0;
+                      return (
+                        <div
+                          key={b.id}
+                          className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
+                            playerBuildingCount > 0 
+                              ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10' 
+                              : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
+                          } hover:scale-110 hover:shadow-lg`}
+                          onClick={() => navigateToBuildBuilding(b.id)}
+                        >
+                          <BuildingIcon buildingId={b.id} size={20} autoColor />
+                          <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{b.name}</span>
+                          {playerBuildingCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-orange-500/30 ring-2 ring-background-surface">
+                              {playerBuildingCount}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </Card>
+            </div>
           </>
         )}
       </div>
@@ -1132,12 +1415,14 @@ export const Market: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <span>{order.quantity.toFixed(0)}</span>
-                        <button
-                          className="w-5 h-5 rounded-lg bg-background-muted hover:bg-error/20 text-foreground-muted hover:text-error transition-colors flex items-center justify-center text-xs"
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-5 h-5 hover:bg-error/20 hover:text-error"
                           onClick={() => cancelPlayerOrder(order.index)}
                         >
                           ✕
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}

@@ -198,18 +198,41 @@ export const Settings: React.FC = () => {
       <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>⚙️ 设置</h1>
 
       <Tabs defaultValue="game">
-        <TabsList variant="game" className={isMobile ? 'flex-wrap gap-1' : ''}>
-          <TabsTrigger value="game" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
-            {isMobile ? '🎮' : '🎮 游戏设置'}
+        <TabsList 
+          variant="game" 
+          className={isMobile ? 'w-full grid grid-cols-4 gap-1 p-1' : ''}
+        >
+          <TabsTrigger 
+            value="game" 
+            variant="game" 
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>🎮</span>
+            <span className={isMobile ? '' : 'ml-1'}>游戏</span>
           </TabsTrigger>
-          <TabsTrigger value="save" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
-            {isMobile ? '💾' : '💾 存档管理'}
+          <TabsTrigger 
+            value="save" 
+            variant="game" 
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>💾</span>
+            <span className={isMobile ? '' : 'ml-1'}>存档</span>
           </TabsTrigger>
-          <TabsTrigger value="performance" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
-            {isMobile ? '📊' : '📊 性能监控'}
+          <TabsTrigger 
+            value="performance" 
+            variant="game" 
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>📊</span>
+            <span className={isMobile ? '' : 'ml-1'}>性能</span>
           </TabsTrigger>
-          <TabsTrigger value="about" variant="game" className={isMobile ? 'text-xs px-2 py-1' : ''}>
-            {isMobile ? 'ℹ️' : 'ℹ️ 关于游戏'}
+          <TabsTrigger 
+            value="about" 
+            variant="game" 
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>ℹ️</span>
+            <span className={isMobile ? '' : 'ml-1'}>关于</span>
           </TabsTrigger>
         </TabsList>
 

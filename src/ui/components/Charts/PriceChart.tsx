@@ -118,10 +118,12 @@ export const PriceChart: React.FC<PriceChartProps> = ({
   className = '',
 }) => {
   // ==================== 状态管理 ====================
-  const [chartMode, setChartMode] = useState<ChartMode>(defaultMode);
+  // 固定使用面积图模式
+  const chartMode: ChartMode = 'area';
   const [timeRange, setTimeRange] = useState<number>(defaultTimeRange);
-  const [activeMAs, setActiveMAs] = useState<Record<number, boolean>>(
-    Object.fromEntries(maConfigs.map(ma => [ma.period, ma.show]))
+  // MA指标默认配置
+  const activeMAs: Record<number, boolean> = Object.fromEntries(
+    maConfigs.map(ma => [ma.period, ma.show])
   );
   const chartRef = useRef<ReactECharts>(null);
   
@@ -198,56 +200,42 @@ export const PriceChart: React.FC<PriceChartProps> = ({
     // 构建series数组
     const series: any[] = [];
 
-    // 主图表系列
-    if (chartMode === 'line' || chartMode === 'area') {
-      series.push({
-        name: '价格',
-        type: 'line',
-        data: prices,
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { color: effectiveColor, width: 2 },
-        areaStyle: chartMode === 'area' ? {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: `${effectiveColor}60` },
-              { offset: 0.5, color: `${effectiveColor}20` },
-              { offset: 1, color: `${effectiveColor}05` },
-            ],
-          },
-        } : undefined,
-        markLine: basePrice ? {
-          silent: true,
-          symbol: 'none',
-          data: [{ 
-            yAxis: basePrice, 
-            name: '基准价',
-            lineStyle: { color: '#64748b', type: 'dashed', width: 1 },
-            label: { 
-              show: true,
-              position: 'insideEndTop',
-              formatter: '基准 ¥{c}',
-              color: '#94a3b8', 
-              fontSize: 10,
-            },
-          }],
-        } : undefined,
-      });
-    } else if (chartMode === 'candlestick') {
-      series.push({
-        name: 'K线',
-        type: 'candlestick',
-        data: candlestickData,
-        itemStyle: {
-          color: '#22c55e',
-          color0: '#ef4444',
-          borderColor: '#22c55e',
-          borderColor0: '#ef4444',
+    // 主图表系列 - 固定使用面积图
+    series.push({
+      name: '价格',
+      type: 'line',
+      data: prices,
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color: effectiveColor, width: 2 },
+      areaStyle: {
+        color: {
+          type: 'linear',
+          x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: `${effectiveColor}60` },
+            { offset: 0.5, color: `${effectiveColor}20` },
+            { offset: 1, color: `${effectiveColor}05` },
+          ],
         },
-      });
-    }
+      },
+      markLine: basePrice ? {
+        silent: true,
+        symbol: 'none',
+        data: [{ 
+          yAxis: basePrice, 
+          name: '基准价',
+          lineStyle: { color: '#64748b', type: 'dashed', width: 1 },
+          label: { 
+            show: true,
+            position: 'insideEndTop',
+            formatter: '基准 ¥{c}',
+            color: '#94a3b8', 
+            fontSize: 10,
+          },
+        }],
+      } : undefined,
+    });
 
     // 移动平均线系列
     if (showMA) {
@@ -296,8 +284,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       bottom: 40,
     }];
 
-    // 构建xAxis配置 - K线图需要boundaryGap为true，其他图表为false
-    const useBoundaryGap = chartMode === 'candlestick';
+    // 构建xAxis配置 - 面积图使用boundaryGap为false
+    const useBoundaryGap = false;
     const xAxisConfig = showVolume ? [
       {
         type: 'category' as const,
@@ -375,9 +363,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       },
     };
 
-    // 图例配置 - 根据图表模式动态设置，确保只包含实际存在的series
-    const mainSeriesName = chartMode === 'candlestick' ? 'K线' : '价格';
-    const legendData: string[] = [mainSeriesName];
+    // 图例配置 - 面积图固定使用"价格"
+    const legendData: string[] = ['价格'];
     // 只有当showMA为true且对应的MA数据存在时才添加到图例
     if (showMA) {
       maConfigs.forEach(ma => {
@@ -395,7 +382,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       tooltip: {
         trigger: 'axis',
         axisPointer: {
-          type: chartMode === 'candlestick' ? 'cross' : 'line',
+          type: 'line',
           crossStyle: { color: '#999' },
         },
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -423,12 +410,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
             
             if (p.seriesName === '成交量') {
               html += `<div class="flex justify-between gap-4"><span style="color:${p.color}">● ${p.seriesName}</span><span>${formatNumber(p.value)}</span></div>`;
-            } else if (p.seriesName === 'K线' && Array.isArray(p.data)) {
-              const [open, close, low, high] = p.data;
-              if (open !== undefined && close !== undefined && low !== undefined && high !== undefined) {
-                html += `<div>开: ¥${open.toFixed(2)} 收: ¥${close.toFixed(2)}</div>`;
-                html += `<div>高: ¥${high.toFixed(2)} 低: ¥${low.toFixed(2)}</div>`;
-              }
             } else if (typeof p.value === 'number') {
               html += `<div class="flex justify-between gap-4"><span style="color:${p.color}">● ${p.seriesName}</span><span>¥${p.value.toFixed(2)}</span></div>`;
             }
@@ -547,22 +528,10 @@ export const PriceChart: React.FC<PriceChartProps> = ({
   }), []);
 
   // ==================== 事件处理 ====================
-  const handleModeChange = useCallback((mode: ChartMode) => {
-    setChartMode(mode);
-    onModeChange?.(mode);
-  }, [onModeChange]);
-
   const handleTimeRangeChange = useCallback((range: number) => {
     setTimeRange(range);
     onTimeRangeChange?.(range);
   }, [onTimeRangeChange]);
-
-  const toggleMA = useCallback((period: number) => {
-    setActiveMAs(prev => ({
-      ...prev,
-      [period]: !prev[period],
-    }));
-  }, []);
 
   // ==================== 渲染 ====================
   return (
@@ -587,50 +556,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({
           )}
         </div>
 
-        {/* 右侧控制区 */}
+        {/* 右侧控制区 - 仅保留时间范围选择器 */}
         <div className="flex items-center gap-4">
-          {/* 图表模式切换 */}
-          <div className="flex rounded-lg overflow-hidden border border-border">
-            {[
-              { mode: 'area' as ChartMode, icon: '📈', label: '面积图' },
-              { mode: 'line' as ChartMode, icon: '📉', label: '折线图' },
-              { mode: 'candlestick' as ChartMode, icon: '🕯️', label: 'K线图' },
-            ].map(({ mode, icon, label }) => (
-              <button
-                key={mode}
-                className={`px-2 py-1 text-xs transition-colors ${
-                  chartMode === mode
-                    ? 'bg-accent text-white'
-                    : 'bg-background-secondary text-text-tertiary hover:text-text-primary'
-                }`}
-                onClick={() => handleModeChange(mode)}
-                title={label}
-              >
-                {icon}
-              </button>
-            ))}
-          </div>
-
-          {/* MA指标开关 */}
-          {showMA && (
-            <div className="flex items-center gap-1">
-              {maConfigs.map(ma => (
-                <button
-                  key={ma.period}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    activeMAs[ma.period]
-                      ? 'text-white'
-                      : 'bg-background-secondary text-text-tertiary hover:text-text-primary'
-                  }`}
-                  style={activeMAs[ma.period] ? { backgroundColor: ma.color } : {}}
-                  onClick={() => toggleMA(ma.period)}
-                >
-                  {ma.name}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* 时间范围选择 */}
           {showTimeRangeSelector && (
             <div className="flex rounded-lg overflow-hidden border border-border">

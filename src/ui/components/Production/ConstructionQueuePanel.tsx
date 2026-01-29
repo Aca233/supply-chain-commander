@@ -9,6 +9,7 @@ import { BUILDINGS_BY_ID } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { formatConstructionTime } from '@/core/construction';
 import { GoodsIcon } from '@/ui/components/Icons';
+import { useMobile } from '@/ui/hooks/useMobile';
 
 // 设计系统组件
 import { Card, Badge, Button, ProgressBar, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -79,12 +80,13 @@ const getDemolitionStatusConfig = (status: number) => {
   return configs[status] || { variant: 'outline', text: '未知' };
 };
 
-// 建造任务项
+// 建造任务项 - 紧凑版
 const ConstructionTaskItem: React.FC<{
   task: QueueConstructionTask;
   onCancel: () => void;
   onMaterialClick: (goodsId: number) => void;
-}> = ({ task, onCancel, onMaterialClick }) => {
+  compact?: boolean;
+}> = ({ task, onCancel, onMaterialClick, compact = false }) => {
   const building = BUILDINGS_BY_ID.get(task.buildingTypeId);
   const progressPercent = task.progress * 100;
   const estimatedTime = Math.max(0, task.requiredTicks - task.progressTicks);
@@ -92,97 +94,93 @@ const ConstructionTaskItem: React.FC<{
   const isBuilding = task.status === 1;
   const canCancel = isQueued || isBuilding;
   const statusConfig = getStatusConfig(task.status);
+  const [showMaterials, setShowMaterials] = useState(false);
+
+  // 获取缺少的材料数量
+  const missingMaterials = task.materialsStatus?.filter(m => !m.isSufficient).length || 0;
 
   return (
-    <Card variant="elevated" padding="sm" className="border-l-2 border-l-blue-500">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🏗️</span>
-          <div>
-            <div className="text-sm font-medium text-[var(--text-primary)]">
-              {task.buildingName || building?.name || '未知建筑'}
-            </div>
-            <div className="text-xs text-[var(--text-muted)]">
-              {task.taskType === 0 ? '新建' : `升级到 Lv.${task.targetLevel}`}
-            </div>
-          </div>
+    <div className="p-2 bg-[var(--bg-elevated)] rounded-lg border-l-2 border-l-blue-500">
+      {/* 标题行 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm">🏗️</span>
+          <span className="text-xs font-medium text-[var(--text-primary)] truncate">
+            {task.buildingName || building?.name || '未知建筑'}
+          </span>
+          <Badge variant={statusConfig.variant} size="sm" className="flex-shrink-0">
+            {statusConfig.text}
+          </Badge>
         </div>
-        <Badge variant={statusConfig.variant} size="sm">{statusConfig.text}</Badge>
+        {canCancel && (
+          <button
+            onClick={onCancel}
+            className="ml-1 w-5 h-5 text-xs text-[var(--error)] hover:bg-red-500/10 rounded flex items-center justify-center"
+            title="取消"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
-      {task.status === 0 && task.allMaterialsReady !== undefined && (
-        <Badge
-          variant={task.allMaterialsReady ? 'success' : 'warning'}
-          size="sm"
-          className="mb-2"
-        >
-          {task.allMaterialsReady ? '✅ 材料充足' : '⏳ 等待材料'}
-        </Badge>
-      )}
-
-      <ProgressBar
-        value={progressPercent}
-        max={100}
-        size="sm"
-        color={task.status === 1 ? 'info' : task.status === 2 ? 'success' : 'brand'}
-        className="mb-2"
-      />
-
-      <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-2">
-        <span>{progressPercent.toFixed(1)}%</span>
-        <span>剩余 {formatConstructionTime(estimatedTime)}</span>
+      {/* 进度条 */}
+      <div className="mt-1.5 flex items-center gap-2">
+        <ProgressBar
+          value={progressPercent}
+          max={100}
+          size="xs"
+          color={task.status === 1 ? 'info' : task.status === 2 ? 'success' : 'brand'}
+          className="flex-1"
+        />
+        <span className="text-[10px] text-[var(--text-muted)] tabular-nums w-16 text-right">
+          {formatConstructionTime(estimatedTime)}
+        </span>
       </div>
 
-      {task.speedBoost > 1 && (
-        <Badge variant="warning" size="sm" className="mb-2">
-          ⚡ 加速 {task.speedBoost.toFixed(1)}x
-        </Badge>
-      )}
-
-      {task.materialsStatus && task.materialsStatus.length > 0 && (
-        <div className="mb-2">
-          <div className="text-xs text-[var(--text-muted)] mb-1">
-            所需材料 ({task.materialsStatus.length}种):
-          </div>
-          <div className="space-y-1 max-h-24 overflow-y-auto scrollbar-thin">
-            {task.materialsStatus.map((mat, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-xs cursor-pointer hover:bg-[var(--bg-muted)] rounded px-1.5 py-1 transition-colors"
-                onClick={() => onMaterialClick(mat.goodsId)}
-              >
-                <div className="flex items-center gap-1.5 truncate max-w-[140px]">
-                  <GoodsIcon goodsId={mat.goodsId} size={14} autoColor />
-                  <span className="text-[var(--text-secondary)] truncate hover:text-[var(--info)]">
+      {/* 材料状态（紧凑显示）*/}
+      {task.status === 0 && task.materialsStatus && task.materialsStatus.length > 0 && (
+        <div className="mt-1">
+          <button
+            onClick={() => setShowMaterials(!showMaterials)}
+            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] flex items-center gap-1"
+          >
+            {task.allMaterialsReady ? (
+              <span className="text-[var(--success)]">✓ 材料齐全</span>
+            ) : (
+              <span className="text-[var(--warning)]">⏳ 缺{missingMaterials}种材料</span>
+            )}
+            <span>{showMaterials ? '▲' : '▼'}</span>
+          </button>
+          {showMaterials && (
+            <div className="mt-1 space-y-0.5 max-h-16 overflow-y-auto scrollbar-thin">
+              {task.materialsStatus.slice(0, 4).map((mat, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between text-[10px] cursor-pointer hover:bg-[var(--bg-muted)] rounded px-1 py-0.5"
+                  onClick={() => onMaterialClick(mat.goodsId)}
+                >
+                  <span className="text-[var(--text-secondary)] truncate max-w-[100px]">
                     {mat.goodsName}
                   </span>
+                  <span className={mat.isSufficient ? 'text-[var(--success)]' : 'text-[var(--error)]'}>
+                    {mat.currentAmount.toFixed(0)}/{mat.requiredAmount.toFixed(0)}
+                  </span>
                 </div>
-                <span className={mat.isSufficient ? 'text-[var(--success)]' : mat.currentAmount / mat.requiredAmount >= 0.5 ? 'text-[var(--warning)]' : 'text-[var(--error)]'}>
-                  {mat.currentAmount.toFixed(0)} / {mat.requiredAmount.toFixed(0)}
-                  {mat.isSufficient && ' ✓'}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+              {task.materialsStatus.length > 4 && (
+                <div className="text-[10px] text-[var(--text-muted)] text-center">
+                  +{task.materialsStatus.length - 4}种...
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
-
-      {canCancel && (
-        <Button
-          variant="ghost"
-          size="xs"
-          fullWidth
-          onClick={onCancel}
-          className="text-[var(--error)] hover:bg-red-500/10"
-        >
-          ❌ 取消
-        </Button>
-      )}
-    </Card>
+    </div>
   );
 };
 
-// 拆除任务项
+// 拆除任务项 - 紧凑版
 const DemolitionTaskItem: React.FC<{
   task: QueueDemolitionTask;
   onCancel: () => void;
@@ -196,74 +194,51 @@ const DemolitionTaskItem: React.FC<{
   const statusConfig = getDemolitionStatusConfig(task.status);
 
   return (
-    <Card variant="elevated" padding="sm" status="warning" className="border-l-2 border-l-orange-500">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🏚️</span>
-          <div>
-            <div className="text-sm font-medium text-[var(--text-primary)]">
-              {task.buildingName || building?.name || '未知建筑'}
-            </div>
-            <div className="text-xs text-[var(--text-muted)]">
-              Lv.{task.buildingLevel} · 拆除中
-            </div>
-          </div>
+    <div className="p-2 bg-[var(--bg-elevated)] rounded-lg border-l-2 border-l-orange-500">
+      {/* 标题行 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-sm">🏚️</span>
+          <span className="text-xs font-medium text-[var(--text-primary)] truncate">
+            {task.buildingName || building?.name || '未知建筑'}
+          </span>
+          <Badge variant={statusConfig.variant} size="sm" className="flex-shrink-0">
+            {statusConfig.text}
+          </Badge>
         </div>
-        <Badge variant={statusConfig.variant} size="sm">{statusConfig.text}</Badge>
-      </div>
-
-      <ProgressBar
-        value={progressPercent}
-        max={100}
-        size="sm"
-        color="warning"
-        className="mb-2"
-      />
-
-      <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-2">
-        <span>{progressPercent.toFixed(1)}%</span>
-        <span>剩余 {formatConstructionTime(remainingTicks)}</span>
-      </div>
-
-      <div className="mb-2 text-xs">
-        <div className="flex justify-between">
-          <span className="text-[var(--text-muted)]">预计现金回收:</span>
-          <span className="text-[var(--success)]">¥{task.recoveredCash.toLocaleString()}</span>
-        </div>
-        {task.recoveredMaterials && task.recoveredMaterials.length > 0 && (
-          <div className="mt-1">
-            <span className="text-[var(--text-muted)]">回收材料:</span>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {task.recoveredMaterials.slice(0, 4).map((mat, idx) => {
-                const goods = ALL_GOODS.find(g => g.id === mat.goodsId);
-                return (
-                  <Badge key={idx} variant="outline" size="sm" title={`${goods?.name}: ${mat.amount}`}>
-                    📦 {mat.amount}
-                  </Badge>
-                );
-              })}
-              {task.recoveredMaterials.length > 4 && (
-                <span className="text-[var(--text-muted)] text-xs">
-                  +{task.recoveredMaterials.length - 4}种
-                </span>
-              )}
-            </div>
-          </div>
+        {canCancel && (
+          <button
+            onClick={onCancel}
+            className="ml-1 w-5 h-5 text-xs text-[var(--error)] hover:bg-red-500/10 rounded flex items-center justify-center"
+            title="取消"
+          >
+            ✕
+          </button>
         )}
       </div>
 
-      {canCancel && (
-        <Button
-          variant="ghost"
+      {/* 进度条 */}
+      <div className="mt-1.5 flex items-center gap-2">
+        <ProgressBar
+          value={progressPercent}
+          max={100}
           size="xs"
-          fullWidth
-          onClick={onCancel}
-          className="text-[var(--error)] hover:bg-red-500/10"
-        >
-          ❌ 取消拆除
-        </Button>
-      )}
-    </Card>
+          color="warning"
+          className="flex-1"
+        />
+        <span className="text-[10px] text-[var(--text-muted)] tabular-nums w-16 text-right">
+          {formatConstructionTime(remainingTicks)}
+        </span>
+      </div>
+
+      {/* 回收信息 */}
+      <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+        回收: <span className="text-[var(--success)]">¥{task.recoveredCash.toLocaleString()}</span>
+        {task.recoveredMaterials && task.recoveredMaterials.length > 0 && (
+          <span className="ml-1">+{task.recoveredMaterials.length}种材料</span>
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -335,10 +310,11 @@ export const ConstructionQueuePanel: React.FC<ConstructionQueuePanelProps> = ({
 
   return (
     <Card variant="game" padding="none" className="overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-muted)] border-b border-[var(--border-muted)]">
+      {/* 紧凑头部 */}
+      <div className="flex items-center justify-between px-3 py-2 bg-[var(--bg-muted)] border-b border-[var(--border-muted)]">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🏗️</span>
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">建造队列</h3>
+          <span className="text-sm">🏗️</span>
+          <h3 className="text-xs font-semibold text-[var(--text-primary)]">建造队列</h3>
           <Badge variant="outline" size="sm">{totalCount}</Badge>
         </div>
         {onToggleCollapse && (
@@ -346,25 +322,27 @@ export const ConstructionQueuePanel: React.FC<ConstructionQueuePanelProps> = ({
         )}
       </div>
 
+      {/* 紧凑标签 */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'construction' | 'demolition')}>
-        <TabsList variant="game" className="w-full border-b border-[var(--border-muted)]">
-          <TabsTrigger value="construction" variant="game" className="flex-1">
+        <TabsList variant="game" className="w-full border-b border-[var(--border-muted)] py-1">
+          <TabsTrigger value="construction" variant="game" className="flex-1 text-xs py-1">
             建造 <Badge variant="info" size="sm" className="ml-1">{constructionCount}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="demolition" variant="game" className="flex-1">
+          <TabsTrigger value="demolition" variant="game" className="flex-1 text-xs py-1">
             拆除 <Badge variant="warning" size="sm" className="ml-1">{demolitionCount}</Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <div className="p-3 max-h-80 overflow-y-auto">
+      {/* 紧凑内容 - 限制最大高度 */}
+      <div className="p-2 max-h-48 overflow-y-auto scrollbar-thin">
         {activeTab === 'construction' ? (
           constructionCount === 0 ? (
-            <div className="text-center py-8 text-[var(--text-muted)] text-sm">
-              没有正在进行的建造任务
+            <div className="text-center py-4 text-[var(--text-muted)] text-xs">
+              暂无建造任务
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {constructionQueue
                 .filter(t => t.status !== 2 && t.status !== 3)
                 .map(task => (
@@ -379,8 +357,8 @@ export const ConstructionQueuePanel: React.FC<ConstructionQueuePanelProps> = ({
           )
         ) : (
           demolitionCount === 0 ? (
-            <div className="text-center py-8 text-[var(--text-muted)] text-sm">
-              没有正在进行的拆除任务
+            <div className="text-center py-4 text-[var(--text-muted)] text-xs">
+              暂无拆除任务
             </div>
           ) : (
             <div className="space-y-2">

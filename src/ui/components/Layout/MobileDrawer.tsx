@@ -129,7 +129,7 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose }) =
             </span>
           </div>
           
-          {/* 速度控制 */}
+          {/* 速度控制 - 暂停按钮已在顶栏，这里只显示速度 */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-foreground-secondary">速度</span>
             <div className="flex-1 flex items-center gap-1">
@@ -149,18 +149,6 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose }) =
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => paused ? resumeGame() : pauseGame()}
-              className={`
-                w-9 h-9 rounded-lg flex items-center justify-center text-lg
-                ${paused
-                  ? 'bg-success text-white'
-                  : 'bg-warning text-white'
-                }
-              `}
-            >
-              {paused ? '▶' : '⏸'}
-            </button>
           </div>
         </div>
 
