@@ -26,19 +26,23 @@ import {
   TabsTrigger,
 } from '@/ui/design-system';
 
+import { useMobile } from '@/ui/hooks/useMobile';
+
 // 视图模式
 type ViewMode = 'grid' | 'list';
 
 export const Production: React.FC = () => {
   const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding, setPendingBuildTypeId } = useGameStore();
   const world = getWorld();
+  const { isMobile } = useMobile();
   
   // 状态
   const [selectedBuilding, setSelectedBuilding] = useState<number | null>(null);
   const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [showCatalog, setShowCatalog] = useState(true);
-  const [showConstructionQueue, setShowConstructionQueue] = useState(true);
+  // 移动端默认隐藏建造队列，桌面端默认显示
+  const [showConstructionQueue, setShowConstructionQueue] = useState(!isMobile);
   
   const processedStoreSelectionRef = useRef<number | null>(null);
   const processedPendingBuildRef = useRef<number | null>(null);

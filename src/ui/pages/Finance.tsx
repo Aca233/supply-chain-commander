@@ -316,6 +316,7 @@ export const Finance: React.FC = () => {
               title=""
               height={180}
               color="#22c55e"
+              showTimeRangeSelector={false}
             />
           </CardContent>
         </Card>
@@ -442,6 +443,7 @@ export const Finance: React.FC = () => {
               title=""
               height={250}
               color="#22c55e"
+              showTimeRangeSelector={false}
             />
           </CardContent>
         </Card>

@@ -1,12 +1,14 @@
 /**
  * 公司列表行组件
  * 在统一的公司列表中显示单个公司信息
+ * 支持移动端响应式布局
  */
 
 import React from 'react';
 import { CompanyProfile } from '@/core/finance/CompanyProfile';
-import { ControlLevel } from '@/core/finance/CompanyProfile';
 import { CONTROL_LEVEL_NAMES, CONTROL_LEVEL_COLORS } from '@/core/finance/OwnershipControl';
+import { useMobile } from '@/ui/hooks/useMobile';
+import { Button, Badge } from '@/ui/design-system';
 
 interface CompanyRowProps {
   profile: CompanyProfile;
@@ -17,16 +19,16 @@ interface CompanyRowProps {
   onAcquire: () => void;
 }
 
-// 人格类型颜色
-const personalityColors: Record<string, string> = {
-  aggressive: 'text-red-400',
-  conservative: 'text-blue-400',
-  opportunist: 'text-yellow-400',
-  specialist: 'text-purple-400',
-  diversified: 'text-green-400',
-  innovator: 'text-cyan-400',
-  cost_leader: 'text-orange-400',
-  premium: 'text-pink-400',
+// 人格类型配置
+const personalityConfig: Record<string, { label: string; color: string }> = {
+  aggressive: { label: '激进', color: 'error' },
+  conservative: { label: '保守', color: 'info' },
+  opportunist: { label: '机会', color: 'warning' },
+  specialist: { label: '专注', color: 'subtle' },
+  diversified: { label: '多元', color: 'success' },
+  innovator: { label: '创新', color: 'primary' },
+  cost_leader: { label: '低成本', color: 'warning' },
+  premium: { label: '高端', color: 'gold' },
 };
 
 // 威胁等级图标
@@ -34,13 +36,6 @@ const threatIcons: Record<string, { icon: string; color: string }> = {
   low: { icon: '●', color: 'text-green-400' },
   medium: { icon: '●', color: 'text-yellow-400' },
   high: { icon: '●', color: 'text-red-400' },
-};
-
-// 趋势图标
-const trendIcons: Record<string, { icon: string; color: string }> = {
-  up: { icon: '↑', color: 'text-green-400' },
-  down: { icon: '↓', color: 'text-red-400' },
-  stable: { icon: '→', color: 'text-slate-400' },
 };
 
 /**
@@ -58,8 +53,8 @@ function safeNumber(value: number | undefined, defaultValue: number = 0): number
  */
 function formatMoney(value: number): string {
   const safeValue = safeNumber(value, 0);
-  if (safeValue >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
-  if (safeValue >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+  if (safeValue >= 1000000) return `¥${(safeValue / 1000000).toFixed(1)}M`;
+  if (safeValue >= 1000) return `¥${(safeValue / 1000).toFixed(0)}K`;
   return `¥${safeValue.toFixed(0)}`;
 }
 
@@ -88,18 +83,170 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
   onQuickSell,
   onAcquire,
 }) => {
+  const { isMobile } = useMobile();
   const stock = profile.stock;
   const isUp = stock && safeNumber(stock.priceChange) >= 0;
-  const personalityColor = personalityColors[profile.personality] || 'text-slate-300';
+  const personality = personalityConfig[profile.personality] || { label: '未知', color: 'outline' };
   const threatInfo = threatIcons[profile.competition.threatLevel];
-  const trendInfo = trendIcons[profile.competition.trend];
   const playerHolding = profile.ownership.playerHolding;
   const controlLevel = profile.controlStatus.playerControlLevel;
   
+  // 移动端布局
+  if (isMobile) {
+    return (
+      <div 
+        className={`border-b border-[var(--border-muted)] transition-colors ${
+          isSelected ? 'bg-[var(--bg-muted)]' : ''
+        }`}
+      >
+        {/* 主卡片 */}
+        <div className="p-3" onClick={onSelect}>
+          {/* 第一行：公司名称和股价 */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] font-bold text-sm flex-shrink-0">
+                {profile.name.charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-medium text-[var(--text-primary)] truncate">{profile.name}</span>
+                  {profile.controlStatus.isPlayerControlled && (
+                    <Badge variant="primary" size="sm">控股</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                  <span className="font-mono">{stock?.ticker || '--'}</span>
+                  <Badge variant={personality.color as any} size="sm">{personality.label}</Badge>
+                </div>
+              </div>
+            </div>
+            
+            {/* 股价信息 */}
+            <div className="text-right flex-shrink-0">
+              <div className={`font-medium tabular-nums ${
+                stock ? (isUp ? 'text-[var(--success)]' : 'text-[var(--error)]') : 'text-[var(--text-muted)]'
+              }`}>
+                {formatPrice(stock?.currentPrice)}
+              </div>
+              <div className={`text-xs tabular-nums ${
+                stock ? (isUp ? 'text-[var(--success)]' : 'text-[var(--error)]') : 'text-[var(--text-muted)]'
+              }`}>
+                {formatPercent(stock?.priceChangePercent, true)}
+              </div>
+            </div>
+          </div>
+          
+          {/* 第二行：关键指标 */}
+          <div className="flex items-center justify-between text-xs mb-2">
+            <div className="flex items-center gap-3">
+              <span className="text-[var(--text-muted)]">
+                市值 <span className="text-[var(--text-primary)] tabular-nums">{stock ? formatMoney(stock.marketCap) : '--'}</span>
+              </span>
+              <span className="text-[var(--text-muted)]">
+                份额 <span className="text-[var(--text-primary)] tabular-nums">{profile.marketShare.toFixed(1)}%</span>
+              </span>
+              <span className={threatInfo.color} title={`威胁: ${profile.competition.threatLevel}`}>
+                {threatInfo.icon}
+              </span>
+            </div>
+            {playerHolding && (
+              <span className="text-[var(--text-muted)]">
+                持有 <span className="text-[var(--accent)] tabular-nums">{playerHolding.percentage.toFixed(1)}%</span>
+              </span>
+            )}
+          </div>
+          
+          {/* 第三行：操作按钮 */}
+          <div className="flex gap-2">
+            <Button
+              variant="success"
+              size="sm"
+              className="flex-1"
+              onClick={(e) => { e.stopPropagation(); onQuickBuy(); }}
+            >
+              买入
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              className="flex-1"
+              disabled={!playerHolding}
+              onClick={(e) => { e.stopPropagation(); onQuickSell(); }}
+            >
+              卖出
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onAcquire(); }}
+            >
+              收购
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onSelect(); }}
+            >
+              {isSelected ? '▲' : '▼'}
+            </Button>
+          </div>
+        </div>
+        
+        {/* 展开的详情 */}
+        {isSelected && (
+          <div className="px-3 pb-3">
+            <div className="bg-[var(--bg-elevated)] rounded-lg p-3 space-y-2 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[var(--text-muted)]">主营:</span>
+                  <span className="text-[var(--text-primary)] ml-1">{profile.competition.specialization}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">现金:</span>
+                  <span className="text-[var(--text-primary)] ml-1 tabular-nums">{formatMoney(profile.cash)}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">建筑:</span>
+                  <span className="text-[var(--text-primary)] ml-1 tabular-nums">{profile.buildingCount}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--text-muted)]">控制权:</span>
+                  <span className={`ml-1 ${CONTROL_LEVEL_COLORS[controlLevel]}`}>
+                    {CONTROL_LEVEL_NAMES[controlLevel]}
+                  </span>
+                </div>
+              </div>
+              
+              {playerHolding && (
+                <div className="border-t border-[var(--border-muted)] pt-2 grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--text-muted)]">持有:</span>
+                    <span className="text-[var(--text-primary)] ml-1 tabular-nums">
+                      {playerHolding.shares.toLocaleString()}股
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--text-muted)]">盈亏:</span>
+                    <span className={`ml-1 tabular-nums ${
+                      safeNumber(playerHolding.unrealizedGain) >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'
+                    }`}>
+                      {formatMoney(safeNumber(playerHolding.unrealizedGain))}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // 桌面端布局
   return (
     <div 
-      className={`border-b border-slate-700 transition-colors ${
-        isSelected ? 'bg-slate-700/50' : 'hover:bg-slate-700/30'
+      className={`border-b border-[var(--border-muted)] transition-colors ${
+        isSelected ? 'bg-[var(--bg-muted)]' : 'hover:bg-[var(--bg-muted)]/50'
       }`}
     >
       {/* 主行 */}
@@ -109,18 +256,18 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
       >
         {/* 股票代码 */}
         <div className="col-span-1">
-          <span className="font-mono text-white font-medium">
+          <span className="font-mono text-[var(--text-primary)] font-medium">
             {stock?.ticker || '--'}
           </span>
         </div>
         
         {/* 公司名称 */}
         <div className="col-span-2 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+          <div className="w-8 h-8 rounded-full bg-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] font-bold text-sm flex-shrink-0">
             {profile.name.charAt(0)}
           </div>
           <div className="truncate">
-            <span className="text-white font-medium">{profile.name}</span>
+            <span className="text-[var(--text-primary)] font-medium">{profile.name}</span>
             {profile.controlStatus.isPlayerControlled && (
               <span className="ml-1 text-xs text-purple-400">★控股</span>
             )}
@@ -130,7 +277,7 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
         {/* 股价 */}
         <div className="col-span-1 text-right">
           <span className={`font-medium tabular-nums ${
-            stock ? (isUp ? 'text-green-400' : 'text-red-400') : 'text-slate-400'
+            stock ? (isUp ? 'text-[var(--success)]' : 'text-[var(--error)]') : 'text-[var(--text-muted)]'
           }`}>
             {formatPrice(stock?.currentPrice)}
           </span>
@@ -139,7 +286,7 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
         {/* 涨跌幅 */}
         <div className="col-span-1 text-right">
           <span className={`tabular-nums ${
-            stock ? (isUp ? 'text-green-400' : 'text-red-400') : 'text-slate-400'
+            stock ? (isUp ? 'text-[var(--success)]' : 'text-[var(--error)]') : 'text-[var(--text-muted)]'
           }`}>
             {formatPercent(stock?.priceChangePercent, true)}
           </span>
@@ -147,24 +294,19 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
         
         {/* 经营风格 */}
         <div className="col-span-1 text-center">
-          <span className={`text-sm ${personalityColor}`}>
-            {profile.personalityName}
-          </span>
+          <Badge variant={personality.color as any} size="sm">
+            {personality.label}
+          </Badge>
         </div>
         
         {/* 市值 */}
-        <div className="col-span-1 text-right text-slate-300 tabular-nums">
+        <div className="col-span-1 text-right text-[var(--text-secondary)] tabular-nums">
           {stock ? formatMoney(stock.marketCap) : '--'}
         </div>
         
         {/* 市场份额 */}
-        <div className="col-span-1 text-right">
-          <div className="flex items-center justify-end gap-1">
-            <span className="text-slate-300 tabular-nums">
-              {profile.marketShare.toFixed(1)}%
-            </span>
-            <span className={trendInfo.color}>{trendInfo.icon}</span>
-          </div>
+        <div className="col-span-1 text-right text-[var(--text-secondary)] tabular-nums">
+          {profile.marketShare.toFixed(1)}%
         </div>
         
         {/* 威胁等级 */}
@@ -178,82 +320,79 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
         <div className="col-span-1 text-right">
           {playerHolding ? (
             <div className="flex flex-col items-end">
-              <span className="text-slate-300 tabular-nums text-sm">
-                {playerHolding.shares.toLocaleString()}
-              </span>
-              <span className="text-xs text-slate-500">
+              <span className="text-[var(--text-secondary)] tabular-nums text-sm">
                 {playerHolding.percentage.toFixed(1)}%
               </span>
             </div>
           ) : (
-            <span className="text-slate-500">--</span>
+            <span className="text-[var(--text-muted)]">--</span>
           )}
         </div>
         
         {/* 操作按钮 */}
         <div className="col-span-2 flex justify-end gap-1">
-          <button
+          <Button
+            variant="success"
+            size="sm"
             onClick={(e) => { e.stopPropagation(); onQuickBuy(); }}
-            className="px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors"
           >
             买入
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onQuickSell(); }}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              playerHolding 
-                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
-                : 'bg-slate-600/50 text-slate-500 cursor-not-allowed'
-            }`}
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
             disabled={!playerHolding}
+            onClick={(e) => { e.stopPropagation(); onQuickSell(); }}
           >
             卖出
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={(e) => { e.stopPropagation(); onAcquire(); }}
-            className="px-2 py-1 text-xs bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 transition-colors"
           >
             收购
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={(e) => { e.stopPropagation(); onSelect(); }}
-            className="px-2 py-1 text-xs bg-slate-600/50 text-slate-300 rounded hover:bg-slate-600 transition-colors"
           >
             {isSelected ? '▲' : '▼'}
-          </button>
+          </Button>
         </div>
       </div>
       
-      {/* 展开的子行 - 附加信息 */}
+      {/* 展开的子行 */}
       {isSelected && (
         <div className="px-3 pb-3 pt-0 text-sm">
-          <div className="bg-slate-800/50 rounded-lg p-3 grid grid-cols-6 gap-4">
+          <div className="bg-[var(--bg-elevated)] rounded-lg p-3 grid grid-cols-6 gap-4">
             <div>
-              <span className="text-slate-400">主营业务:</span>
-              <span className="text-slate-200 ml-1">{profile.competition.specialization}</span>
+              <span className="text-[var(--text-muted)]">主营业务:</span>
+              <span className="text-[var(--text-primary)] ml-1">{profile.competition.specialization}</span>
             </div>
             <div>
-              <span className="text-slate-400">现金:</span>
-              <span className="text-slate-200 ml-1 tabular-nums">{formatMoney(profile.cash)}</span>
+              <span className="text-[var(--text-muted)]">现金:</span>
+              <span className="text-[var(--text-primary)] ml-1 tabular-nums">{formatMoney(profile.cash)}</span>
             </div>
             <div>
-              <span className="text-slate-400">建筑:</span>
-              <span className="text-slate-200 ml-1 tabular-nums">{profile.buildingCount}</span>
+              <span className="text-[var(--text-muted)]">建筑:</span>
+              <span className="text-[var(--text-primary)] ml-1 tabular-nums">{profile.buildingCount}</span>
             </div>
             <div>
-              <span className="text-slate-400">成交量:</span>
-              <span className="text-slate-200 ml-1 tabular-nums">
+              <span className="text-[var(--text-muted)]">成交量:</span>
+              <span className="text-[var(--text-primary)] ml-1 tabular-nums">
                 {stock?.volume?.toLocaleString() || '--'}
               </span>
             </div>
             <div>
-              <span className="text-slate-400">市盈率:</span>
-              <span className="text-slate-200 ml-1 tabular-nums">
+              <span className="text-[var(--text-muted)]">市盈率:</span>
+              <span className="text-[var(--text-primary)] ml-1 tabular-nums">
                 {stock?.pe ? stock.pe.toFixed(1) : '--'}
               </span>
             </div>
             <div>
-              <span className="text-slate-400">控制权:</span>
+              <span className="text-[var(--text-muted)]">控制权:</span>
               <span className={`ml-1 ${CONTROL_LEVEL_COLORS[controlLevel]}`}>
                 {CONTROL_LEVEL_NAMES[controlLevel]}
               </span>
@@ -261,29 +400,29 @@ export const CompanyRow: React.FC<CompanyRowProps> = ({
             
             {/* 玩家持股详情 */}
             {playerHolding && (
-              <div className="col-span-6 border-t border-slate-700 pt-2 mt-1 grid grid-cols-4 gap-4">
+              <div className="col-span-6 border-t border-[var(--border-muted)] pt-2 mt-1 grid grid-cols-4 gap-4">
                 <div>
-                  <span className="text-slate-400">持有:</span>
-                  <span className="text-slate-200 ml-1 tabular-nums">
+                  <span className="text-[var(--text-muted)]">持有:</span>
+                  <span className="text-[var(--text-primary)] ml-1 tabular-nums">
                     {playerHolding.shares.toLocaleString()}股 ({playerHolding.percentage.toFixed(2)}%)
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">成本:</span>
-                  <span className="text-slate-200 ml-1 tabular-nums">
+                  <span className="text-[var(--text-muted)]">成本:</span>
+                  <span className="text-[var(--text-primary)] ml-1 tabular-nums">
                     ¥{safeNumber(playerHolding.avgCost).toFixed(2)}/股
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">市值:</span>
-                  <span className="text-slate-200 ml-1 tabular-nums">
+                  <span className="text-[var(--text-muted)]">市值:</span>
+                  <span className="text-[var(--text-primary)] ml-1 tabular-nums">
                     {formatMoney(safeNumber(playerHolding.marketValue))}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">盈亏:</span>
+                  <span className="text-[var(--text-muted)]">盈亏:</span>
                   <span className={`ml-1 tabular-nums ${
-                    safeNumber(playerHolding.unrealizedGain) >= 0 ? 'text-green-400' : 'text-red-400'
+                    safeNumber(playerHolding.unrealizedGain) >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'
                   }`}>
                     {safeNumber(playerHolding.unrealizedGain) >= 0 ? '+' : ''}
                     {formatMoney(safeNumber(playerHolding.unrealizedGain))}

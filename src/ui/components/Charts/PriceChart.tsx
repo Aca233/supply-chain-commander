@@ -556,27 +556,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
           )}
         </div>
 
-        {/* 右侧控制区 - 仅保留时间范围选择器 */}
-        <div className="flex items-center gap-4">
-          {/* 时间范围选择 */}
-          {showTimeRangeSelector && (
-            <div className="flex rounded-lg overflow-hidden border border-border">
-              {DEFAULT_TIME_RANGES.map(range => (
-                <button
-                  key={range.value}
-                  className={`px-2 py-1 text-xs transition-colors ${
-                    timeRange === range.value
-                      ? 'bg-accent text-white'
-                      : 'bg-background-secondary text-text-tertiary hover:text-text-primary'
-                  }`}
-                  onClick={() => handleTimeRangeChange(range.value)}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+
       </div>
 
       {/* 图表区域 */}

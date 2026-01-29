@@ -828,15 +828,16 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     name: '吉利汽车',
     personality: 'aggressive',
     initialCash: 200000000,
-    focusGoods: [41],  // 燃油汽车
+    focusGoods: [41, 95],  // 燃油汽车、豪华汽车
     category: 'manufacturing',
-    description: '燃油汽车制造（垂直整合）',
+    description: '燃油汽车及豪华汽车制造（垂直整合）',
     initialBuildings: [
       { typeId: 8, recipeId: 10, count: 3 },   // 自有炼钢×3
       { typeId: 21, recipeId: 29, count: 5 },  // 自有汽车零部件×5
       { typeId: 16, recipeId: 21, count: 2 },  // 自有电子元件×2
       { typeId: 18, recipeId: 25, count: 6 },  // 燃油汽车组装×6
       { typeId: 18, recipeId: 26, count: 4 },  // 电动汽车组装×4
+      { typeId: 18, recipeId: 101, count: 2 }, // 豪华汽车生产×2
     ],
   },
   

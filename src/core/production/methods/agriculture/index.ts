@@ -1,14 +1,15 @@
 /**
  * 农业产业链建筑专属生产方式
- * 建筑ID: 25-31 (农场、畜牧场、渔场、饲料厂、肉类加工厂、乳制品厂、粮油加工厂)
+ * 建筑ID: 25-28 (蔬菜农场、畜牧场、渔场、肉类加工厂)
+ * 注意：ID 29-31 属于医药产业链，在 pharma/index.ts 中定义
  */
 
 import { BuildingMethodConfig } from '../types';
 import { createSlot, createMethod, createBuildingConfig, registerBuildingConfigs } from '../registry';
 
-// ==================== 农场 (ID 25) ====================
+// ==================== 蔬菜农场 (ID 25) ====================
 
-const FARM_CONFIG: BuildingMethodConfig = createBuildingConfig(
+const VEGETABLE_FARM_CONFIG: BuildingMethodConfig = createBuildingConfig(
   25,
   [
     createSlot(25, 'cultivation', '种植方式', '🌾', '农作物种植技术', 0),
@@ -316,86 +317,18 @@ const FISHERY_CONFIG: BuildingMethodConfig = createBuildingConfig(
   ]
 );
 
-// ==================== 饲料厂 (ID 28) ====================
-
-const FEED_FACTORY_CONFIG: BuildingMethodConfig = createBuildingConfig(
-  28,
-  [
-    createSlot(28, 'processing', '加工工艺', '⚙️', '饲料加工技术', 0),
-    createSlot(28, 'formulation', '配方设计', '📋', '饲料配方技术', 1),
-  ],
-  [
-    // 加工工艺
-    createMethod(28, 0, 'processing', 'feed_simple', '简单混合', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.1 }],
-      qualityBonus: -0.15,
-      laborMultiplier: 1.2,
-      productionSpeedMultiplier: 1.2,
-      requiredLevel: 1,
-      switchCost: 30000,
-      description: '原料简单混合',
-      effects: ['产量+10%', '品质-15%', '人力+20%', '速度+20%'],
-    }),
-    createMethod(28, 1, 'processing', 'feed_pellet', '制粒加工', {
-      qualityBonus: 0.1,
-      energyMultiplier: 1.3,
-      productionSpeedMultiplier: 1.0,
-      requiredLevel: 2,
-      switchCost: 150000,
-      description: '蒸汽制粒工艺',
-      effects: ['品质+10%', '能耗+30%'],
-    }),
-    createMethod(28, 2, 'processing', 'feed_extrusion', '膨化加工', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 0.95 }],
-      qualityBonus: 0.25,
-      energyMultiplier: 1.5,
-      maintenanceMultiplier: 1.3,
-      requiredLevel: 3,
-      switchCost: 400000,
-      description: '高温膨化处理',
-      effects: ['产量-5%', '品质+25%', '能耗+50%', '维护+30%'],
-    }),
-    
-    // 配方设计
-    createMethod(28, 10, 'formulation', 'feed_standard', '标准配方', {
-      inputModifiers: [{ goodsId: 'all', multiplier: 1.0 }],
-      requiredLevel: 1,
-      switchCost: 10000,
-      description: '通用饲料配方',
-      effects: ['基础产能'],
-    }),
-    createMethod(28, 11, 'formulation', 'feed_optimized', '优化配方', {
-      inputModifiers: [{ goodsId: 'all', multiplier: 0.9 }],
-      qualityBonus: 0.1,
-      requiredLevel: 2,
-      switchCost: 80000,
-      description: '营养优化配方',
-      effects: ['原料-10%', '品质+10%'],
-    }),
-    createMethod(28, 12, 'formulation', 'feed_precision', '精准配方', {
-      inputModifiers: [{ goodsId: 'all', multiplier: 0.8 }],
-      qualityBonus: 0.2,
-      laborMultiplier: 1.15,
-      requiredLevel: 3,
-      switchCost: 250000,
-      description: '动态精准营养配方',
-      effects: ['原料-20%', '品质+20%', '人力+15%'],
-    }),
-  ]
-);
-
-// ==================== 肉类加工厂 (ID 29) ====================
+// ==================== 肉类加工厂 (ID 28) ====================
 
 const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
-  29,
+  28,
   [
-    createSlot(29, 'slaughter', '屠宰方式', '🔪', '屠宰加工技术', 0),
-    createSlot(29, 'preservation', '保鲜技术', '❄️', '肉类保鲜方式', 1),
-    createSlot(29, 'product_type', '产品类型', '🥩', '肉制品加工', 2),
+    createSlot(28, 'slaughter', '屠宰方式', '🔪', '屠宰加工技术', 0),
+    createSlot(28, 'preservation', '保鲜技术', '❄️', '肉类保鲜方式', 1),
+    createSlot(28, 'product_type', '产品类型', '🥩', '肉制品加工', 2),
   ],
   [
     // 屠宰方式
-    createMethod(29, 0, 'slaughter', 'meat_manual', '人工屠宰', {
+    createMethod(28, 0, 'slaughter', 'meat_manual', '人工屠宰', {
       outputModifiers: [{ goodsId: 'all', multiplier: 0.75 }],
       qualityBonus: -0.1,
       laborMultiplier: 1.8,
@@ -406,7 +339,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
       description: '传统人工屠宰',
       effects: ['产量-25%', '品质-10%', '人力+80%', '速度-50%', '污染+30%'],
     }),
-    createMethod(29, 1, 'slaughter', 'meat_semi_auto', '半自动化', {
+    createMethod(28, 1, 'slaughter', 'meat_semi_auto', '半自动化', {
       laborMultiplier: 1.0,
       energyMultiplier: 1.2,
       pollutionMultiplier: 1.0,
@@ -416,7 +349,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
       description: '机械辅助屠宰',
       effects: ['能耗+20%'],
     }),
-    createMethod(29, 2, 'slaughter', 'meat_automated', '全自动屠宰', {
+    createMethod(28, 2, 'slaughter', 'meat_automated', '全自动屠宰', {
       outputModifiers: [{ goodsId: 'all', multiplier: 1.2 }],
       qualityBonus: 0.15,
       laborMultiplier: 0.4,
@@ -431,7 +364,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
     }),
     
     // 保鲜技术
-    createMethod(29, 10, 'preservation', 'meat_fresh', '鲜销', {
+    createMethod(28, 10, 'preservation', 'meat_fresh', '鲜销', {
       outputModifiers: [{ goodsId: 'all', multiplier: 1.05 }],
       qualityBonus: -0.1,
       energyMultiplier: 0.8,
@@ -441,7 +374,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
       description: '当日鲜销',
       effects: ['产量+5%', '品质-10%', '能耗-20%', '速度+20%'],
     }),
-    createMethod(29, 11, 'preservation', 'meat_cold_chain', '冷链保鲜', {
+    createMethod(28, 11, 'preservation', 'meat_cold_chain', '冷链保鲜', {
       qualityBonus: 0.15,
       energyMultiplier: 1.4,
       maintenanceMultiplier: 1.2,
@@ -450,7 +383,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
       description: '全程冷链',
       effects: ['品质+15%', '能耗+40%', '维护+20%'],
     }),
-    createMethod(29, 12, 'preservation', 'meat_quick_freeze', '速冻锁鲜', {
+    createMethod(28, 12, 'preservation', 'meat_quick_freeze', '速冻锁鲜', {
       outputModifiers: [{ goodsId: 'all', multiplier: 0.98 }],
       qualityBonus: 0.25,
       energyMultiplier: 1.7,
@@ -462,7 +395,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
     }),
     
     // 产品类型
-    createMethod(29, 20, 'product_type', 'meat_raw', '生鲜肉', {
+    createMethod(28, 20, 'product_type', 'meat_raw', '生鲜肉', {
       outputModifiers: [{ goodsId: 'all', multiplier: 1.1 }],
       laborMultiplier: 0.8,
       productionSpeedMultiplier: 1.2,
@@ -471,7 +404,7 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
       description: '分割生鲜肉',
       effects: ['产量+10%', '人力-20%', '速度+20%'],
     }),
-    createMethod(29, 21, 'product_type', 'meat_processed', '深加工', {
+    createMethod(28, 21, 'product_type', 'meat_processed', '深加工', {
       outputModifiers: [{ goodsId: 'all', multiplier: 0.9 }],
       qualityBonus: 0.2,
       laborMultiplier: 1.3,
@@ -485,165 +418,13 @@ const MEAT_PROCESSING_CONFIG: BuildingMethodConfig = createBuildingConfig(
   ]
 );
 
-// ==================== 乳制品厂 (ID 30) ====================
-
-const DAIRY_FACTORY_CONFIG: BuildingMethodConfig = createBuildingConfig(
-  30,
-  [
-    createSlot(30, 'processing', '加工工艺', '🥛', '乳品加工技术', 0),
-    createSlot(30, 'sterilization', '杀菌方式', '🔥', '杀菌消毒技术', 1),
-  ],
-  [
-    // 加工工艺
-    createMethod(30, 0, 'processing', 'dairy_basic', '基础加工', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.0 }],
-      laborMultiplier: 1.1,
-      requiredLevel: 1,
-      switchCost: 50000,
-      description: '基础乳品加工',
-      effects: ['人力+10%'],
-    }),
-    createMethod(30, 1, 'processing', 'dairy_separation', '分离技术', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.15 }],
-      qualityBonus: 0.1,
-      energyMultiplier: 1.2,
-      requiredLevel: 2,
-      switchCost: 200000,
-      description: '离心分离+标准化',
-      effects: ['产量+15%', '品质+10%', '能耗+20%'],
-    }),
-    createMethod(30, 2, 'processing', 'dairy_membrane', '膜分离技术', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.1 }],
-      qualityBonus: 0.25,
-      laborMultiplier: 0.8,
-      energyMultiplier: 1.3,
-      maintenanceMultiplier: 1.4,
-      requiredLevel: 3,
-      switchCost: 500000,
-      description: '超滤/纳滤膜技术',
-      effects: ['产量+10%', '品质+25%', '人力-20%', '能耗+30%', '维护+40%'],
-    }),
-    
-    // 杀菌方式
-    createMethod(30, 10, 'sterilization', 'dairy_pasteur', '巴氏杀菌', {
-      qualityBonus: 0.15,
-      energyMultiplier: 1.1,
-      requiredLevel: 1,
-      switchCost: 80000,
-      description: '低温长时杀菌',
-      effects: ['品质+15%', '能耗+10%'],
-    }),
-    createMethod(30, 11, 'sterilization', 'dairy_htst', 'HTST杀菌', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.1 }],
-      qualityBonus: 0.1,
-      energyMultiplier: 1.2,
-      productionSpeedMultiplier: 1.2,
-      requiredLevel: 2,
-      switchCost: 200000,
-      description: '高温短时杀菌',
-      effects: ['产量+10%', '品质+10%', '能耗+20%', '速度+20%'],
-    }),
-    createMethod(30, 12, 'sterilization', 'dairy_uht', 'UHT灭菌', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.2 }],
-      qualityBonus: -0.05,
-      energyMultiplier: 1.4,
-      productionSpeedMultiplier: 1.3,
-      requiredLevel: 2,
-      switchCost: 350000,
-      description: '超高温瞬时灭菌',
-      effects: ['产量+20%', '品质-5%', '能耗+40%', '速度+30%'],
-    }),
-  ]
-);
-
-// ==================== 粮油加工厂 (ID 31) ====================
-
-const GRAIN_OIL_FACTORY_CONFIG: BuildingMethodConfig = createBuildingConfig(
-  31,
-  [
-    createSlot(31, 'milling', '加工方式', '🌾', '粮食加工技术', 0),
-    createSlot(31, 'oil_extraction', '榨油工艺', '🫒', '油料加工技术', 1),
-  ],
-  [
-    // 加工方式
-    createMethod(31, 0, 'milling', 'grain_traditional', '传统碾磨', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 0.85 }],
-      qualityBonus: 0.1,
-      laborMultiplier: 1.4,
-      productionSpeedMultiplier: 0.7,
-      requiredLevel: 1,
-      switchCost: 30000,
-      description: '石磨等传统加工',
-      effects: ['产量-15%', '品质+10%', '人力+40%', '速度-30%'],
-    }),
-    createMethod(31, 1, 'milling', 'grain_modern', '现代碾磨', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.1 }],
-      laborMultiplier: 0.7,
-      energyMultiplier: 1.3,
-      productionSpeedMultiplier: 1.2,
-      requiredLevel: 2,
-      switchCost: 200000,
-      description: '现代辊式碾磨',
-      effects: ['产量+10%', '人力-30%', '能耗+30%', '速度+20%'],
-    }),
-    createMethod(31, 2, 'milling', 'grain_precision', '精细加工', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.0 }],
-      qualityBonus: 0.2,
-      laborMultiplier: 0.6,
-      energyMultiplier: 1.4,
-      maintenanceMultiplier: 1.2,
-      requiredLevel: 3,
-      switchCost: 400000,
-      description: '多道精细加工',
-      effects: ['品质+20%', '人力-40%', '能耗+40%', '维护+20%'],
-    }),
-    
-    // 榨油工艺
-    createMethod(31, 10, 'oil_extraction', 'oil_pressing', '压榨法', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 0.85 }],
-      qualityBonus: 0.2,
-      laborMultiplier: 1.2,
-      energyMultiplier: 1.1,
-      requiredLevel: 1,
-      switchCost: 50000,
-      description: '物理压榨出油',
-      effects: ['产量-15%', '品质+20%', '人力+20%', '能耗+10%'],
-    }),
-    createMethod(31, 11, 'oil_extraction', 'oil_solvent', '浸出法', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.2 }],
-      qualityBonus: -0.1,
-      laborMultiplier: 0.8,
-      energyMultiplier: 1.3,
-      pollutionMultiplier: 1.3,
-      requiredLevel: 2,
-      switchCost: 250000,
-      description: '溶剂浸出提油',
-      effects: ['产量+20%', '品质-10%', '人力-20%', '能耗+30%', '污染+30%'],
-    }),
-    createMethod(31, 12, 'oil_extraction', 'oil_combined', '预榨浸出', {
-      outputModifiers: [{ goodsId: 'all', multiplier: 1.15 }],
-      qualityBonus: 0.1,
-      laborMultiplier: 0.7,
-      energyMultiplier: 1.4,
-      pollutionMultiplier: 1.1,
-      requiredLevel: 3,
-      switchCost: 450000,
-      description: '预榨+浸出组合',
-      effects: ['产量+15%', '品质+10%', '人力-30%', '能耗+40%', '污染+10%'],
-    }),
-  ]
-);
-
 // ==================== 导出和注册 ====================
 
 export const AGRICULTURE_CONFIGS: BuildingMethodConfig[] = [
-  FARM_CONFIG,
+  VEGETABLE_FARM_CONFIG,
   LIVESTOCK_FARM_CONFIG,
   FISHERY_CONFIG,
-  FEED_FACTORY_CONFIG,
   MEAT_PROCESSING_CONFIG,
-  DAIRY_FACTORY_CONFIG,
-  GRAIN_OIL_FACTORY_CONFIG,
 ];
 
 /**

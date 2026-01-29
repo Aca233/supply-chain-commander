@@ -114,33 +114,33 @@ export const StatWidget = ({
   };
 
   if (compact) {
-    // 紧凑模式
+    // 紧凑模式 - 移动端优化，垂直布局
     return (
       <Card
         variant={variant}
         status={status}
         interactive={!!onClick}
         className={cn('group', glow && 'shadow-glow-blue', className)}
-       onClick={onClick}
+        onClick={onClick}
       >
-        <div className="flex items-center gap-3 p-3">
+        <div className="flex flex-col items-center p-2 sm:p-3 sm:flex-row sm:items-center sm:gap-3">
           {icon && (
-            <div className="w-8 h-8 rounded-lg bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)] text-lg flex-shrink-0">
+            <div className="w-10 h-10 sm:w-8 sm:h-8 rounded-xl sm:rounded-lg bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)] text-xl sm:text-lg flex-shrink-0 mb-1 sm:mb-0">
               {icon}
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide truncate">
+          <div className="flex-1 min-w-0 text-center sm:text-left">
+            <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] uppercase tracking-wide truncate">
               {title}
             </p>
-            <p className="text-lg font-bold text-[var(--text-primary)] tabular-nums">
+            <p className="text-sm sm:text-lg font-bold text-[var(--text-primary)] tabular-nums truncate">
               {prefix}
               {value}
-              {suffix && <span className="text-sm font-normal text-[var(--text-muted)] ml-1">{suffix}</span>}
+              {suffix && <span className="text-xs sm:text-sm font-normal text-[var(--text-muted)] ml-0.5 sm:ml-1">{suffix}</span>}
             </p>
           </div>
           {change !== undefined && (
-            <span className={cn('text-xs font-medium tabular-nums', trendInfo.color)}>
+            <span className={cn('text-[10px] sm:text-xs font-medium tabular-nums mt-1 sm:mt-0', trendInfo.color)}>
               {trendInfo.icon} {formatChange(change)}
             </span>
           )}

@@ -90,23 +90,51 @@ export const SupplyChainPage: React.FC = () => {
   if (isMobile) {
     return (
       <div className="flex flex-col h-full">
-        {/* 顶部：搜索 + 标签切换 */}
+        {/* 顶部：搜索 + 视图切换 */}
         <div className="flex-shrink-0 p-3 border-b border-border bg-background-surface space-y-2">
-          {/* 搜索栏 */}
-          <Input
-            placeholder="搜索商品..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            size="sm"
-            variant="filled"
-            leftIcon="🔍"
-          />
+          {/* 视图切换 + 搜索 */}
+          <div className="flex items-center gap-2">
+            {/* 视图切换按钮 */}
+            <div className="flex rounded-lg overflow-hidden border border-border">
+              <button
+                onClick={() => setMobileTab('list')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mobileTab === 'list'
+                    ? 'bg-accent text-white'
+                    : 'bg-background-muted text-foreground-secondary'
+                }`}
+              >
+                📋 列表
+              </button>
+              <button
+                onClick={() => setMobileTab('graph')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mobileTab === 'graph'
+                    ? 'bg-accent text-white'
+                    : 'bg-background-muted text-foreground-secondary'
+                }`}
+              >
+                🔗 图表
+              </button>
+            </div>
+            
+            {/* 搜索栏 */}
+            <div className="flex-1">
+              <Input
+                placeholder="搜索商品..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                size="sm"
+                variant="filled"
+                leftIcon="🔍"
+              />
+            </div>
+          </div>
           
           {/* 层级筛选 - 水平滚动 */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {[0, 1, 2, 3].map((tier) => {
               const isSelected = selectedTiers.includes(tier);
-              const tierNames = ['原材料', '基础加工', '中间产品', '最终产品'];
               const tierColors = ['bg-green-500', 'bg-blue-500', 'bg-purple-500', 'bg-orange-500'];
               return (
                 <button
@@ -129,13 +157,26 @@ export const SupplyChainPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 主内容：商品列表 */}
-        <div className="flex-1 overflow-y-auto">
-          <IndustryList
-            selectedGoodsId={selectedGoodsId}
-            onGoodsClick={handleGoodsClick}
-            searchQuery={searchQuery}
-          />
+        {/* 主内容：根据 mobileTab 切换 */}
+        <div className="flex-1 overflow-hidden">
+          {mobileTab === 'list' ? (
+            <div className="h-full overflow-y-auto">
+              <IndustryList
+                selectedGoodsId={selectedGoodsId}
+                onGoodsClick={handleGoodsClick}
+                searchQuery={searchQuery}
+              />
+            </div>
+          ) : (
+            <div className="h-full">
+              <SupplyChainGraph
+                viewMode={viewMode}
+                focusedGoodsId={selectedGoodsId}
+                onGoodsClick={handleGoodsClick}
+                onGoodsHover={handleGoodsHover}
+              />
+            </div>
+          )}
         </div>
 
         {/* 商品详情弹窗 */}
@@ -162,7 +203,10 @@ export const SupplyChainPage: React.FC = () => {
                   goodsId={selectedGoodsId!}
                   onClose={() => setShowDetailPanel(false)}
                   onGoodsClick={handleGoodsClick}
-                  onTraceProduct={() => setViewMode('trace')}
+                  onTraceProduct={() => {
+                    setShowDetailPanel(false);
+                    setMobileTab('graph');
+                  }}
                 />
               </div>
             </div>

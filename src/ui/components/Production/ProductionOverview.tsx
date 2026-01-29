@@ -121,7 +121,7 @@ export const ProductionOverview: React.FC = () => {
         </Tabs>
       </div>
       
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 sm:gap-3">
         <StatWidget
           icon="⚡"
           title={`${timeLabel}产能`}

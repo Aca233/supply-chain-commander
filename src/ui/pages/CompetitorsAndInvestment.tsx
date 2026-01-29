@@ -402,18 +402,21 @@ export const CompetitorsAndInvestment: React.FC = () => {
       
       {/* 公司列表 */}
       <Card variant="elevated" padding="none">
-        <div className="grid grid-cols-12 gap-2 p-3 bg-[var(--bg-muted)] text-sm text-[var(--text-muted)] font-medium border-b border-[var(--border-muted)]">
-          <div className="col-span-1">代码</div>
-          <div className="col-span-2">公司名称</div>
-          <div className="col-span-1 text-right">股价</div>
-          <div className="col-span-1 text-right">涨跌</div>
-          <div className="col-span-1 text-center">风格</div>
-          <div className="col-span-1 text-right">市值</div>
-          <div className="col-span-1 text-right">份额</div>
-          <div className="col-span-1 text-center">威胁</div>
-          <div className="col-span-1 text-right">持股</div>
-          <div className="col-span-2 text-center">操作</div>
-        </div>
+        {/* 表头 - 仅桌面端显示 */}
+        {!isMobile && (
+          <div className="grid grid-cols-12 gap-2 p-3 bg-[var(--bg-muted)] text-sm text-[var(--text-muted)] font-medium border-b border-[var(--border-muted)]">
+            <div className="col-span-1">代码</div>
+            <div className="col-span-2">公司名称</div>
+            <div className="col-span-1 text-right">股价</div>
+            <div className="col-span-1 text-right">涨跌</div>
+            <div className="col-span-1 text-center">风格</div>
+            <div className="col-span-1 text-right">市值</div>
+            <div className="col-span-1 text-right">份额</div>
+            <div className="col-span-1 text-center">威胁</div>
+            <div className="col-span-1 text-right">持股</div>
+            <div className="col-span-2 text-center">操作</div>
+          </div>
+        )}
         
         <div className="max-h-[500px] overflow-y-auto">
           {filteredProfiles.length > 0 ? (
