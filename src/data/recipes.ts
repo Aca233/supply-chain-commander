@@ -120,6 +120,7 @@ const LUXURY_RECIPES: RecipeDefinition[] = [
 const SUPPLEMENTARY_RECIPES: RecipeDefinition[] = [
   { id: 106, key: 'rubber-harvesting', name: '天然橡胶采集', buildingTypeId: 32, inputs: [], outputs: [{ goodsId: 11, amount: 80 }], ticksRequired: 1, laborRequired: 60, energyRequired: 50, description: '采集天然橡胶原料' },
   { id: 107, key: 'lithium-mining', name: '锂矿开采', buildingTypeId: 33, inputs: [], outputs: [{ goodsId: 13, amount: 50 }], ticksRequired: 2, laborRequired: 55, energyRequired: 280, description: '开采锂矿石' },  // 产量+25%: 40→50
+  { id: 108, key: 'seafood-processing', name: '海鲜加工', buildingTypeId: 28, inputs: [{ goodsId: 62, amount: 50 }], outputs: [{ goodsId: 65, amount: 40 }], ticksRequired: 2, laborRequired: 50, energyRequired: 180, description: '将水产加工成冷冻海鲜' },
 ];
 
 // ==================== 补全产业链配方（保留与核心产业链相关的配方）====================

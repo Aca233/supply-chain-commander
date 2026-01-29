@@ -10,6 +10,16 @@ import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager
 import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 import { formatGameDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
+import {
+  loadLLMConfig,
+  saveLLMConfig,
+  testConnection,
+  fetchAvailableModels,
+  PRESET_MODELS,
+  PRESET_ENDPOINTS,
+  ENDPOINT_SUGGESTIONS,
+  type LLMConfig
+} from '@/core/llm';
 
 // 设计系统组件
 import {
@@ -41,6 +51,9 @@ const PerformanceDashboard = lazy(() => import('@/ui/components/Performance/Perf
 // 懒加载数值平衡调优面板
 const BalanceTuningPanel = lazy(() => import('@/ui/components/Balance/BalanceTuningPanel'));
 
+// 懒加载月度价格表格
+const MonthlyPriceTable = lazy(() => import('@/ui/components/Market/MonthlyPriceTable'));
+
 export const Settings: React.FC = () => {
   const { isMobile, isTablet } = useMobile();
   const { getWorld, ui, toggleTheme, tick } = useGameStore();
@@ -51,12 +64,56 @@ export const Settings: React.FC = () => {
   const [storageUsage, setStorageUsage] = useState({ used: 0, total: 0, percent: 0 });
   const [saveName, setSaveName] = useState('');
   const autoSaveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // LLM 配置状态
+  const [llmConfig, setLLMConfig] = useState<LLMConfig>(() => loadLLMConfig());
+  const [llmTestResult, setLLMTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [llmTestLoading, setLLMTestLoading] = useState(false);
+  const [customEndpoint, setCustomEndpoint] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<{ id: string; name: string }[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [customModel, setCustomModel] = useState(false);
+  const [endpointSuggestions, setEndpointSuggestions] = useState<string[]>([]);
+  const [showEndpointSuggestions, setShowEndpointSuggestions] = useState(false);
+  const [modelSelectOpen, setModelSelectOpen] = useState(false);
+  const endpointInputRef = useRef<HTMLInputElement>(null);
 
   // 加载存档列表
   useEffect(() => {
     setSaves(saveManager.listSaves());
     setStorageUsage(saveManager.getStorageUsage());
   }, []);
+  
+  // 检查是否使用自定义端点
+  useEffect(() => {
+    const isCustom = !PRESET_ENDPOINTS.some(e => e.value === llmConfig.endpoint && e.value !== 'custom');
+    setCustomEndpoint(isCustom);
+  }, [llmConfig.endpoint]);
+  
+  // 当 endpoint 或 apiKey 变化时自动获取模型列表
+  useEffect(() => {
+    if (llmConfig.apiKey && llmConfig.endpoint && llmConfig.endpoint !== 'custom') {
+      // 使用防抖，避免输入时频繁请求
+      const timer = setTimeout(() => {
+        fetchAvailableModels(llmConfig.endpoint, llmConfig.apiKey)
+          .then((models) => {
+            if (models.length > 0) {
+              setFetchedModels(models);
+              // 如果当前模型不在列表中，选择第一个
+              const currentModelInList = models.some(m => m.id === llmConfig.model);
+              if (!currentModelInList && !PRESET_MODELS.some(m => m.value === llmConfig.model)) {
+                handleLLMConfigChange('model', models[0].id);
+              }
+            }
+          })
+          .catch((e) => {
+            console.error('[LLM] Auto fetch models failed:', e);
+          });
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [llmConfig.endpoint, llmConfig.apiKey]);
 
   // 自动保存功能
   useEffect(() => {
@@ -144,6 +201,50 @@ export const Settings: React.FC = () => {
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString('zh-CN');
   };
+  
+  // LLM 配置变更
+  const handleLLMConfigChange = (key: keyof LLMConfig, value: string | number | boolean) => {
+    const newConfig = { ...llmConfig, [key]: value };
+    setLLMConfig(newConfig);
+    saveLLMConfig(newConfig);
+    setLLMTestResult(null); // 清除测试结果
+  };
+  
+  // 测试 LLM 连接
+  const handleTestLLMConnection = async () => {
+    setLLMTestLoading(true);
+    setLLMTestResult(null);
+    try {
+      const result = await testConnection();
+      setLLMTestResult(result);
+    } catch (e) {
+      setLLMTestResult({ success: false, message: '测试失败' });
+    } finally {
+      setLLMTestLoading(false);
+    }
+  };
+  
+  // 获取可用模型列表
+  const handleFetchModels = async () => {
+    if (!llmConfig.apiKey || !llmConfig.endpoint) return;
+    
+    setFetchingModels(true);
+    try {
+      const models = await fetchAvailableModels(llmConfig.endpoint, llmConfig.apiKey);
+      setFetchedModels(models);
+      if (models.length > 0) {
+        // 如果当前模型不在列表中，选择第一个
+        const currentModelInList = models.some(m => m.id === llmConfig.model);
+        if (!currentModelInList) {
+          handleLLMConfigChange('model', models[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('获取模型列表失败:', e);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   // 存档表格列定义
   const saveColumns: Column<SaveMetadata>[] = [
@@ -203,27 +304,35 @@ export const Settings: React.FC = () => {
       <Tabs defaultValue="game">
         <TabsList
           variant="game"
-          className={isMobile ? 'w-full grid grid-cols-5 gap-1 p-1' : ''}
+          className={isMobile ? 'w-full grid grid-cols-7 gap-1 p-1' : ''}
         >
-          <TabsTrigger 
-            value="game" 
-            variant="game" 
+          <TabsTrigger
+            value="game"
+            variant="game"
             className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
           >
             <span className={isMobile ? 'text-lg' : ''}>🎮</span>
             <span className={isMobile ? '' : 'ml-1'}>游戏</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="save" 
-            variant="game" 
+          <TabsTrigger
+            value="save"
+            variant="game"
             className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
           >
             <span className={isMobile ? 'text-lg' : ''}>💾</span>
             <span className={isMobile ? '' : 'ml-1'}>存档</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="performance" 
-            variant="game" 
+          <TabsTrigger
+            value="market"
+            variant="game"
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>📈</span>
+            <span className={isMobile ? '' : 'ml-1'}>市场</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="performance"
+            variant="game"
             className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
           >
             <span className={isMobile ? 'text-lg' : ''}>📊</span>
@@ -236,6 +345,14 @@ export const Settings: React.FC = () => {
           >
             <span className={isMobile ? 'text-lg' : ''}>🎛️</span>
             <span className={isMobile ? '' : 'ml-1'}>平衡</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="llm"
+            variant="game"
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>🤖</span>
+            <span className={isMobile ? '' : 'ml-1'}>AI</span>
           </TabsTrigger>
           <TabsTrigger
             value="about"
@@ -471,6 +588,22 @@ export const Settings: React.FC = () => {
           </Card>
         </TabsContent>
 
+        {/* 市场数据 - 月度价格涨跌 */}
+        <TabsContent value="market" className="space-y-6">
+          <Suspense
+            fallback={
+              <Card variant="elevated" padding="lg">
+                <div className="flex flex-col items-center justify-center h-64 gap-4">
+                  <div className="animate-spin w-10 h-10 border-3 border-[var(--accent)] border-t-transparent rounded-full" />
+                  <div className="text-[var(--text-muted)]">加载市场数据面板...</div>
+                </div>
+              </Card>
+            }
+          >
+            <MonthlyPriceTable />
+          </Suspense>
+        </TabsContent>
+
         {/* 性能监控 */}
         <TabsContent value="performance">
           <Suspense
@@ -501,6 +634,298 @@ export const Settings: React.FC = () => {
           >
             <BalanceTuningPanel />
           </Suspense>
+        </TabsContent>
+
+        {/* LLM 配置 */}
+        <TabsContent value="llm" className="space-y-6">
+          <Card variant="elevated">
+            <CardHeader>
+              <CardTitle>🤖 AI 助手配置</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">💡</span>
+                  <div className="text-sm text-[var(--text-secondary)]">
+                    <p className="mb-2">AI 助手可以用自然语言帮你操作游戏。配置 API 后，点击右下角的聊天按钮即可使用。</p>
+                    <p>支持 OpenAI、Anthropic、DeepSeek 等 API 服务商。</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* API Key */}
+              <div className="space-y-2">
+                <label className="block text-[var(--text-primary)] font-medium">API Key</label>
+                <Input
+                  type="password"
+                  value={llmConfig.apiKey}
+                  onChange={(e) => handleLLMConfigChange('apiKey', e.target.value)}
+                  placeholder="sk-..."
+                  className="font-mono"
+                />
+                <div className="text-xs text-[var(--text-muted)]">
+                  你的 API Key 仅保存在本地浏览器中，不会上传到任何服务器
+                </div>
+              </div>
+              
+              {/* API 端点 */}
+              <div className="space-y-2">
+                <label className="block text-[var(--text-primary)] font-medium">API 端点</label>
+                <Select
+                  value={customEndpoint ? 'custom' : llmConfig.endpoint}
+                  onValueChange={(v) => {
+                    if (v === 'custom') {
+                      setCustomEndpoint(true);
+                    } else {
+                      setCustomEndpoint(false);
+                      handleLLMConfigChange('endpoint', v);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRESET_ENDPOINTS.map((ep) => (
+                      <SelectItem key={ep.value} value={ep.value}>
+                        {ep.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {customEndpoint && (
+                  <div className="relative mt-2">
+                    <Input
+                      ref={endpointInputRef}
+                      value={llmConfig.endpoint}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        handleLLMConfigChange('endpoint', value);
+                        // 过滤匹配的建议
+                        if (value.length > 0) {
+                          const filtered = ENDPOINT_SUGGESTIONS.filter(s =>
+                            s.toLowerCase().includes(value.toLowerCase())
+                          );
+                          setEndpointSuggestions(filtered.slice(0, 8));
+                          setShowEndpointSuggestions(filtered.length > 0);
+                        } else {
+                          setEndpointSuggestions(ENDPOINT_SUGGESTIONS.slice(0, 8));
+                          setShowEndpointSuggestions(true);
+                        }
+                      }}
+                      onFocus={() => {
+                        const value = llmConfig.endpoint;
+                        if (value.length > 0) {
+                          const filtered = ENDPOINT_SUGGESTIONS.filter(s =>
+                            s.toLowerCase().includes(value.toLowerCase())
+                          );
+                          setEndpointSuggestions(filtered.slice(0, 8));
+                          setShowEndpointSuggestions(filtered.length > 0);
+                        } else {
+                          setEndpointSuggestions(ENDPOINT_SUGGESTIONS.slice(0, 8));
+                          setShowEndpointSuggestions(true);
+                        }
+                      }}
+                      onBlur={() => {
+                        // 延迟关闭以允许点击建议
+                        setTimeout(() => setShowEndpointSuggestions(false), 200);
+                      }}
+                      placeholder="https://api.example.com/v1"
+                      className="font-mono text-sm"
+                      autoComplete="off"
+                    />
+                    {showEndpointSuggestions && endpointSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                        {endpointSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm font-mono hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors first:rounded-t-lg last:rounded-b-lg"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleLLMConfigChange('endpoint', suggestion);
+                              setShowEndpointSuggestions(false);
+                            }}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* 模型选择 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[var(--text-primary)] font-medium">模型</label>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    onClick={handleFetchModels}
+                    disabled={!llmConfig.apiKey || !llmConfig.endpoint || fetchingModels}
+                  >
+                    {fetchingModels ? '获取中...' : '🔄 获取模型列表'}
+                  </Button>
+                </div>
+                <Select
+                  value={customModel ? 'custom' : llmConfig.model}
+                  onValueChange={(v) => {
+                    if (v === 'custom') {
+                      setCustomModel(true);
+                    } else {
+                      setCustomModel(false);
+                      handleLLMConfigChange('model', v);
+                    }
+                  }}
+                  open={modelSelectOpen}
+                  onOpenChange={setModelSelectOpen}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择模型">
+                      {/* 显示当前选中的模型 */}
+                      {customModel
+                        ? llmConfig.model || '自定义模型'
+                        : fetchedModels.find(m => m.id === llmConfig.model)?.name
+                          || PRESET_MODELS.find(m => m.value === llmConfig.model)?.label
+                          || llmConfig.model}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72 overflow-y-auto">
+                    {/* 已获取的模型 */}
+                    {fetchedModels.length > 0 && (
+                      <>
+                        <div className="px-2 py-1 text-xs text-[var(--text-muted)] font-medium sticky top-0 bg-[var(--bg-secondary)] z-10">
+                          从 API 获取 ({fetchedModels.length})
+                        </div>
+                        {fetchedModels.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                        <div className="my-1 border-t border-[var(--border)]" />
+                      </>
+                    )}
+                    {/* 预设模型 */}
+                    <div className="px-2 py-1 text-xs text-[var(--text-muted)] font-medium sticky top-0 bg-[var(--bg-secondary)] z-10">
+                      预设模型
+                    </div>
+                    {PRESET_MODELS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                    <div className="my-1 border-t border-[var(--border)]" />
+                    <SelectItem value="custom">自定义模型...</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {customModel && (
+                  <Input
+                    value={llmConfig.model}
+                    onChange={(e) => handleLLMConfigChange('model', e.target.value)}
+                    placeholder="输入模型名称，如 gpt-4o"
+                    className="mt-2"
+                  />
+                )}
+                
+                {!modelSelectOpen && (
+                  <div className="text-xs text-[var(--text-muted)]">
+                    {fetchedModels.length > 0
+                      ? `已获取 ${fetchedModels.length} 个可用模型`
+                      : '点击「获取模型列表」从 API 自动获取可用模型'}
+                  </div>
+                )}
+              </div>
+              
+              {/* 高级选项 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-[var(--text-primary)] font-medium">最大 Token</label>
+                  <Input
+                    type="number"
+                    value={llmConfig.maxTokens}
+                    onChange={(e) => handleLLMConfigChange('maxTokens', parseInt(e.target.value) || 2048)}
+                    min={256}
+                    max={8192}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[var(--text-primary)] font-medium">温度 (Temperature)</label>
+                  <Input
+                    type="number"
+                    value={llmConfig.temperature}
+                    onChange={(e) => handleLLMConfigChange('temperature', parseFloat(e.target.value) || 0.7)}
+                    min={0}
+                    max={2}
+                    step={0.1}
+                  />
+                </div>
+              </div>
+              
+              {/* 流式响应 */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[var(--text-primary)] font-medium">流式响应</div>
+                  <div className="text-sm text-[var(--text-muted)]">
+                    开启后 AI 回复会逐字显示，关闭则等待完整响应后一次性显示
+                  </div>
+                </div>
+                <Switch
+                  checked={llmConfig.stream ?? true}
+                  onCheckedChange={(checked) => handleLLMConfigChange('stream', checked)}
+                  variant="game"
+                />
+              </div>
+              
+              {/* 测试连接 */}
+              <div className="flex items-center gap-4">
+                <Button
+                  onClick={handleTestLLMConnection}
+                  disabled={!llmConfig.apiKey || llmTestLoading}
+                >
+                  {llmTestLoading ? '测试中...' : '🔗 测试连接'}
+                </Button>
+                
+                {llmTestResult && (
+                  <div className={`flex items-center gap-2 ${llmTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                    <span>{llmTestResult.success ? '✅' : '❌'}</span>
+                    <span className="text-sm">{llmTestResult.message}</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          
+          {/* 使用说明 */}
+          <Card variant="elevated">
+            <CardHeader>
+              <CardTitle>📖 使用说明</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-[var(--text-secondary)]">
+              <p>配置完成后，点击游戏右下角的聊天按钮即可与 AI 助手对话。你可以用自然语言告诉它：</p>
+              <ul className="space-y-2 ml-4">
+                {[
+                  { icon: '🏭', text: '建造建筑：「建造一个铁矿场」「升级炼钢厂」' },
+                  { icon: '💹', text: '市场交易：「买入1000单位钢材」「卖出所有煤炭」' },
+                  { icon: '💰', text: '贷款操作：「申请100万短期贷款」「查看我的贷款」' },
+                  { icon: '📊', text: '股票投资：「买入恒盛矿业1000股」「查看持仓」' },
+                  { icon: '❓', text: '查询信息：「我的库存有什么」「查看公司状态」' },
+                ].map((item) => (
+                  <li key={item.text} className="flex items-center gap-2">
+                    <span>{item.icon}</span>
+                    <span>{item.text}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 p-3 rounded bg-yellow-500/10 border border-yellow-500/20 text-sm">
+                <strong className="text-yellow-400">⚠️ 注意：</strong>
+                <span className="text-[var(--text-muted)]"> AI 助手会直接执行操作，请仔细确认指令内容。</span>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* 关于游戏 */}

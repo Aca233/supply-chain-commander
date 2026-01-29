@@ -317,9 +317,9 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 480000, 960000, 1920000, 3840000],
     capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
     efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    availableRecipes: [19],
+    availableRecipes: [19, 71, 72],
     defaultRecipeId: 19,
-    description: '生产水泥',
+    description: '生产水泥和建筑材料',
   },
   {
     id: 15,
@@ -357,7 +357,7 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 2000000, 4000000, 8000000, 16000000],
     capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
     efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.8],
-    availableRecipes: [21, 22, 23, 62, 82, 83, 84],
+    availableRecipes: [21, 22, 23, 82, 83, 84],
     defaultRecipeId: 21,
     description: '生产电子元件、消费电子和无人机',
   },
@@ -429,9 +429,9 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 3200000, 6400000, 12800000, 25600000],
     capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
     efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    availableRecipes: [28, 81],
+    availableRecipes: [28, 77, 81],
     defaultRecipeId: 28,
-    description: '生产电池和储能系统',
+    description: '生产电池、储能系统和光伏系统',
   },
   {
     id: 21,
@@ -447,9 +447,9 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 1200000, 2400000, 4800000, 9600000],
     capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
     efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    availableRecipes: [29, 30, 31, 79, 80],
+    availableRecipes: [29, 30, 31, 70, 73, 75, 76, 79, 80],
     defaultRecipeId: 29,
-    description: '生产机械、汽车和航空零部件',
+    description: '生产机械、汽车、航空零部件、家具和新能源设备',
   },
 ];
 
@@ -581,9 +581,9 @@ const AGRICULTURE_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 320000, 640000, 1280000, 2560000],
     capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
     efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    availableRecipes: [40, 41],
+    availableRecipes: [40, 41, 108],
     defaultRecipeId: 40,
-    description: '肉类加工和乳制品生产',
+    description: '肉类加工、乳制品和海鲜加工',
   },
 ];
 
@@ -639,7 +639,7 @@ const PHARMA_BUILDINGS: BuildingTypeDefinition[] = [
     upgradeCosts: [0, 4800000, 9600000, 19200000, 38400000],
     capacityMultipliers: [1.0, 1.2, 1.4, 1.6, 1.9],
     efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    availableRecipes: [47, 48, 92, 104],
+    availableRecipes: [47, 48, 92],
     defaultRecipeId: 47,
     description: '生产医疗设备和耗材的高科技工厂',
   },
@@ -798,7 +798,7 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       // 超市：全品类食品、日用品、生鲜（ID24已删除）
       allowedGoodsIds: [
         8, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 74, 76,
-        58, 59, 62,      // 生鲜：蔬菜、水果、水产
+        58, 59, 62, 61,  // 生鲜：蔬菜、水果、水产、家禽
       ],
     },
   },
@@ -827,7 +827,7 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       // 大卖场：全品类一站式购物（ID24和38已删除）
       allowedGoodsIds: [
         8, 44, 45, 43, 46, 67, 68, 69, 63, 64, 65, 66, 40, 55, 56, 74, 76, 25,
-        58, 59, 62,      // 生鲜：蔬菜、水果、水产
+        58, 59, 62, 61,  // 生鲜：蔬菜、水果、水产、家禽
       ],
     },
   },
@@ -955,7 +955,7 @@ const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
       inventoryCapacity: 3000,
       customerCapacity: 2500,
       markupRange: [0.20, 0.40],
-      allowedGoodsIds: [74, 75, 76, 77],
+      allowedGoodsIds: [74, 75, 76, 77, 70],  // 添加药材(70)作为中药材销售
     },
   },
   {

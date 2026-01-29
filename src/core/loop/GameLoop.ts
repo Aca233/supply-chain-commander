@@ -16,7 +16,7 @@ import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHea
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
@@ -47,6 +47,19 @@ import { executePlayerAutoTrade } from '../ai/PlayerAutoTrader';
 import { updateRetailSystem, RetailTickResult, processWholesaleSupply, WholesaleResult } from '../economy/RetailSystem';
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
+import { updateMonthlyTracker, resetMonthlyPriceTracker } from '../economy/MonthlyPriceTracker';
+
+// 导入新闻系统
+import {
+  initNewsSystem,
+  shouldCaptureSnapshot,
+  shouldGenerateNews,
+  generateMonthlyNews,
+  captureMonthStartSnapshot,
+  trackCompanyBankrupt,
+  trackEconomicEvent,
+  MonthlyNewsReport,
+} from '../news';
 
 /**
  * 游戏循环状态
@@ -124,6 +137,9 @@ export interface TickResult {
   
   // 建造/拆除系统结果
   construction: ConstructionTickResult;
+  
+  // 新闻系统结果
+  newsGenerated?: MonthlyNewsReport;
 }
 
 /**
@@ -136,6 +152,7 @@ export class GameLoop {
   private timerId?: number;
   private lastPerfReport: TickPerformanceReport | null = null;
   private aiWorkerInitialized: boolean = false;
+  private newsSystemInitialized: boolean = false;
   
   constructor(world: GameWorld) {
     this.world = world;
@@ -167,6 +184,13 @@ export class GameLoop {
     initializeBankingSystem(world);
     initializeStockMarket(world);
     initializeAcquisitionSystem();
+    
+    // 【新增】初始化新闻系统
+    initNewsSystem(world);
+    this.newsSystemInitialized = true;
+    
+    // 【新增】初始化月度价格追踪器
+    resetMonthlyPriceTracker();
     
     // 【新增】初始化所有Worker系统（异步，不阻塞构造函数）
     this.initializeAllWorkers();
@@ -585,9 +609,9 @@ export class GameLoop {
     }
     
     // 26. 战略建材检查（确保关键建材供应链不断裂）
-    // 每100tick运行一次，检测订单簿中有大量买单但无供应的建材
+    // 【P2优化】每50tick运行一次（原100tick），检测订单簿中有大量买单但无供应的建材
     const strategicMaterialDecisions = runStrategicMaterialCheck(this.world);
-    if (strategicMaterialDecisions > 0 && currentTick % 100 === 0) {
+    if (strategicMaterialDecisions > 0 && currentTick % 50 === 0) {
       console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
     }
     
@@ -597,6 +621,44 @@ export class GameLoop {
     if (coldGoodsDecisions > 0) {
       console.log(`[冷门商品 T${currentTick}] 触发了${coldGoodsDecisions}个建造决策`);
     }
+    
+    // 28. 【P2修复】零供应商品强制建造
+    // 每100tick运行一次，强制分配AI公司建造完全没有供应的商品
+    const zeroSupplyDecisions = forceBuildzeroSupplyGoods(this.world);
+    if (zeroSupplyDecisions > 0) {
+      console.log(`[零供应强制建造 T${currentTick}] 触发了${zeroSupplyDecisions}个强制建造决策`);
+    }
+    
+    // ==================== 阶段7: 新闻系统 ====================
+    
+    // 重要：必须先生成新闻（使用上月快照），再捕获新月快照！
+    // 顺序错误会导致价格变化等数据全为0
+    
+    let newsGenerated: MonthlyNewsReport | undefined;
+    
+    // 28. 生成月度新闻（每月1号0点，生成上月新闻）
+    // 必须在捕获新快照之前执行，否则上月数据会被覆盖
+    if (shouldGenerateNews(currentTick)) {
+      // 异步生成新闻，不阻塞游戏循环
+      generateMonthlyNews(this.world)
+        .then(report => {
+          if (report) {
+            console.log(`[GameLoop] 月度新闻已生成: ${report.headline.title}`);
+          }
+        })
+        .catch(error => {
+          console.error('[GameLoop] 新闻生成失败:', error);
+        });
+    }
+    
+    // 29. 记录月初快照（每月1号0点）
+    // 必须在生成新闻之后执行，为下个月新闻准备数据
+    if (shouldCaptureSnapshot(currentTick)) {
+      captureMonthStartSnapshot(this.world);
+    }
+    
+    // 30. 更新月度价格追踪器（每tick更新，但仅在月末生成报告）
+    updateMonthlyTracker(this.world);
     
     endState();
     
@@ -646,6 +708,7 @@ export class GameLoop {
       },
       aiSubsidiaryActions,
       construction: constructionResult,
+      newsGenerated,
     };
     
     // 调用回调
@@ -827,7 +890,11 @@ export class GameLoop {
    * 处理公司破产
    */
   private handleBankruptcy(companyId: number): void {
-    console.log(`[破产] 公司 ${this.world.companies.names[companyId]} 已破产`);
+    const companyName = this.world.companies.names[companyId];
+    console.log(`[破产] 公司 ${companyName} 已破产`);
+    
+    // 记录破产事件到新闻系统
+    trackCompanyBankrupt(this.world.tick, companyId, companyName);
     
     // 1. 清算所有建筑（转移给市场/其他公司）
     for (let i = 0; i < this.world.buildings.count; i++) {
@@ -907,7 +974,15 @@ export class GameLoop {
       console.warn('Failed to add building during restructure:', e);
     }
     
-    console.log(`[重组] 公司 ${this.world.companies.names[companyId]} 已重组，新资金 ¥${newCash.toLocaleString()}`);
+    const companyName = this.world.companies.names[companyId];
+    console.log(`[重组] 公司 ${companyName} 已重组，新资金 ¥${newCash.toLocaleString()}`);
+    
+    // 记录重组事件到新闻系统
+    trackEconomicEvent(
+      this.world.tick,
+      'company_restructure',
+      `${companyName}完成破产重组，获得¥${(newCash / 10000).toFixed(0)}万元新资金`
+    );
   }
   
   /**

@@ -23,7 +23,8 @@ export type PersonalityType =
   | 'diversified'     // 多元型：分散投资
   | 'innovator'       // 创新型：追求技术领先
   | 'cost_leader'     // 成本领先：追求最低成本
-  | 'premium';        // 高端型：追求高质量高溢价
+  | 'premium'         // 高端型：追求高质量高溢价
+  | 'pioneer';        // 产业链开拓者：专门填补产业链缺口
 
 /**
  * 产业类别偏好权重
@@ -125,6 +126,14 @@ export interface AIPersonality {
  * - 所有AI都能建造所有类型建筑
  * - 但通过权重系统体现明显的偏好趋向
  */
+/**
+ * 预定义AI人格
+ *
+ * 【v2.1更新】大幅提高所有人格对中间品(processing/manufacturing)的偏好
+ * - 解决产业链断裂问题：85%中间品零交易
+ * - 所有人格的processing和manufacturing最低权重从0.6提升到1.0
+ * - 添加supplyChainAwareness属性，让AI更关注供应链缺口
+ */
 export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
   aggressive: {
     type: 'aggressive',
@@ -142,16 +151,16 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     innovationInvestment: 0.05,
     decisionFrequency: 1.5,
     industryPreferences: {
-      extraction: 0.6,      // 低偏好但不排除
-      processing: 0.8,      // 中等偏好
+      extraction: 0.8,      // 提高：从0.6到0.8
+      processing: 1.2,      // 提高：从0.8到1.2，中间品更重要
       manufacturing: 1.5,   // 高偏好
-      service: 0.5,         // 低偏好
-      retail: 0.4,          // 低偏好
-      agriculture: 0.5,
-      pharma: 0.7,
+      service: 0.6,         // 提高：从0.5到0.6
+      retail: 0.5,          // 提高：从0.4到0.5
+      agriculture: 0.6,     // 提高
+      pharma: 0.8,
       luxury: 0.8,
       tech: 1.8,            // 极高偏好
-      basic: 0.4,
+      basic: 0.6,           // 提高：从0.4到0.6
     },
     preferredCategories: ['final', 'intermediate'],
     avoidedCategories: [],
@@ -174,14 +183,14 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     decisionFrequency: 0.7,
     industryPreferences: {
       extraction: 1.5,      // 高偏好
-      processing: 1.2,      // 中高偏好
-      manufacturing: 0.6,   // 低偏好但不排除
+      processing: 1.3,      // 提高：从1.2到1.3，中间品更重要
+      manufacturing: 1.0,   // 大幅提高：从0.6到1.0，不再歧视制造业
       service: 0.8,
-      retail: 0.5,
+      retail: 0.6,          // 提高
       agriculture: 1.3,
-      pharma: 0.7,
-      luxury: 0.3,          // 很低偏好但不排除
-      tech: 0.4,
+      pharma: 0.8,          // 提高
+      luxury: 0.5,          // 提高：从0.3到0.5
+      tech: 0.6,            // 提高：从0.4到0.6
       basic: 1.6,           // 极高偏好
     },
     preferredCategories: ['basic', 'raw'],
@@ -205,15 +214,15 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     decisionFrequency: 1.3,
     industryPreferences: {
       extraction: 1.0,      // 均衡
-      processing: 1.0,
-      manufacturing: 1.0,
+      processing: 1.2,      // 提高：从1.0到1.2，中间品更重要
+      manufacturing: 1.2,   // 提高：从1.0到1.2
       service: 1.2,         // 略高（贸易服务）
-      retail: 0.8,
-      agriculture: 0.8,
+      retail: 0.9,          // 提高
+      agriculture: 0.9,     // 提高
       pharma: 1.0,
       luxury: 1.0,
-      tech: 1.0,
-      basic: 0.8,
+      tech: 1.1,            // 提高
+      basic: 0.9,           // 提高
     },
     preferredCategories: [],
     avoidedCategories: [],
@@ -235,16 +244,16 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     innovationInvestment: 0.08,
     decisionFrequency: 0.9,
     industryPreferences: {
-      extraction: 0.7,      // 低偏好但不排除
-      processing: 1.3,      // 中高偏好
-      manufacturing: 1.4,   // 高偏好
-      service: 0.6,
-      retail: 0.4,
-      agriculture: 0.6,
-      pharma: 1.2,
-      luxury: 0.8,
-      tech: 1.3,
-      basic: 0.6,
+      extraction: 0.9,      // 提高：从0.7到0.9
+      processing: 1.5,      // 提高：从1.3到1.5，中间品专家
+      manufacturing: 1.5,   // 提高：从1.4到1.5
+      service: 0.7,         // 提高
+      retail: 0.5,          // 提高
+      agriculture: 0.7,     // 提高
+      pharma: 1.3,          // 提高
+      luxury: 0.9,          // 提高
+      tech: 1.4,            // 提高
+      basic: 0.8,           // 提高：从0.6到0.8
     },
     preferredCategories: ['intermediate'],
     avoidedCategories: [],  // 不再完全排除任何类别
@@ -267,8 +276,8 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     decisionFrequency: 0.85,
     industryPreferences: {
       extraction: 1.0,      // 完全均衡
-      processing: 1.0,
-      manufacturing: 1.0,
+      processing: 1.1,      // 略微提高中间品权重
+      manufacturing: 1.1,   // 略微提高制造业权重
       service: 1.0,
       retail: 1.0,
       agriculture: 1.0,
@@ -297,16 +306,16 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     innovationInvestment: 0.15,
     decisionFrequency: 0.95,
     industryPreferences: {
-      extraction: 0.5,      // 低偏好但不排除
-      processing: 0.8,
-      manufacturing: 1.3,   // 高偏好
-      service: 0.7,
-      retail: 0.4,
-      agriculture: 0.4,
-      pharma: 1.4,          // 高偏好（医药研发）
-      luxury: 0.6,
+      extraction: 0.7,      // 提高：从0.5到0.7
+      processing: 1.2,      // 提高：从0.8到1.2，中间品更重要
+      manufacturing: 1.5,   // 提高：从1.3到1.5
+      service: 0.8,         // 提高
+      retail: 0.5,          // 提高
+      agriculture: 0.5,     // 提高
+      pharma: 1.5,          // 提高：从1.4到1.5
+      luxury: 0.7,          // 提高
       tech: 2.0,            // 极高偏好
-      basic: 0.3,
+      basic: 0.5,           // 提高：从0.3到0.5
     },
     preferredCategories: ['final', 'intermediate'],
     avoidedCategories: [],  // 不再完全排除任何类别
@@ -329,14 +338,14 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     decisionFrequency: 1.0,
     industryPreferences: {
       extraction: 1.3,      // 中高偏好
-      processing: 1.4,      // 高偏好
-      manufacturing: 1.0,
-      service: 0.8,
-      retail: 0.6,
+      processing: 1.5,      // 提高：从1.4到1.5，中间品更重要
+      manufacturing: 1.2,   // 提高：从1.0到1.2
+      service: 0.9,         // 提高
+      retail: 0.7,          // 提高
       agriculture: 1.2,
-      pharma: 0.6,
-      luxury: 0.2,          // 很低偏好但不排除
-      tech: 0.5,
+      pharma: 0.7,          // 提高
+      luxury: 0.4,          // 提高：从0.2到0.4
+      tech: 0.7,            // 提高：从0.5到0.7
       basic: 1.5,           // 高偏好
     },
     preferredCategories: ['basic', 'raw'],
@@ -359,19 +368,60 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
     innovationInvestment: 0.1,
     decisionFrequency: 0.8,
     industryPreferences: {
-      extraction: 0.4,      // 低偏好但不排除
-      processing: 0.6,
-      manufacturing: 1.2,   // 中高偏好
-      service: 0.8,
+      extraction: 0.6,      // 提高：从0.4到0.6
+      processing: 1.0,      // 提高：从0.6到1.0，中间品更重要
+      manufacturing: 1.3,   // 提高：从1.2到1.3
+      service: 0.9,         // 提高
       retail: 1.0,          // 中等（高端零售）
-      agriculture: 0.5,
-      pharma: 0.8,
+      agriculture: 0.6,     // 提高
+      pharma: 0.9,          // 提高
       luxury: 2.0,          // 极高偏好
-      tech: 1.0,
-      basic: 0.3,           // 很低偏好但不排除
+      tech: 1.1,            // 提高
+      basic: 0.5,           // 提高：从0.3到0.5
     },
     preferredCategories: ['final'],
     avoidedCategories: [],  // 不再完全排除任何类别
+  },
+  
+  /**
+   * 【P2新增】产业链开拓者
+   *
+   * 专门设计用于填补产业链缺口的AI人格：
+   * 1. 高风险容忍：愿意投资无人生产的商品
+   * 2. 高扩张倾向：积极建造新建筑
+   * 3. 对中间品和基础材料有极高偏好
+   * 4. 不追求短期利润，专注长期供应链完整性
+   * 5. 对高成本建筑（锂矿、芯片厂等）有特殊偏好
+   */
+  pioneer: {
+    type: 'pioneer',
+    name: '产业链开拓者',
+    description: '专门填补产业链缺口，投资无人生产的关键商品，确保经济体系完整运转',
+    riskTolerance: 0.95,      // 极高风险容忍：愿意投资回报周期长的项目
+    expansionBias: 0.95,      // 极高扩张倾向：积极建造
+    pricingBias: -0.2,        // 略微倾向低价：不追求高利润
+    targetInventoryDays: 20,  // 较高库存：保障供应稳定
+    targetCashRatio: 0.15,    // 低现金储备：大部分投资出去
+    marketAwareness: 0.9,     // 高市场关注：发现供应链缺口
+    competitiveSensitivity: 0.3, // 低竞争敏感：不怕竞争对手
+    longTermFocus: 0.95,      // 极高长期思维：不追求短期利润
+    specializationDegree: 0.2, // 低专业化：愿意涉足各行业
+    innovationInvestment: 0.05,
+    decisionFrequency: 1.5,   // 高决策频率：快速响应
+    industryPreferences: {
+      extraction: 1.5,        // 高偏好：开采原材料
+      processing: 2.0,        // 极高偏好：中间品加工
+      manufacturing: 1.8,     // 很高偏好：制造业
+      service: 0.5,           // 低偏好：服务业不是重点
+      retail: 0.3,            // 低偏好：零售不是重点
+      agriculture: 1.2,       // 中高偏好
+      pharma: 1.5,            // 高偏好：医药产业链
+      luxury: 0.6,            // 中低偏好
+      tech: 1.8,              // 很高偏好：高科技产业链
+      basic: 2.0,             // 极高偏好：基础材料
+    },
+    preferredCategories: ['intermediate', 'basic', 'raw'],
+    avoidedCategories: [],
   },
 };
 
@@ -709,6 +759,10 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     initialBuildings: [
       { typeId: 7, recipeId: 8, count: 6 },   // 自有硅矿×6
       { typeId: 7, recipeId: 9, count: 2 },   // 自有稀土矿×2
+      { typeId: 3, recipeId: 3, count: 2 },   // 自有油田×2
+      { typeId: 4, recipeId: 4, count: 2 },   // 自有气田×2
+      { typeId: 9, recipeId: 12, count: 2 },  // 自有炼油厂×2
+      { typeId: 10, recipeId: 14, count: 4 }, // 自有化工厂×4（化学品生产）
       { typeId: 17, recipeId: 24, count: 10 }, // 芯片生产×10
     ],
   },
@@ -1099,6 +1153,39 @@ export const AI_COMPANIES: AICompanyConfig[] = [
       { typeId: 6, recipeId: 7, count: 4 },    // 自有棉花种植×4
       { typeId: 12, recipeId: 16, count: 4 },  // 纺织品生产×4
       { typeId: 12, recipeId: 69, count: 6 },  // 服装生产×6
+    ],
+  },
+  
+  // ==================== L. 产业链开拓者公司 (2家) ====================
+  // 【P2修复】专门填补产业链缺口的AI公司
+  {
+    id: 50,
+    name: '产业链投资',
+    personality: 'pioneer',
+    initialCash: 300000000,  // 较高初始资金用于高成本建筑
+    focusGoods: [13, 28, 26, 27],  // 锂矿、电池、电子元件、芯片
+    category: 'diversified',
+    description: '产业链基础设施投资，专注填补供应链缺口',
+    initialBuildings: [
+      { typeId: 33, recipeId: 107, count: 8 }, // 锂矿×8 - 解决锂矿无供应问题
+      { typeId: 20, recipeId: 28, count: 4 },  // 电池生产×4 - 解决电池无供应问题
+      { typeId: 16, recipeId: 21, count: 4 },  // 电子元件×4 - 解决电子元件无供应问题
+    ],
+  },
+  {
+    id: 51,
+    name: '供应链开拓',
+    personality: 'pioneer',
+    initialCash: 250000000,
+    focusGoods: [29, 30, 31, 32, 33, 34, 35],  // 电机、屏幕、机械部件、汽车零部件、航空部件、光伏板、风机叶片
+    category: 'diversified',
+    description: '高端零部件和清洁能源设备生产，填补产业链上游空白',
+    initialBuildings: [
+      { typeId: 21, recipeId: 30, count: 4 },  // 电机×4
+      { typeId: 21, recipeId: 31, count: 3 },  // 屏幕×3
+      { typeId: 21, recipeId: 79, count: 4 },  // 机械部件×4
+      { typeId: 21, recipeId: 29, count: 3 },  // 汽车零部件×3
+      { typeId: 22, recipeId: 76, count: 2 },  // 光伏板×2
     ],
   },
 ];

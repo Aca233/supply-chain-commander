@@ -653,13 +653,19 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
   achievement,
   onDismiss
 }) => {
+  // 使用 ref 存储 onDismiss，避免因函数引用变化导致 timer 重置
+  const onDismissRef = React.useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
   useEffect(() => {
-    const timer = setTimeout(onDismiss, 5000);
+    const timer = setTimeout(() => {
+      onDismissRef.current();
+    }, 5000);
     return () => clearTimeout(timer);
-  }, [onDismiss]);
+  }, [achievement.id]); // 只在 achievement 变化时重置 timer
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+    <div className="fixed top-16 right-4 z-40 animate-slide-in-right">
       <Card className="w-80 bg-surface/95 backdrop-blur border-2 border-brand shadow-2xl">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">

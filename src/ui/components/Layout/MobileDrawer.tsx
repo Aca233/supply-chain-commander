@@ -10,7 +10,8 @@ interface NavItem {
   id: string;
   label: string;
   icon: string;
-  page: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings';
+  page: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'news' | 'settings';
+  showBadge?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -21,6 +22,7 @@ const navItems: NavItem[] = [
   { id: 'retail', label: '零售管理', icon: '🏪', page: 'retail' },
   { id: 'finance', label: '财务报表', icon: '📈', page: 'finance' },
   { id: 'investment', label: '竞争与投资', icon: '🏛️', page: 'investment' },
+  { id: 'news', label: '商业周刊', icon: '📰', page: 'news', showBadge: true },
   { id: 'settings', label: '设置', icon: '⚙️', page: 'settings' },
 ];
 
@@ -30,9 +32,10 @@ interface MobileDrawerProps {
 }
 
 export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose }) => {
-  const { ui, setCurrentPage, gameDate, playerCash, paused, speed, setSpeed, pauseGame, resumeGame } = useGameStore();
+  const { ui, setCurrentPage, gameDate, playerCash, paused, speed, setSpeed, pauseGame, resumeGame, hasUnreadNews } = useGameStore();
   const { currentPage } = ui;
   const drawerRef = useRef<HTMLDivElement>(null);
+  const hasUnread = hasUnreadNews();
 
   // 点击外部关闭
   useEffect(() => {
@@ -161,15 +164,26 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose }) =
                 onClick={() => handleNavClick(item.page)}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-xl
-                  text-left transition-all duration-200
+                  text-left transition-all duration-200 relative
                   ${currentPage === item.page
                     ? 'bg-accent/15 text-accent border-l-4 border-accent'
                     : 'text-foreground-secondary hover:bg-background-muted hover:text-foreground'
                   }
                 `}
               >
-                <span className="text-2xl">{item.icon}</span>
-                <span className="font-medium text-base">{item.label}</span>
+                <span className="text-2xl relative">
+                  {item.icon}
+                  {/* 未读新闻指示器 */}
+                  {item.showBadge && hasUnread && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                </span>
+                <span className="font-medium text-base flex-1">{item.label}</span>
+                {item.showBadge && hasUnread && (
+                  <span className="px-2 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded-full">
+                    新
+                  </span>
+                )}
               </button>
             ))}
           </div>

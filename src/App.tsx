@@ -13,11 +13,14 @@ import { CompetitorsAndInvestment } from '@/ui/pages/CompetitorsAndInvestment';
 import { Settings } from '@/ui/pages/Settings';
 import Retail from '@/ui/pages/Retail';
 import { SupplyChainPage } from '@/ui/pages/SupplyChain';
+import { News } from '@/ui/pages/News';
 import { MainMenu, SettingsDialog } from '@/ui/pages/MainMenu';
 import { ToastProvider } from '@/ui/components/Toast/ToastContext';
 import { TutorialProvider, TutorialDialog, TutorialWelcomeDialog } from '@/ui/components/Tutorial';
 import { AchievementProvider } from '@/ui/components/Achievement';
 import { HelpProvider } from '@/ui/components/Help';
+import { FloatingChatButton } from '@/ui/components/LLMChat';
+import { NewsDialog } from '@/ui/components/News';
 import { soundManager } from '@/core/sound';
 import { useMobile } from '@/ui/hooks/useMobile';
 
@@ -66,9 +69,11 @@ const checkHasSaveGame = (): boolean => {
 };
 
 const App: React.FC = () => {
-  const { initGame, startGame, initialized, paused, ui, setTheme, setSpeed, pauseGame, resumeGame, setCurrentPage } = useGameStore();
+  const { initGame, startGame, initialized, paused, ui, setTheme, setSpeed, pauseGame, resumeGame, setCurrentPage, hideNewsDialog, navigateToNews } = useGameStore();
   const currentPage = ui.currentPage;
   const sidebarCollapsed = ui.sidebarCollapsed;
+  const showNewsDialog = ui.showNewsDialog;
+  const pendingNews = ui.pendingNews;
   
   // 移动端检测
   const { isMobile, isTablet } = useMobile();
@@ -275,12 +280,24 @@ const App: React.FC = () => {
         return <CompetitorsAndInvestment />;
       case 'retail':
         return <Retail />;
+      case 'news':
+        return <News />;
       case 'settings':
         return <Settings />;
       default:
         return <Dashboard />;
     }
   };
+  
+  // 渲染新闻弹窗
+  const renderNewsDialog = () => (
+    <NewsDialog
+      open={showNewsDialog}
+      news={pendingNews}
+      onOpenChange={hideNewsDialog}
+      onViewMore={navigateToNews}
+    />
+  );
 
   // 存档列表对话框
   const renderLoadDialog = () => {
@@ -406,6 +423,12 @@ const App: React.FC = () => {
                 {/* 教程系统 */}
                 <TutorialWelcomeDialog />
                 <TutorialDialog />
+                
+                {/* LLM 聊天按钮 */}
+                <FloatingChatButton />
+                
+                {/* 新闻弹窗 */}
+                {renderNewsDialog()}
               </div>
             </ToastProvider>
           </TutorialProvider>
@@ -438,6 +461,12 @@ const App: React.FC = () => {
               {/* 教程系统 */}
               <TutorialWelcomeDialog />
               <TutorialDialog />
+              
+              {/* LLM 聊天按钮 */}
+              <FloatingChatButton />
+              
+              {/* 新闻弹窗 */}
+              {renderNewsDialog()}
             </div>
           </ToastProvider>
         </TutorialProvider>

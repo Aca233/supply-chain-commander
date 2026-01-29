@@ -14,7 +14,10 @@ import {
   SUPPLY_DEMAND_SMOOTHING,
   MAX_PRICE_RATIO,
   MIN_PRICE_RATIO,
-  NO_TRADE_REVERSION_MULTIPLIER
+  NO_TRADE_REVERSION_MULTIPLIER,
+  NO_TRADE_MAX_MONTHLY_CHANGE,
+  MAX_SUPPLY_DEMAND_RATIO,
+  TICKS_PER_DAY
 } from '../constants';
 import { getVWAP, get24hVolume } from '../market/MatchingEngine';
 import { getPriceCache } from '../market/PriceCache';
@@ -109,56 +112,81 @@ export function updateAllPrices(world: GameWorld): PriceUpdateResult {
   let totalChange = 0;
   
   // 只处理实际使用的商品
-  for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
-    const supply = g.supplies[i];
-    const demand = g.demands[i];
-    const currentPrice = g.prices[i];
-    const baseValue = g.baseValues[i];
+for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
+  const supply = g.supplies[i];
+  const demand = g.demands[i];
+  const currentPrice = g.prices[i];
+  const baseValue = g.baseValues[i];
+  
+  // 从缓存获取成交量（O(1)）
+  const volume24h = allVolume[i];
+  
+  // === 【P0修复v2】无成交时的价格稳定机制 ===
+  if (volume24h === 0) {
+    // 计算价格偏离程度 (-1 到 +∞)
+    // 负值表示低于基准价，正值表示高于基准价
+    const priceDeviation = (currentPrice - baseValue) / baseValue;
     
-    // 从缓存获取成交量（O(1)）
-    const volume24h = allVolume[i];
+    // 使用渐进式回归：偏离越大，回归越慢（防止跳跃）
+    // 偏离小时快速回归，偏离大时缓慢回归
+    // 这样避免了所有商品以相同速率变化的问题
+    const deviationAbs = Math.abs(priceDeviation);
     
-    // === 无成交时强化均值回归 ===
-    if (volume24h === 0) {
-      const priceDeviation = (currentPrice - baseValue) / baseValue;
-      let reversionStrength = MEAN_REVERSION_RATE * NO_TRADE_REVERSION_MULTIPLIER;
-      
-      if (Math.abs(priceDeviation) > 1.0) {
-        reversionStrength *= 2;
-      }
-      if (Math.abs(priceDeviation) > 2.0) {
-        reversionStrength *= 2;
-      }
-      
-      const reversionPull = (baseValue - currentPrice) / currentPrice * reversionStrength;
-      let newPrice = currentPrice * (1 + reversionPull);
-      
-      const maxPrice = baseValue * MAX_PRICE_RATIO;
-      const minPrice = baseValue * MIN_PRICE_RATIO;
-      newPrice = Math.max(minPrice, Math.min(maxPrice, newPrice));
-      
-      const actualChange = (newPrice - currentPrice) / currentPrice;
-      totalChange += Math.abs(actualChange);
-      
-      if (actualChange > result.maxIncrease.change) {
-        result.maxIncrease = { goodsId: i, change: actualChange };
-      }
-      if (actualChange < result.maxDecrease.change) {
-        result.maxDecrease = { goodsId: i, change: actualChange };
-      }
-      
-      g.prices[i] = newPrice;
-      
-      g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-      g.demands[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-      
-      result.updatedCount++;
-      continue;
+    // 基础回归强度：小偏离时使用较高回归率
+    // 大偏离时降低回归率，防止价格跳跃
+    let reversionStrength: number;
+    if (deviationAbs < 0.1) {
+      // 偏离<10%: 快速回归
+      reversionStrength = MEAN_REVERSION_RATE * 2.0;
+    } else if (deviationAbs < 0.3) {
+      // 偏离10-30%: 中等回归
+      reversionStrength = MEAN_REVERSION_RATE * 1.0;
+    } else if (deviationAbs < 0.5) {
+      // 偏离30-50%: 缓慢回归
+      reversionStrength = MEAN_REVERSION_RATE * 0.5;
+    } else {
+      // 偏离>50% (触及价格边界): 最小回归
+      // 这是正常的市场均衡状态，不需要强制回归
+      reversionStrength = MEAN_REVERSION_RATE * 0.1;
     }
+    
+    // 计算回归方向和幅度
+    // 注意：这里不使用固定的clamp，而是让回归强度自然控制变化幅度
+    const reversionPull = (baseValue - currentPrice) / currentPrice * reversionStrength;
+    
+    // 应用变化（不再使用固定clamp）
+    let newPrice = currentPrice * (1 + reversionPull);
+    
+    // 价格边界约束
+    const maxPrice = baseValue * MAX_PRICE_RATIO;
+    const minPrice = baseValue * MIN_PRICE_RATIO;
+    newPrice = Math.max(minPrice, Math.min(maxPrice, newPrice));
+    
+    const actualChange = (newPrice - currentPrice) / currentPrice;
+    totalChange += Math.abs(actualChange);
+    
+    if (actualChange > result.maxIncrease.change) {
+      result.maxIncrease = { goodsId: i, change: actualChange };
+    }
+    if (actualChange < result.maxDecrease.change) {
+      result.maxDecrease = { goodsId: i, change: actualChange };
+    }
+    
+    g.prices[i] = newPrice;
+    
+    // 平滑供需数据
+    g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
+    g.demands[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
+    
+    result.updatedCount++;
+    continue;
+  }
     
     // === 有成交时的正常价格计算 ===
     const totalVolume = supply + demand;
-    const ratio = totalVolume > 0.001 ? demand / (supply + 0.001) : 1.0;
+    // 【P0修复】供需比上限，防止需求计算溢出
+    let ratio = totalVolume > 0.001 ? demand / (supply + 0.001) : 1.0;
+    ratio = Math.min(ratio, MAX_SUPPLY_DEMAND_RATIO);
     
     let targetChange: number;
     if (ratio > 1.05) {

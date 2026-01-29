@@ -5,7 +5,8 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { ALL_GOODS, GoodsDefinition, CONSUMER_GOODS } from '@/data/goods';
-import { GOODS_COUNT, DEMAND_SMOOTHING_FACTOR, TICKS_PER_DAY, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, DEMAND_SMOOTHING_FACTOR, TICKS_PER_DAY, ACTUAL_GOODS_COUNT, MAX_SUPPLY_DEMAND_RATIO } from '@/core/constants';
+import { RECIPES } from '@/data/recipes';
 
 /**
  * 消费者层级定义
@@ -176,6 +177,8 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
 /**
  * 计算价格弹性
  * 需求的价格弹性 = (dQ/Q) / (dP/P) = (dQ/dP) * (P/Q)
+ *
+ * 【P2优化】调整弹性计算，使其更加平滑
  */
 export function calculatePriceElasticity(
   goodsDef: GoodsDefinition,
@@ -189,18 +192,20 @@ export function calculatePriceElasticity(
   // 低收入层对必需品（弹性低的商品）敏感度更高，对奢侈品敏感度极高
   // 高收入层对价格整体敏感度较低
   
-  const incomeAdjustment = 1 - (tier.baseIncome / 60000) * 0.5;
+  // 【优化】使用更平滑的调整曲线
+  const incomeAdjustment = Math.min(1, (1 - tier.baseIncome / 100000) * 0.4);
   
   // 必需品vs奢侈品调整
   if (Math.abs(baseElasticity) < 0.5) {
     // 必需品：低收入层弹性略高
-    baseElasticity *= (1 + incomeAdjustment * 0.3);
+    baseElasticity *= (1 + incomeAdjustment * 0.2);
   } else {
-    // 奢侈品：低收入层弹性更高
-    baseElasticity *= (1 + incomeAdjustment * 0.8);
+    // 奢侈品：低收入层弹性更高，但限制在合理范围
+    baseElasticity *= (1 + incomeAdjustment * 0.5);
   }
   
-  return baseElasticity;
+  // 【P2优化】限制弹性绝对值，防止极端价格效应
+  return Math.max(-3.0, Math.min(-0.1, baseElasticity));
 }
 
 /**
@@ -274,11 +279,16 @@ export function calculateTierDemand(
   const maxAffordable = availableBudget * 1.5 / currentPrice;
   demand = Math.min(demand, maxAffordable);
   
-  // 9. 需求量级缩放（避免需求差异过大导致市场失衡）
-  // 使用平方根缩放使需求更加合理，阈值提高到50000
-  if (demand > 50000) {
-    demand = 50000 + Math.sqrt(demand / 50000) * 20000;
+  // 9. 【P0修复】需求量级缩放（避免需求差异过大导致市场失衡）
+  // 更激进的缩放：降低阈值到10000，使用更平缓的对数缩放
+  if (demand > 10000) {
+    // 使用对数缩放：base + log(excess) * scale
+    demand = 10000 + Math.log10(demand / 10000 + 1) * 15000;
   }
+  
+  // 10. 【P0修复】绝对上限，防止需求溢出
+  // 任何单一层级的需求不超过100000单位
+  demand = Math.min(demand, 100000);
   
   return Math.max(0, demand);
 }
@@ -598,6 +608,8 @@ export interface DemandModifiers {
  * 更新世界需求数据
  * @param world 游戏世界
  * @param modifiers 可选的修正系数，如果提供则应用修正
+ *
+ * 【P0修复】增加需求上限检查，防止需求爆炸
  */
 export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers): void {
   // 不再重置需求为0，而是使用滑动平均
@@ -627,12 +639,205 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
       }
     }
     
+    // 【P0修复v2】全局需求上限，防止需求失控
+    // 使用多重约束确保需求合理
+    const currentSupply = world.goods.supplies[goods.id];
+    
+    // 约束1: 基于供给的动态上限（供给的100倍）
+    // 当供给>10时，使用供给倍数；否则使用基础上限
+    const supplyBasedMax = currentSupply > 10
+      ? currentSupply * MAX_SUPPLY_DEMAND_RATIO
+      : 10000;  // 供给极低时的保底值
+    
+    // 约束2: 基于商品价格的合理消费上限
+    // 昂贵商品需求量应该更低
+    const priceBasedMax = 100000 * (100 / Math.max(10, goods.basePrice));
+    
+    // 约束3: 绝对上限 - 单个消费品每tick需求不超过50万
+    const absoluteMax = 500000;
+    
+    // 取最小值作为最终上限
+    const maxDemand = Math.min(supplyBasedMax, priceBasedMax, absoluteMax);
+    newDemand = Math.min(newDemand, maxDemand);
+    
     // 使用滑动平均更新需求
     const oldDemand = world.goods.demands[goods.id];
     if (oldDemand > 0) {
       world.goods.demands[goods.id] = newDemand * smoothingFactor + oldDemand * (1 - smoothingFactor);
     } else {
       world.goods.demands[goods.id] = newDemand;
+    }
+  }
+  
+  // 【P0修复】计算并添加派生需求（供应链需求传导）
+  calculateDerivedDemand(world);
+}
+
+/**
+ * 【P0修复】计算派生需求 - 供应链需求传导
+ *
+ * 原理：最终产品的需求会向上游传导
+ * 例如：服装需求 → 纺织品需求 → 棉花需求
+ *
+ * 算法：
+ * 1. 遍历所有配方
+ * 2. 对于每个配方的输出商品，获取其当前需求量
+ * 3. 根据配方的输入输出比例，计算输入商品的派生需求
+ * 4. 使用衰减系数（0.6）避免需求过度放大
+ *
+ * 【P3修复】新增企业/机构需求
+ * B2B商品（非消费品）由企业和机构购买：
+ * - 医院需要：疫苗、医用耗材、诊断设备、手术设备、抗生素
+ * - 航空公司需要：航空部件
+ * - 工厂需要：工业机器人、光伏系统、储能系统
+ * - 发电站需要：风机叶片、光伏板
+ */
+export function calculateDerivedDemand(world: GameWorld): void {
+  // 派生需求衰减系数：防止上游需求过度膨胀
+  const DERIVED_DEMAND_FACTOR = 0.6;
+  
+  // 临时存储派生需求增量
+  const derivedDemands = new Float32Array(ACTUAL_GOODS_COUNT);
+  
+  // 遍历所有配方
+  for (const recipe of RECIPES) {
+    // 跳过无输出的配方（如纯采掘）
+    if (recipe.outputs.length === 0) continue;
+    
+    // 计算输出商品的总需求
+    let outputDemandTotal = 0;
+    for (const output of recipe.outputs) {
+      outputDemandTotal += world.goods.demands[output.goodsId] || 0;
+    }
+    
+    // 如果输出商品没有需求，跳过
+    if (outputDemandTotal <= 0) continue;
+    
+    // 计算输出总量（用于比例计算）
+    let outputAmountTotal = 0;
+    for (const output of recipe.outputs) {
+      outputAmountTotal += output.amount;
+    }
+    
+    if (outputAmountTotal <= 0) continue;
+    
+    // 计算需要的生产批次数（基于需求和产出比例）
+    // 使用最大输出商品的需求/产出比
+    let maxBatches = 0;
+    for (const output of recipe.outputs) {
+      const demand = world.goods.demands[output.goodsId] || 0;
+      const batchesNeeded = demand / output.amount;
+      maxBatches = Math.max(maxBatches, batchesNeeded);
+    }
+    
+    // 为每个输入商品添加派生需求
+    for (const input of recipe.inputs) {
+      // 派生需求 = 批次数 × 输入量 × 衰减系数
+      const derivedDemand = maxBatches * input.amount * DERIVED_DEMAND_FACTOR;
+      derivedDemands[input.goodsId] += derivedDemand;
+    }
+  }
+  
+  // 将派生需求添加到世界需求中（使用平滑过渡）
+  for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
+    if (derivedDemands[i] > 0) {
+      const currentDemand = world.goods.demands[i];
+      // 取当前需求和派生需求的较大者
+      // 这确保了上游商品至少有足够的需求来满足下游生产
+      world.goods.demands[i] = Math.max(currentDemand, derivedDemands[i]);
+      
+      // 如果派生需求显著大于当前需求，进行平滑过渡
+      if (derivedDemands[i] > currentDemand * 1.5) {
+        // 使用50%的派生需求增量
+        world.goods.demands[i] = currentDemand + (derivedDemands[i] - currentDemand) * 0.5;
+      }
+    }
+  }
+  
+  // 【P3修复】添加企业/机构需求（B2B商品的固定需求基础）
+  // 这些商品是B2B商品，由医院、航空公司、工厂等机构购买
+  addInstitutionalDemand(world, derivedDemands);
+  
+  // 调试日志（每10天输出一次）
+  if (world.tick % (TICKS_PER_DAY * 10) === 0) {
+    let topDerived: Array<{id: number, name: string, derived: number}> = [];
+    for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
+      if (derivedDemands[i] > 100) {
+        const goods = ALL_GOODS[i];
+        if (goods) {
+          topDerived.push({id: i, name: goods.name, derived: derivedDemands[i]});
+        }
+      }
+    }
+    topDerived.sort((a, b) => b.derived - a.derived);
+    if (topDerived.length > 0) {
+      console.log(`[派生需求 T${world.tick}] Top5:`,
+        topDerived.slice(0, 5).map(d => `${d.name}:${d.derived.toFixed(0)}`).join(', '));
+    }
+  }
+}
+
+/**
+ * 【P3修复】添加机构需求 - B2B商品的固定需求
+ *
+ * 这些商品不是消费品，需要由机构/企业购买：
+ * - 医疗机构：疫苗、抗生素、医用耗材、诊断设备、手术设备
+ * - 航空企业：航空部件
+ * - 能源企业：光伏板、风机叶片、光伏系统、储能系统
+ * - 制造企业：工业机器人、建材成品
+ *
+ * 需求量基于经济周期和时间增长
+ */
+function addInstitutionalDemand(world: GameWorld, derivedDemands: Float32Array): void {
+  // 经济周期调整系数
+  const cycleMultiplier = 0.8 + world.economyStats.cyclePosition * 0.4;
+  
+  // 时间增长系数（每年增长10%，上限2倍）
+  const yearsElapsed = world.tick / (TICKS_PER_DAY * 360);
+  const growthMultiplier = Math.min(2.0, 1.0 + yearsElapsed * 0.1);
+  
+  // 基础需求系数
+  const baseFactor = cycleMultiplier * growthMultiplier;
+  
+  // 机构需求配置表：[商品ID, 基础日需求量, 机构类型描述]
+  const institutionalDemands: Array<[number, number, string]> = [
+    // 医疗机构需求
+    [73, 50, '医院-疫苗'],          // 疫苗：每天50批
+    [72, 100, '医院-抗生素'],       // 抗生素：每天100批
+    [77, 200, '医院-医用耗材'],     // 医用耗材：每天200箱
+    [78, 5, '医院-诊断设备'],       // 诊断设备：每天5台
+    [79, 1, '医院-手术设备'],       // 手术设备：每天1台
+    
+    // 航空企业需求
+    [33, 20, '航空-航空部件'],      // 航空部件：每天20套
+    
+    // 能源企业需求
+    [34, 100, '能源-光伏板'],       // 光伏板：每天100块
+    [35, 30, '能源-风机叶片'],      // 风机叶片：每天30片
+    [49, 10, '能源-光伏系统'],      // 光伏系统：每天10套
+    [50, 8, '能源-储能系统'],       // 储能系统：每天8套
+    
+    // 制造企业需求
+    [51, 15, '工厂-工业机器人'],    // 工业机器人：每天15台
+    [47, 200, '建筑-建材成品'],     // 建材成品：每天200套
+    
+    // 物流企业需求
+    [37, 500, '物流-包装材料'],     // 包装材料：每天500套
+  ];
+  
+  // 应用机构需求
+  for (const [goodsId, baseDemand, _desc] of institutionalDemands) {
+    if (goodsId < ACTUAL_GOODS_COUNT) {
+      const dailyDemand = baseDemand * baseFactor;
+      // 转换为每tick需求（除以24）
+      const tickDemand = dailyDemand / TICKS_PER_DAY;
+      
+      // 累加到派生需求中
+      derivedDemands[goodsId] += tickDemand;
+      
+      // 同时直接更新世界需求（确保需求立即生效）
+      const currentDemand = world.goods.demands[goodsId];
+      world.goods.demands[goodsId] = Math.max(currentDemand, tickDemand * 24);
     }
   }
 }
@@ -685,52 +890,55 @@ export function getDemandSummary(world: GameWorld): {
 }
 
 /**
- * 每日未满足需求衰减
+ * 每日未满足需求衰减与供需比约束
  * 防止需求无限累积，保持市场平衡
  *
  * 调用时机：每天结束时（tick % 24 === 0）
- * 衰减逻辑：未满足的需求保留90%，10%衰减掉（优化：从70%提高到90%防止市场死亡）
+ * 衰减逻辑：未满足的需求保留90%，10%衰减掉
+ * 【新增】强制供需比约束：确保demand/supply <= MAX_SUPPLY_DEMAND_RATIO
  */
 export function decayUnmetDemand(world: GameWorld): void {
   // 每天结束时执行衰减
   if (world.tick % TICKS_PER_DAY !== 0) return;
   
-  // 【P0修复】将衰减率从0.7提高到0.9，减缓需求消失速度
-  const DECAY_RATE = 0.9;  // 保留90%的未满足需求（原为70%）
-  
-  // 【P0修复】最低需求底线 - 每种消费品至少保持一定的基础需求
+  const DECAY_RATE = 0.9;  // 保留90%的未满足需求
   const MINIMUM_DEMAND_FLOOR = 50;  // 每种商品最低需求50单位
   
   for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
-    const currentDemand = world.goods.demands[i];
+    let currentDemand = world.goods.demands[i];
     const supply = world.goods.supplies[i];
     
+    // 【P0修复v2】强制供需比约束
+    // 在衰减前先检查并限制供需比
+    if (supply > 0) {
+      const currentRatio = currentDemand / supply;
+      if (currentRatio > MAX_SUPPLY_DEMAND_RATIO) {
+        // 将需求限制到供给的MAX_SUPPLY_DEMAND_RATIO倍
+        currentDemand = supply * MAX_SUPPLY_DEMAND_RATIO;
+        world.goods.demands[i] = currentDemand;
+      }
+    } else if (currentDemand > 100000) {
+      // 供给为0但需求很大，限制需求上限
+      currentDemand = 100000;
+      world.goods.demands[i] = currentDemand;
+    }
+    
     // 只对未满足的需求部分进行衰减
-    // 如果需求大于供给，说明有未满足的需求
     if (currentDemand > supply && currentDemand > 0) {
-      // 计算满足比例
       const satisfiedRatio = supply / currentDemand;
-      
-      // 已满足的部分保持，未满足的部分衰减
       const satisfiedDemand = currentDemand * satisfiedRatio;
       const unsatisfiedDemand = currentDemand * (1 - satisfiedRatio);
-      
-      // 衰减后的需求 = 已满足部分 + 未满足部分 × 衰减率
       world.goods.demands[i] = satisfiedDemand + unsatisfiedDemand * DECAY_RATE;
     }
     
-    // 【P0修复】确保需求不低于最低底线（针对消费品）
-    // 检查是否是消费品
+    // 确保需求不低于最低底线（针对消费品）
     const goods = ALL_GOODS[i];
     if (goods && goods.isConsumerGood) {
-      // 根据商品价格调整最低需求（便宜商品需求更高）
       const priceAdjustedFloor = MINIMUM_DEMAND_FLOOR * (100 / Math.max(10, goods.basePrice));
       world.goods.demands[i] = Math.max(world.goods.demands[i], priceAdjustedFloor);
     }
     
     // 同时重置供给数据（每天重新计算）
-    // 供给会在生产和交易中重新累积
-    // 【优化】将供给衰减率从0.5提高到0.7，保持更多历史供给数据
     world.goods.supplies[i] *= 0.7;
   }
   

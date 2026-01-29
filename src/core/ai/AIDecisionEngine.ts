@@ -1390,9 +1390,10 @@ function getCompanyPersonalityForInvestment(companyId: number): AIPersonality {
   }
   
   // 动态分配人格
+  // 【P2更新】包含pioneer人格
   const personalityTypes: Array<keyof typeof AI_PERSONALITIES> = [
     'aggressive', 'opportunist', 'cost_leader', 'diversified',
-    'specialist', 'innovator', 'conservative', 'premium',
+    'specialist', 'innovator', 'conservative', 'premium', 'pioneer',
   ];
   const typeIndex = (companyId - 1) % personalityTypes.length;
   return AI_PERSONALITIES[personalityTypes[typeIndex]];
@@ -1648,12 +1649,23 @@ function generateShortageProductionDecisions(
  * 当订单簿中有大量买单但无供应时，视为"隐性需求短缺"
  * 这对于水泥、钢材等建造材料尤为重要
  */
+/**
+ * 找出市场上严重短缺的商品
+ * 返回需求/供给比 > 2 的商品列表
+ *
+ * 【v2.1 增强】增加中间品供应链缺口检测
+ * - 检测订单簿中的派生需求
+ * - 特别关注中间品(intermediate)类别
+ * - 检测作为生产原材料但无供应的商品
+ */
 function findShortageGoods(world: GameWorld): Array<{
   goodsId: number;
   shortageRatio: number;
   demand: number;
   supply: number;
   orderBookDemand?: number; // 订单簿中的买单需求
+  isIntermediate?: boolean; // 是否是中间品
+  isSupplyChainGap?: boolean; // 是否是供应链缺口
 }> {
   const shortages: Array<{
     goodsId: number;
@@ -1661,11 +1673,18 @@ function findShortageGoods(world: GameWorld): Array<{
     demand: number;
     supply: number;
     orderBookDemand?: number;
+    isIntermediate?: boolean;
+    isSupplyChainGap?: boolean;
   }> = [];
+  
+  // 【新增】先计算哪些商品是生产原材料（供应链需求）
+  const supplyChainDemand = calculateSupplyChainDemand(world);
   
   for (let goodsId = 0; goodsId < ACTUAL_GOODS_COUNT; goodsId++) {
     const demand = world.goods.demands[goodsId];
     const supply = world.goods.supplies[goodsId];
+    const category = world.goods.categories[goodsId];
+    const isIntermediate = category === 'intermediate';
     
     // 【关键修复】检测订单簿中的买单总量
     // 这可以捕获"派生需求"（如建造材料需求）
@@ -1673,15 +1692,22 @@ function findShortageGoods(world: GameWorld): Array<{
     const orderBookBuyDemand = orderBookView.totalBuyVolume;
     const orderBookSellSupply = orderBookView.totalSellVolume;
     
-    // 综合需求 = 统计需求 + 订单簿买单需求
-    const effectiveDemand = Math.max(demand, orderBookBuyDemand);
+    // 【新增】获取供应链需求
+    const chainDemand = supplyChainDemand.get(goodsId) || 0;
     
-    // 跳过没有任何需求的商品
-    if (effectiveDemand < 10) continue;
+    // 综合需求 = 统计需求 + 订单簿买单需求 + 供应链需求
+    const effectiveDemand = Math.max(demand, orderBookBuyDemand, chainDemand);
+    
+    // 【修改】降低中间品的最低需求阈值
+    const minDemandThreshold = isIntermediate ? 5 : 10;
+    if (effectiveDemand < minDemandThreshold) continue;
     
     // 【关键逻辑】订单簿信号检测
     // 如果有大量买单但没有卖单，这是强烈的供应短缺信号
     const hasOrderBookShortage = orderBookBuyDemand > 100 && orderBookSellSupply === 0;
+    
+    // 【新增】供应链缺口检测：有生产需求但无市场供应
+    const isSupplyChainGap = chainDemand > 50 && supply < chainDemand * 0.3;
     
     // 计算短缺比例
     let shortageRatio: number;
@@ -1690,20 +1716,38 @@ function findShortageGoods(world: GameWorld): Array<{
       // 订单簿显示严重短缺：买单多但无卖单
       // 这类商品应该优先建造
       shortageRatio = Math.max(10, orderBookBuyDemand / 100);
+    } else if (isSupplyChainGap) {
+      // 供应链缺口：生产需求存在但市场无供应
+      shortageRatio = Math.max(8, chainDemand / Math.max(supply, 1));
     } else if (supply > 0) {
       shortageRatio = effectiveDemand / supply;
     } else {
       shortageRatio = effectiveDemand > 100 ? 10 : 5;
     }
     
-    // 关注短缺比例 > 2 的商品，或者订单簿显示严重短缺的商品
-    if (shortageRatio > 2 || hasOrderBookShortage) {
+    // 【修改】中间品更容易被识别为短缺
+    // 中间品阈值从2降到1.2（进一步降低）
+    const shortageThreshold = isIntermediate ? 1.2 : 2;
+    
+    // 【P1修复】检测零供应商品：完全没有供应的商品需要最高优先级
+    const isZeroSupply = supply === 0 && effectiveDemand > 0;
+    
+    // 关注短缺比例超过阈值的商品，或者订单簿/供应链显示短缺的商品，或者零供应商品
+    if (shortageRatio > shortageThreshold || hasOrderBookShortage || isSupplyChainGap || isZeroSupply) {
+      // 【P1修复】中间品额外加权从1.5提高到2.0
+      const intermediateBonus = isIntermediate ? 2.0 : 1.0;
+      const supplyChainBonus = isSupplyChainGap ? 1.3 : 1.0;
+      // 【P1修复】零供应商品获得额外加成
+      const zeroSupplyBonus = isZeroSupply ? 1.5 : 1.0;
+      
       shortages.push({
         goodsId,
-        shortageRatio,
+        shortageRatio: shortageRatio * intermediateBonus * supplyChainBonus * zeroSupplyBonus,
         demand: effectiveDemand,
         supply,
         orderBookDemand: orderBookBuyDemand,
+        isIntermediate,
+        isSupplyChainGap,
       });
     }
   }
@@ -1712,6 +1756,32 @@ function findShortageGoods(world: GameWorld): Array<{
   shortages.sort((a, b) => b.shortageRatio - a.shortageRatio);
   
   return shortages;
+}
+
+/**
+ * 【新增】计算供应链需求
+ * 遍历所有活跃建筑，统计它们对每种商品的原材料需求
+ */
+function calculateSupplyChainDemand(world: GameWorld): Map<number, number> {
+  const demand = new Map<number, number>();
+  
+  for (let i = 0; i < world.buildings.count; i++) {
+    if (!world.buildings.isActive[i]) continue;
+    
+    const recipeId = world.buildings.recipeIds[i];
+    const recipe = RECIPES.find(r => r.id === recipeId);
+    if (!recipe) continue;
+    
+    const efficiency = world.buildings.efficiencies[i] || 1;
+    
+    // 累计原材料需求（每日需求 = 每tick需求 × 24）
+    for (const input of recipe.inputs) {
+      const current = demand.get(input.goodsId) || 0;
+      demand.set(input.goodsId, current + input.amount * efficiency * 24);
+    }
+  }
+  
+  return demand;
 }
 
 /**
@@ -2372,6 +2442,7 @@ function getCompanyPersonality(companyId: number): AIPersonality {
   
   // 动态分配人格 - 根据公司ID分配不同类型
   // 确保市场中有多样化的交易策略
+  // 【P2更新】包含pioneer人格用于动态分配
   const personalityTypes: Array<keyof typeof AI_PERSONALITIES> = [
     'aggressive',     // 激进型 - 大量交易
     'opportunist',    // 机会型 - 灵活交易
@@ -2381,9 +2452,10 @@ function getCompanyPersonality(companyId: number): AIPersonality {
     'innovator',      // 创新型 - 高端商品
     'conservative',   // 保守型 - 稳健交易
     'premium',        // 高端型 - 高价策略
+    'pioneer',        // 【P2新增】产业链开拓者 - 填补供应链缺口
   ];
   
-  // 使用公司ID模8来选择人格类型，确保多样性
+  // 使用公司ID模9来选择人格类型，确保多样性
   const typeIndex = (companyId - 1) % personalityTypes.length;
   return AI_PERSONALITIES[personalityTypes[typeIndex]];
 }
@@ -3203,9 +3275,10 @@ function getCompanyPersonalityInternal(companyId: number): AIPersonality {
   }
   
   // 动态分配人格
+  // 【P2更新】包含pioneer人格
   const personalityTypes: Array<keyof typeof AI_PERSONALITIES> = [
     'aggressive', 'opportunist', 'cost_leader', 'diversified',
-    'specialist', 'innovator', 'conservative', 'premium',
+    'specialist', 'innovator', 'conservative', 'premium', 'pioneer',
   ];
   const typeIndex = (companyId - 1) % personalityTypes.length;
   return AI_PERSONALITIES[personalityTypes[typeIndex]];
@@ -3885,9 +3958,10 @@ function getCompanyPersonalityForSubsidiary(companyId: number): AIPersonality {
   }
   
   // 动态分配人格
+  // 【P2更新】包含pioneer人格
   const personalityTypes: Array<keyof typeof AI_PERSONALITIES> = [
     'aggressive', 'opportunist', 'cost_leader', 'diversified',
-    'specialist', 'innovator', 'conservative', 'premium',
+    'specialist', 'innovator', 'conservative', 'premium', 'pioneer',
   ];
   const typeIndex = (companyId - 1) % personalityTypes.length;
   return AI_PERSONALITIES[personalityTypes[typeIndex]];
@@ -4038,24 +4112,45 @@ export function generateStrategicMaterialDecisions(
 /**
  * 全局战略建材检查
  * 在GameLoop中定期调用，确保关键建材供应链不断裂
- * 
+ *
+ * 【P2修复】增强版：
+ * 1. 检查频率从100tick提高到50tick
+ * 2. 降低触发阈值：供应=0时立即触发
+ * 3. 优先分配给pioneer人格公司
+ *
  * @param world 游戏世界
  * @returns 触发的紧急决策数量
  */
 export function runStrategicMaterialCheck(world: GameWorld): number {
-  // 每100tick运行一次（约4游戏小时）
-  if (world.tick % 100 !== 0) {
+  // 【P2修复】检查频率从100tick提高到50tick（约2游戏小时）
+  if (world.tick % 50 !== 0) {
     return 0;
   }
   
   let triggeredDecisions = 0;
   const c = world.companies;
   
-  // 检查每个AI公司
+  // 【P2修复】优先检查pioneer人格公司，他们更愿意投资
+  const pioneerCompanies: number[] = [];
+  const otherCompanies: number[] = [];
+  
   for (let companyId = 1; companyId < c.count; companyId++) {
     if (!c.isAI[companyId]) continue;
-    if (c.cash[companyId] < 200000) continue; // 资金不足跳过
+    if (c.cash[companyId] < 150000) continue; // 【P2修复】降低资金门槛到15万
     
+    const config = AI_COMPANIES.find(cfg => cfg.id === companyId);
+    if (config?.personality === 'pioneer') {
+      pioneerCompanies.push(companyId);
+    } else {
+      otherCompanies.push(companyId);
+    }
+  }
+  
+  // 合并：pioneer公司优先
+  const sortedCompanies = [...pioneerCompanies, ...otherCompanies];
+  
+  // 检查每个AI公司
+  for (const companyId of sortedCompanies) {
     // 简单评估
     const cash = c.cash[companyId];
     const simpleAssessment: CompanyAssessment = {
@@ -4079,12 +4174,237 @@ export function runStrategicMaterialCheck(world: GameWorld): number {
       
       if (executeDecision(world, topDecision)) {
         triggeredDecisions++;
-        console.log(`[战略建材 T${world.tick}] 公司${companyId}紧急建造 ${topDecision.params.targetGoodsId}生产设施`);
+        const goods = ALL_GOODS.find(g => g.id === topDecision.params.targetGoodsId);
+        console.log(`[战略建材 T${world.tick}] 公司${c.names[companyId]}紧急建造 ${goods?.name || topDecision.params.targetGoodsId}生产设施`);
       }
     }
   }
   
   return triggeredDecisions;
+}
+
+// ==================== 零供应商品强制建造机制 ====================
+
+/**
+ * 【P2修复】零供应商品检测
+ *
+ * 功能：找出所有完全没有供应的商品（零交易量）
+ * 这些商品是产业链断裂的根源
+ */
+interface ZeroSupplyGoods {
+  goodsId: number;
+  name: string;
+  category: string;
+  basePrice: number;
+  hasRecipe: boolean;          // 是否有生产配方
+  buildingTypeId: number;      // 可生产该商品的建筑类型
+  recipeId: number;            // 配方ID
+  buildingCost: number;        // 建筑成本
+  dependencyCount: number;     // 有多少其他商品依赖此商品
+  urgencyScore: number;        // 紧急程度
+}
+
+/**
+ * 检测所有零供应商品
+ */
+function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
+  const zeroSupplyGoods: ZeroSupplyGoods[] = [];
+  
+  // 计算依赖关系：哪些商品作为原材料被其他配方使用
+  const dependencyCount = new Map<number, number>();
+  for (const recipe of RECIPES) {
+    for (const input of recipe.inputs) {
+      const count = dependencyCount.get(input.goodsId) || 0;
+      dependencyCount.set(input.goodsId, count + 1);
+    }
+  }
+  
+  for (let goodsId = 0; goodsId < ACTUAL_GOODS_COUNT; goodsId++) {
+    const supply = world.goods.supplies[goodsId];
+    
+    // 只关注零供应商品
+    if (supply > 0) continue;
+    
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    // 跳过零售类商品（由零售系统处理）
+    const category = world.goods.categories[goodsId];
+    
+    // 找能生产该商品的配方和建筑
+    let hasRecipe = false;
+    let buildingTypeId = -1;
+    let recipeId = -1;
+    let buildingCost = 0;
+    
+    for (const recipe of RECIPES) {
+      const produces = recipe.outputs.some(o => o.goodsId === goodsId);
+      if (produces) {
+        hasRecipe = true;
+        recipeId = recipe.id;
+        buildingTypeId = recipe.buildingTypeId;
+        
+        const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+        if (building) {
+          buildingCost = building.buildCost;
+        }
+        break;
+      }
+    }
+    
+    // 如果没有配方，跳过（原材料由采掘类建筑生产）
+    if (!hasRecipe) continue;
+    
+    // 计算紧急程度：依赖此商品的配方越多，越紧急
+    const deps = dependencyCount.get(goodsId) || 0;
+    let urgencyScore = deps * 10;
+    
+    // 中间品更紧急
+    if (category === 'intermediate') {
+      urgencyScore += 30;
+    } else if (category === 'basic') {
+      urgencyScore += 20;
+    }
+    
+    // 高基准价商品可能是高价值产业链
+    if (goods.basePrice > 500) {
+      urgencyScore += 10;
+    }
+    
+    zeroSupplyGoods.push({
+      goodsId,
+      name: goods.name,
+      category,
+      basePrice: goods.basePrice,
+      hasRecipe,
+      buildingTypeId,
+      recipeId,
+      buildingCost,
+      dependencyCount: deps,
+      urgencyScore,
+    });
+  }
+  
+  // 按紧急程度排序
+  zeroSupplyGoods.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  
+  return zeroSupplyGoods;
+}
+
+/**
+ * 【P2修复】零供应商品强制建造
+ *
+ * 功能：强制分配AI公司建造零供应商品的生产设施
+ * 优先分配给pioneer人格公司
+ */
+export function forceBuildzeroSupplyGoods(world: GameWorld): number {
+  // 每100tick运行一次
+  if (world.tick % 100 !== 0) {
+    return 0;
+  }
+  
+  const zeroSupplyGoods = detectZeroSupplyGoods(world);
+  
+  if (zeroSupplyGoods.length === 0) {
+    return 0;
+  }
+  
+  // 日志记录
+  if (zeroSupplyGoods.length > 0 && world.tick % 200 === 0) {
+    console.log(`[零供应检测 T${world.tick}] 发现${zeroSupplyGoods.length}个零供应商品:`,
+      zeroSupplyGoods.slice(0, 8).map(g => `${g.name}(依赖${g.dependencyCount})`).join(', ')
+    );
+  }
+  
+  const c = world.companies;
+  let triggeredBuilds = 0;
+  
+  // 收集候选公司，优先pioneer人格
+  const pioneerCompanies: number[] = [];
+  const wealthyCompanies: number[] = [];
+  
+  for (let companyId = 1; companyId < c.count; companyId++) {
+    if (!c.isAI[companyId]) continue;
+    
+    const config = AI_COMPANIES.find(cfg => cfg.id === companyId);
+    if (config?.personality === 'pioneer') {
+      if (c.cash[companyId] > 100000) {
+        pioneerCompanies.push(companyId);
+      }
+    } else if (c.cash[companyId] > 500000) {
+      wealthyCompanies.push(companyId);
+    }
+  }
+  
+  // 为每个零供应商品分配建造任务
+  for (const zeroGoods of zeroSupplyGoods.slice(0, 5)) { // 每次最多处理5个
+    const { goodsId, buildingTypeId, recipeId, buildingCost } = zeroGoods;
+    
+    if (buildingTypeId < 0 || recipeId < 0) continue;
+    
+    // 优先选择pioneer公司
+    let selectedCompanyId = -1;
+    
+    for (const companyId of pioneerCompanies) {
+      if (c.cash[companyId] >= buildingCost * 1.2) {
+        selectedCompanyId = companyId;
+        break;
+      }
+    }
+    
+    // 如果没有pioneer公司能负担，选择富裕公司
+    if (selectedCompanyId < 0) {
+      for (const companyId of wealthyCompanies) {
+        if (c.cash[companyId] >= buildingCost * 1.5) {
+          selectedCompanyId = companyId;
+          break;
+        }
+      }
+    }
+    
+    if (selectedCompanyId < 0) continue;
+    
+    const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+    if (!building) continue;
+    
+    // 生成强制建造决策
+    const decision: AIDecision = {
+      type: 'investment',
+      companyId: selectedCompanyId,
+      action: 'build',
+      params: {
+        buildingTypeId,
+        recipeId,
+        cost: buildingCost,
+        targetGoodsId: goodsId,
+        reason: 'zero_supply_forced',
+        dependencyCount: zeroGoods.dependencyCount,
+      },
+      priority: 20, // 极高优先级
+      expectedProfit: buildingCost * 0.5,
+      confidence: 0.95,
+    };
+    
+    if (executeDecision(world, decision)) {
+      triggeredBuilds++;
+      console.log(`[零供应强制建造 T${world.tick}] 公司${c.names[selectedCompanyId]}建造${building.name}生产${zeroGoods.name}`);
+      
+      // 从候选列表中移除该公司（避免一家公司建太多）
+      const pioneerIdx = pioneerCompanies.indexOf(selectedCompanyId);
+      if (pioneerIdx >= 0) pioneerCompanies.splice(pioneerIdx, 1);
+      const wealthyIdx = wealthyCompanies.indexOf(selectedCompanyId);
+      if (wealthyIdx >= 0) wealthyCompanies.splice(wealthyIdx, 1);
+    }
+  }
+  
+  return triggeredBuilds;
+}
+
+/**
+ * 获取零供应商品报告（用于UI显示）
+ */
+export function getZeroSupplyGoodsReport(world: GameWorld): ZeroSupplyGoods[] {
+  return detectZeroSupplyGoods(world);
 }
 
 // ==================== 冷门商品检测系统 ====================

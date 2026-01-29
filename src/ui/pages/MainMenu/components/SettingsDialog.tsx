@@ -4,9 +4,19 @@
  * 支持深色/浅色主题
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { saveManager, GameSettings } from '@/core/save/SaveManager';
 import { soundManager } from '@/core/sound';
+import {
+  loadLLMConfig,
+  saveLLMConfig,
+  testConnection,
+  fetchAvailableModels,
+  PRESET_MODELS,
+  PRESET_ENDPOINTS,
+  ENDPOINT_SUGGESTIONS,
+  type LLMConfig
+} from '@/core/llm';
 import '../styles/menu.css';
 
 interface SettingsDialogProps {
@@ -120,6 +130,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose })
   const [masterVolume, setMasterVolume] = useState(70);
   const [sfxVolume, setSfxVolume] = useState(80);
   const [uiVolume, setUiVolume] = useState(60);
+  
+  // LLM 配置状态
+  const [llmConfig, setLLMConfig] = useState<LLMConfig>(() => loadLLMConfig());
+  const [llmTestResult, setLLMTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [llmTestLoading, setLLMTestLoading] = useState(false);
+  const [customEndpoint, setCustomEndpoint] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<{ id: string; name: string }[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [customModel, setCustomModel] = useState(false);
+  const [endpointSuggestions, setEndpointSuggestions] = useState<string[]>([]);
+  const [showEndpointSuggestions, setShowEndpointSuggestions] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const endpointInputRef = useRef<HTMLInputElement>(null);
 
   // 加载设置
   useEffect(() => {
@@ -136,8 +159,30 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose })
       setMasterVolume(Math.round(soundSettings.masterVolume * 100));
       setSfxVolume(Math.round(soundSettings.sfxVolume * 100));
       setUiVolume(Math.round(soundSettings.uiVolume * 100));
+      
+      // 加载 LLM 配置
+      const config = loadLLMConfig();
+      setLLMConfig(config);
+      const isCustom = !PRESET_ENDPOINTS.some(e => e.value === config.endpoint && e.value !== 'custom');
+      setCustomEndpoint(isCustom);
     }
   }, [open]);
+  
+  // 当 endpoint 或 apiKey 变化时自动获取模型列表
+  useEffect(() => {
+    if (llmConfig.apiKey && llmConfig.endpoint && llmConfig.endpoint !== 'custom') {
+      const timer = setTimeout(() => {
+        fetchAvailableModels(llmConfig.endpoint, llmConfig.apiKey)
+          .then((models) => {
+            if (models.length > 0) {
+              setFetchedModels(models);
+            }
+          })
+          .catch(() => {});
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [llmConfig.endpoint, llmConfig.apiKey]);
 
   // 保存设置
   const handleSettingChange = useCallback((key: keyof GameSettings, value: unknown) => {
@@ -179,6 +224,50 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose })
       onClose();
     }
   }, [onClose]);
+  
+  // LLM 配置变更
+  const handleLLMConfigChange = useCallback((key: keyof LLMConfig, value: string | number | boolean) => {
+    setLLMConfig(prev => {
+      const newConfig = { ...prev, [key]: value };
+      saveLLMConfig(newConfig);
+      setLLMTestResult(null);
+      return newConfig;
+    });
+  }, []);
+  
+  // 测试 LLM 连接
+  const handleTestLLMConnection = useCallback(async () => {
+    setLLMTestLoading(true);
+    setLLMTestResult(null);
+    try {
+      const result = await testConnection();
+      setLLMTestResult(result);
+    } catch {
+      setLLMTestResult({ success: false, message: '测试失败' });
+    } finally {
+      setLLMTestLoading(false);
+    }
+  }, []);
+  
+  // 获取可用模型列表
+  const handleFetchModels = useCallback(async () => {
+    if (!llmConfig.apiKey || !llmConfig.endpoint) return;
+    setFetchingModels(true);
+    try {
+      const models = await fetchAvailableModels(llmConfig.endpoint, llmConfig.apiKey);
+      setFetchedModels(models);
+      if (models.length > 0) {
+        const currentModelInList = models.some(m => m.id === llmConfig.model);
+        if (!currentModelInList) {
+          handleLLMConfigChange('model', models[0].id);
+        }
+      }
+    } catch {
+      console.error('获取模型列表失败');
+    } finally {
+      setFetchingModels(false);
+    }
+  }, [llmConfig.apiKey, llmConfig.endpoint, llmConfig.model, handleLLMConfigChange]);
 
   if (!open) return null;
 
@@ -455,6 +544,377 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose })
                   { value: 'en-US', label: 'English' },
                 ]}
               />
+            </div>
+          </div>
+
+          {/* AI 助手设置 */}
+          <div className="space-y-4">
+            <h3 
+              className="text-sm font-medium uppercase tracking-wider"
+              style={{ color: isLight ? '#64748b' : '#a1a1aa' }}
+            >
+              🤖 AI 助手
+            </h3>
+            
+            {/* 提示信息 */}
+            <div 
+              className="p-3 rounded-lg text-sm"
+              style={{ 
+                backgroundColor: isLight ? 'rgba(37, 99, 235, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                border: `1px solid ${isLight ? 'rgba(37, 99, 235, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`,
+                color: isLight ? '#1e40af' : '#93c5fd',
+              }}
+            >
+              💡 配置 API 后，可在游戏中使用 AI 助手用自然语言控制游戏。
+            </div>
+            
+            {/* API Key */}
+            <div className="space-y-2">
+              <div className="font-medium" style={{ color: isLight ? '#1e293b' : 'white' }}>API Key</div>
+              <input
+                type="password"
+                value={llmConfig.apiKey}
+                onChange={(e) => handleLLMConfigChange('apiKey', e.target.value)}
+                placeholder="sk-..."
+                className="w-full px-3 py-2 rounded-lg text-sm font-mono"
+                style={{
+                  backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                  color: isLight ? '#1e293b' : 'white',
+                }}
+              />
+              <div className="text-xs" style={{ color: isLight ? '#64748b' : '#71717a' }}>
+                API Key 仅保存在本地浏览器中
+              </div>
+            </div>
+            
+            {/* API 端点 */}
+            <div className="space-y-2">
+              <div className="font-medium" style={{ color: isLight ? '#1e293b' : 'white' }}>API 端点</div>
+              <CustomSelect
+                value={customEndpoint ? 'custom' : llmConfig.endpoint}
+                onChange={(v) => {
+                  if (v === 'custom') {
+                    setCustomEndpoint(true);
+                  } else {
+                    setCustomEndpoint(false);
+                    handleLLMConfigChange('endpoint', v);
+                  }
+                }}
+                options={[...PRESET_ENDPOINTS]}
+              />
+              
+              {customEndpoint && (
+                <div className="relative mt-2">
+                  <input
+                    ref={endpointInputRef}
+                    type="text"
+                    value={llmConfig.endpoint}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      handleLLMConfigChange('endpoint', value);
+                      if (value.length > 0) {
+                        const filtered = ENDPOINT_SUGGESTIONS.filter(s =>
+                          s.toLowerCase().includes(value.toLowerCase())
+                        );
+                        setEndpointSuggestions(filtered.slice(0, 6));
+                        setShowEndpointSuggestions(filtered.length > 0);
+                      } else {
+                        setEndpointSuggestions(ENDPOINT_SUGGESTIONS.slice(0, 6));
+                        setShowEndpointSuggestions(true);
+                      }
+                    }}
+                    onFocus={() => {
+                      const value = llmConfig.endpoint;
+                      if (value.length > 0) {
+                        const filtered = ENDPOINT_SUGGESTIONS.filter(s =>
+                          s.toLowerCase().includes(value.toLowerCase())
+                        );
+                        setEndpointSuggestions(filtered.slice(0, 6));
+                        setShowEndpointSuggestions(filtered.length > 0);
+                      } else {
+                        setEndpointSuggestions(ENDPOINT_SUGGESTIONS.slice(0, 6));
+                        setShowEndpointSuggestions(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => setShowEndpointSuggestions(false), 200);
+                    }}
+                    placeholder="https://api.example.com/v1"
+                    className="w-full px-3 py-2 rounded-lg text-sm font-mono"
+                    style={{
+                      backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                      color: isLight ? '#1e293b' : 'white',
+                    }}
+                  />
+                  {showEndpointSuggestions && endpointSuggestions.length > 0 && (
+                    <div 
+                      className="absolute z-50 w-full mt-1 rounded-lg overflow-hidden max-h-48 overflow-y-auto"
+                      style={{
+                        backgroundColor: isLight ? '#ffffff' : '#1a1a1d',
+                        border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.1)' : '0 4px 12px rgba(0,0,0,0.5)',
+                      }}
+                    >
+                      {endpointSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm font-mono transition-colors"
+                          style={{
+                            color: isLight ? '#374151' : '#d4d4d8',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleLLMConfigChange('endpoint', suggestion);
+                            setShowEndpointSuggestions(false);
+                          }}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* 模型选择 */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-medium" style={{ color: isLight ? '#1e293b' : 'white' }}>模型</div>
+                <button
+                  className="px-2 py-1 rounded text-xs transition-colors"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                    color: isLight ? '#64748b' : '#a1a1aa',
+                  }}
+                  onClick={() => {
+                    handleFetchModels();
+                    soundManager.playClick();
+                  }}
+                  disabled={!llmConfig.apiKey || !llmConfig.endpoint || fetchingModels}
+                >
+                  {fetchingModels ? '获取中...' : '🔄 获取列表'}
+                </button>
+              </div>
+              
+              {/* 模型下拉 */}
+              <div className="relative">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-lg text-sm text-left flex items-center justify-between transition-colors"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                    color: isLight ? '#1e293b' : 'white',
+                  }}
+                  onClick={() => {
+                    setModelDropdownOpen(!modelDropdownOpen);
+                    soundManager.playClick();
+                  }}
+                >
+                  <span className="truncate">
+                    {customModel
+                      ? llmConfig.model || '自定义模型'
+                      : fetchedModels.find(m => m.id === llmConfig.model)?.name
+                        || PRESET_MODELS.find(m => m.value === llmConfig.model)?.label
+                        || llmConfig.model
+                        || '选择模型'}
+                  </span>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className={`transition-transform flex-shrink-0 ${modelDropdownOpen ? 'rotate-180' : ''}`}
+                  >
+                    <polyline points="6,9 12,15 18,9" />
+                  </svg>
+                </button>
+                
+                {modelDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setModelDropdownOpen(false)}
+                    />
+                    <div 
+                      className="absolute z-50 w-full mt-1 rounded-lg overflow-hidden max-h-64 overflow-y-auto"
+                      style={{
+                        backgroundColor: isLight ? '#ffffff' : '#1a1a1d',
+                        border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                        boxShadow: isLight ? '0 4px 12px rgba(0,0,0,0.1)' : '0 4px 12px rgba(0,0,0,0.5)',
+                      }}
+                    >
+                      {/* 已获取的模型 */}
+                      {fetchedModels.length > 0 && (
+                        <>
+                          <div 
+                            className="px-3 py-1.5 text-xs font-medium sticky top-0"
+                            style={{ 
+                              backgroundColor: isLight ? '#f8fafc' : '#27272a',
+                              color: isLight ? '#64748b' : '#a1a1aa',
+                            }}
+                          >
+                            从 API 获取 ({fetchedModels.length})
+                          </div>
+                          {fetchedModels.map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              className="w-full px-3 py-2 text-left text-sm transition-colors"
+                              style={{
+                                backgroundColor: llmConfig.model === m.id ? (isLight ? '#2563eb' : '#3b82f6') : 'transparent',
+                                color: llmConfig.model === m.id ? 'white' : (isLight ? '#374151' : '#d4d4d8'),
+                              }}
+                              onMouseEnter={(e) => {
+                                if (llmConfig.model !== m.id) {
+                                  e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (llmConfig.model !== m.id) {
+                                  e.currentTarget.style.backgroundColor = 'transparent';
+                                }
+                              }}
+                              onClick={() => {
+                                setCustomModel(false);
+                                handleLLMConfigChange('model', m.id);
+                                setModelDropdownOpen(false);
+                                soundManager.playClick();
+                              }}
+                            >
+                              {m.name}
+                            </button>
+                          ))}
+                          <div style={{ borderTop: `1px solid ${isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'}` }} />
+                        </>
+                      )}
+                      
+                      {/* 预设模型 */}
+                      <div 
+                        className="px-3 py-1.5 text-xs font-medium sticky top-0"
+                        style={{ 
+                          backgroundColor: isLight ? '#f8fafc' : '#27272a',
+                          color: isLight ? '#64748b' : '#a1a1aa',
+                        }}
+                      >
+                        预设模型
+                      </div>
+                      {PRESET_MODELS.map((m) => (
+                        <button
+                          key={m.value}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm transition-colors"
+                          style={{
+                            backgroundColor: llmConfig.model === m.value && !customModel ? (isLight ? '#2563eb' : '#3b82f6') : 'transparent',
+                            color: llmConfig.model === m.value && !customModel ? 'white' : (isLight ? '#374151' : '#d4d4d8'),
+                          }}
+                          onMouseEnter={(e) => {
+                            if (llmConfig.model !== m.value || customModel) {
+                              e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (llmConfig.model !== m.value || customModel) {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }
+                          }}
+                          onClick={() => {
+                            setCustomModel(false);
+                            handleLLMConfigChange('model', m.value);
+                            setModelDropdownOpen(false);
+                            soundManager.playClick();
+                          }}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                      
+                      <div style={{ borderTop: `1px solid ${isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'}` }} />
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm transition-colors"
+                        style={{
+                          backgroundColor: customModel ? (isLight ? '#2563eb' : '#3b82f6') : 'transparent',
+                          color: customModel ? 'white' : (isLight ? '#374151' : '#d4d4d8'),
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!customModel) {
+                            e.currentTarget.style.backgroundColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!customModel) {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
+                        onClick={() => {
+                          setCustomModel(true);
+                          setModelDropdownOpen(false);
+                          soundManager.playClick();
+                        }}
+                      >
+                        自定义模型...
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              
+              {customModel && (
+                <input
+                  type="text"
+                  value={llmConfig.model}
+                  onChange={(e) => handleLLMConfigChange('model', e.target.value)}
+                  placeholder="输入模型名称，如 gpt-4o"
+                  className="w-full px-3 py-2 rounded-lg text-sm mt-2"
+                  style={{
+                    backgroundColor: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                    color: isLight ? '#1e293b' : 'white',
+                  }}
+                />
+              )}
+            </div>
+            
+            {/* 测试连接 */}
+            <div className="flex items-center gap-3">
+              <button
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: isLight ? '#2563eb' : '#3b82f6',
+                  color: 'white',
+                  opacity: !llmConfig.apiKey || llmTestLoading ? 0.5 : 1,
+                }}
+                onClick={() => {
+                  handleTestLLMConnection();
+                  soundManager.playClick();
+                }}
+                disabled={!llmConfig.apiKey || llmTestLoading}
+              >
+                {llmTestLoading ? '测试中...' : '🔗 测试连接'}
+              </button>
+              
+              {llmTestResult && (
+                <div 
+                  className="flex items-center gap-2 text-sm"
+                  style={{ color: llmTestResult.success ? '#22c55e' : '#ef4444' }}
+                >
+                  <span>{llmTestResult.success ? '✅' : '❌'}</span>
+                  <span>{llmTestResult.message}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

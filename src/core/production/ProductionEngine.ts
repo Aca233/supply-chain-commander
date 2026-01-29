@@ -412,6 +412,98 @@ function processBuildingProduction(
 }
 
 /**
+ * 供应过剩自动减产配置
+ */
+const OVERSUPPLY_CONFIG = {
+  threshold: 2.0,           // 供需比阈值：超过2倍供应视为过剩
+  efficiencyReduction: 0.10, // 每tick效率降低10%
+  minEfficiency: 0.3,        // 最低效率30%
+  recoveryRate: 0.05,        // 当不再过剩时，效率恢复速度5%/tick
+};
+
+/**
+ * 检查供应过剩并自动调整生产效率
+ * 当商品的供需比超过阈值时，自动降低生产该商品的建筑效率
+ * 当供需恢复正常时，逐步恢复效率
+ */
+export function adjustOversupplyProduction(world: GameWorld): OversupplyAdjustmentResult {
+  const result: OversupplyAdjustmentResult = {
+    oversuppliedGoodsCount: 0,
+    reducedBuildingsCount: 0,
+    recoveredBuildingsCount: 0,
+  };
+  
+  const g = world.goods;
+  const b = world.buildings;
+  
+  // 找出供应过剩的商品
+  const oversuppliedGoods = new Set<number>();
+  for (let i = 0; i < GOODS_COUNT; i++) {
+    const supply = g.supplies[i];
+    const demand = g.demands[i];
+    // 只有当需求存在且供需比超过阈值时才视为过剩
+    if (demand > 0.01 && supply / demand > OVERSUPPLY_CONFIG.threshold) {
+      oversuppliedGoods.add(i);
+    }
+  }
+  result.oversuppliedGoodsCount = oversuppliedGoods.size;
+  
+  // 遍历所有建筑，调整生产过剩商品的建筑效率
+  for (let i = 0; i < b.count; i++) {
+    if (!b.isActive[i]) continue;
+    
+    const recipeId = b.recipeIds[i];
+    const recipe = getRecipeCache(recipeId);
+    if (!recipe) continue;
+    
+    // 检查该建筑是否生产过剩商品
+    let producesOversupplied = false;
+    for (let j = 0; j < recipe.outputCount; j++) {
+      if (oversuppliedGoods.has(recipe.outputGoods[j])) {
+        producesOversupplied = true;
+        break;
+      }
+    }
+    
+    const currentEfficiency = b.efficiencies[i];
+    const baseEfficiency = 1.0; // 基础效率为1.0
+    
+    if (producesOversupplied) {
+      // 降低效率
+      if (currentEfficiency > OVERSUPPLY_CONFIG.minEfficiency) {
+        const newEfficiency = Math.max(
+          OVERSUPPLY_CONFIG.minEfficiency,
+          currentEfficiency * (1 - OVERSUPPLY_CONFIG.efficiencyReduction)
+        );
+        b.efficiencies[i] = newEfficiency;
+        result.reducedBuildingsCount++;
+      }
+    } else {
+      // 如果效率低于基础值，逐步恢复
+      if (currentEfficiency < baseEfficiency) {
+        const newEfficiency = Math.min(
+          baseEfficiency,
+          currentEfficiency * (1 + OVERSUPPLY_CONFIG.recoveryRate)
+        );
+        b.efficiencies[i] = newEfficiency;
+        result.recoveredBuildingsCount++;
+      }
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 供应过剩调整结果
+ */
+export interface OversupplyAdjustmentResult {
+  oversuppliedGoodsCount: number;   // 过剩商品数量
+  reducedBuildingsCount: number;    // 被减产的建筑数量
+  recoveredBuildingsCount: number;  // 恢复效率的建筑数量
+}
+
+/**
  * 批量更新所有建筑的生产
  * 这是主要的生产计算入口点
  */
@@ -427,6 +519,11 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     totalEnergyUsed: 0,
     totalQualityBonus: 0,
   };
+  
+  // 供应过剩自动减产检查（每8tick执行一次以减少性能开销）
+  if (world.tick % 8 === 0) {
+    adjustOversupplyProduction(world);
+  }
   
   // 更新附属建筑状态（每tick衰减）
   updateSubsidiaryConditions(world);

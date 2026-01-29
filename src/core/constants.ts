@@ -77,13 +77,13 @@ export const TARGET_INFLATION = 0.02;
 export const BASE_INTEREST_RATE = 0.03;
 
 // ==================== 价格稳定常量 ====================
-// 平衡性调优 v1.0: 降低价格波动，加速均值回归，收紧价格边界
+// 平衡性调优 v2.0: 进一步收紧价格边界，限制无成交商品价格变动
 
 /** 单tick最大价格变化 - 降低以减少市场剧烈波动 */
-export const MAX_TICK_PRICE_CHANGE = 0.05;  // 从10%降低到5%，市场更稳定
+export const MAX_TICK_PRICE_CHANGE = 0.03;  // 从5%降低到3%，市场更稳定
 
 /** 均值回归速率 - 提高以加速价格恢复 */
-export const MEAN_REVERSION_RATE = 0.005;  // 从0.2%提高到0.5%，价格更快回归均值
+export const MEAN_REVERSION_RATE = 0.003;  // 从0.5%降低到0.3%，减少价格震荡
 
 /** 波动抑制系数 - 略微降低以保持一定活力 */
 export const VOLATILITY_DAMPENING = 0.08;
@@ -94,14 +94,20 @@ export const SUPPLY_DEMAND_SMOOTHING = 0.4;  // 新数据占40%，历史占60%
 /** 需求计算平滑系数 - 适度平滑需求波动 */
 export const DEMAND_SMOOTHING_FACTOR = 0.3;  // 新需求占30%，历史需求占70%
 
-/** 价格相对于基准价的最大倍数 - 收紧以防止极端价格 */
-export const MAX_PRICE_RATIO = 3.0;  // 从5倍降低到3倍，限制暴利空间
+/** 价格相对于基准价的最大倍数 - 适度放宽以激励短缺商品生产 */
+export const MAX_PRICE_RATIO = 3.0;  // 从2.5倍提高到3倍，允许高利润激励生产
 
-/** 价格相对于基准价的最小倍数 - 提高以保护生产者 */
-export const MIN_PRICE_RATIO = 0.33;  // 从20%提高到33%，防止价格崩盘
+/** 价格相对于基准价的最小倍数 - 保持50%保护生产者 */
+export const MIN_PRICE_RATIO = 0.5;  // 50%地板，防止价格崩盘
 
-/** 无成交时的均值回归增强系数 - 降低以减少冷门商品价格跳跃 */
-export const NO_TRADE_REVERSION_MULTIPLIER = 3.0;  // 从5倍降低到3倍
+/** 无成交时的均值回归增强系数 - 大幅降低以减少冷门商品价格跳跃 */
+export const NO_TRADE_REVERSION_MULTIPLIER = 1.5;  // 从3倍降低到1.5倍
+
+/** 无成交商品每月最大价格变动幅度 */
+export const NO_TRADE_MAX_MONTHLY_CHANGE = 0.05;  // 无成交商品每月最多变动5%
+
+/** 供需比上限 - 防止需求计算溢出 */
+export const MAX_SUPPLY_DEMAND_RATIO = 100;  // 最大供需比限制在100:1
 
 // ==================== 玩家初始常量 ====================
 

@@ -6,6 +6,20 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { GameWorld, formatGameDate } from '@/core/world/GameWorld';
+import {
+  MonthlyNewsReport,
+  onNewsGenerated,
+  loadNewsHistory,
+  getAllNews,
+  getLatestNews as getLatestNewsFromStore,
+  hasUnreadNews as checkUnreadNews,
+  markNewsAsRead as markNewsRead,
+  getNewsCount,
+  fullResetNewsStore,
+  resetNewsSystem,
+  resetMonthlyStats,
+  resetEventTracker,
+} from '@/core/news';
 import { initializeWorld, addBuilding, getBuildingSlotMethodsArray, setBuildingSlotMethod } from '@/core/world/WorldInitializer';
 import { GameLoop, createGameLoop, TickResult, PerformanceReport } from '@/core/loop/GameLoop';
 import { createBuyOrder, createSellOrder, createSellOrderWithReason, cancelOrder, getOrderBookView, OrderBookView, OrderResult } from '@/core/market/OrderBook';
@@ -138,6 +152,19 @@ import {
   getMethodByIdNew,
   getBuildingSlotCount,
 } from '@/core/production/ProductionMethods';
+import {
+  getMonthlyPriceTracker,
+  resetMonthlyPriceTracker,
+  MonthlyPriceReport,
+  GoodsMonthlyStats,
+  MultiMonthComparisonReport,
+} from '@/core/economy/MonthlyPriceTracker';
+import {
+  PriceDataExporter,
+  PriceExportOptions,
+  downloadPriceReportCSV,
+  downloadPriceReportJSON,
+} from '@/core/economy/PriceDataExporter';
 
 /**
  * UI状态
@@ -146,11 +173,15 @@ interface UIState {
   selectedGoodsId: number | null;
   selectedBuildingId: number | null;
   pendingBuildTypeId: number | null;  // 待打开建造弹窗的建筑类型ID
-  currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings';
+  currentPage: 'dashboard' | 'production' | 'market' | 'finance' | 'investment' | 'retail' | 'supplychain' | 'settings' | 'news';
   sidebarCollapsed: boolean;
   notifications: Notification[];
   theme: 'light' | 'dark';
   favoriteCompanies: number[];
+  // 新闻系统
+  showNewsDialog: boolean;
+  pendingNews: MonthlyNewsReport | null;
+  newsVersion: number;  // 用于触发新闻列表刷新
 }
 
 /**
@@ -380,6 +411,27 @@ interface GameActions {
   resumeConstruction: (taskId: number) => boolean;
   cancelPlayerConstruction: (taskId: number) => boolean;
   cancelPlayerDemolition: (taskId: number) => boolean;
+  
+  // ============ 新闻系统 (新增) ============
+  getNewsHistory: () => MonthlyNewsReport[];
+  getLatestNews: () => MonthlyNewsReport | null;
+  getNewsCount: () => number;
+  hasUnreadNews: () => boolean;
+  showNewsPopup: (news: MonthlyNewsReport) => void;
+  hideNewsDialog: () => void;
+  markCurrentNewsRead: () => void;
+  navigateToNews: () => void;
+  
+  // ============ 月度价格追踪 (新增) ============
+  getMonthlyPriceData: (monthKey?: string) => MonthlyPriceReport | null;
+  getCurrentMonthPriceData: () => MonthlyPriceReport | null;
+  getAllMonthlyReports: () => MonthlyPriceReport[];
+  getAvailableMonths: () => Array<{ key: string; label: string }>;
+  getMultiMonthComparison: (monthKeys: string[]) => MultiMonthComparisonReport | null;
+  exportPriceDataCSV: (options?: Partial<PriceExportOptions>) => void;
+  exportPriceDataJSON: (options?: Partial<PriceExportOptions>) => void;
+  exportMonthComparisonCSV: (monthKeys: string[], options?: Partial<PriceExportOptions>) => void;
+  exportMonthComparisonJSON: (monthKeys: string[], options?: Partial<PriceExportOptions>) => void;
 }
 
 let notificationId = 0;
@@ -423,6 +475,10 @@ export const useGameStore = create<GameState & GameActions>()(
       notifications: [],
       theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
       favoriteCompanies: [],
+      // 新闻系统
+      showNewsDialog: false,
+      pendingNews: null,
+      newsVersion: 0,
     },
     lastTickResult: null,
     performance: null,
@@ -431,11 +487,33 @@ export const useGameStore = create<GameState & GameActions>()(
     // ==================== 初始化 ====================
     initGame: () => {
       const world = initializeWorld();
+      
+      // 【重要】在创建GameLoop之前重置新闻系统，因为GameLoop会初始化并捕获快照
+      fullResetNewsStore();  // 清除localStorage中的旧新闻
+      resetNewsSystem();     // 重置生成器状态
+      resetMonthlyStats();   // 重置月度快照
+      resetEventTracker();   // 重置事件追踪
+      
+      // 创建游戏循环（这会调用 initNewsSystem 捕获初始快照）
       const gameLoop = createGameLoop(world);
       
       // 保存到外部引用（不被immer冻结）
       worldRef = world;
       gameLoopRef = gameLoop;
+      
+      // 加载新闻历史（现在是空的）并注册新闻回调
+      loadNewsHistory();
+      onNewsGenerated((report) => {
+        // 当新闻生成时，显示弹窗并触发列表刷新
+        set((state) => {
+          state.ui.pendingNews = report;
+          state.ui.showNewsDialog = true;
+          state.ui.newsVersion += 1;  // 触发新闻页面刷新
+        });
+        
+        // 添加通知
+        get().addNotification('info', `📰 ${report.headline.title}`);
+      });
       
       // 设置tick回调（性能优化版本）
       gameLoop.onTick((result) => {
@@ -1999,6 +2077,154 @@ export const useGameStore = create<GameState & GameActions>()(
         return true;
       }
       return false;
+    },
+    
+    // ==================== 新闻系统 ====================
+    getNewsHistory: () => {
+      return getAllNews();
+    },
+    
+    getLatestNews: () => {
+      return getLatestNewsFromStore();
+    },
+    
+    getNewsCount: () => {
+      return getNewsCount();
+    },
+    
+    hasUnreadNews: () => {
+      return checkUnreadNews();
+    },
+    
+    showNewsPopup: (news: MonthlyNewsReport) => {
+      set((state) => {
+        state.ui.pendingNews = news;
+        state.ui.showNewsDialog = true;
+      });
+    },
+    
+    hideNewsDialog: () => {
+      set((state) => {
+        state.ui.showNewsDialog = false;
+        // 保留pendingNews以便继续查看
+      });
+    },
+    
+    markCurrentNewsRead: () => {
+      const state = get();
+      if (state.ui.pendingNews) {
+        markNewsRead(state.ui.pendingNews.id);
+      }
+    },
+    
+    navigateToNews: () => {
+      set((state) => {
+        state.ui.currentPage = 'news';
+        state.ui.showNewsDialog = false;
+      });
+    },
+    
+    // ==================== 月度价格追踪 ====================
+    getMonthlyPriceData: (monthKey?: string) => {
+      const tracker = getMonthlyPriceTracker();
+      if (monthKey) {
+        return tracker.getReportByKey(monthKey);
+      }
+      return tracker.getLatestReport();
+    },
+    
+    getCurrentMonthPriceData: () => {
+      if (!worldRef) return null;
+      const tracker = getMonthlyPriceTracker();
+      return tracker.getCurrentMonthData(worldRef);
+    },
+    
+    getAllMonthlyReports: () => {
+      const tracker = getMonthlyPriceTracker();
+      return tracker.getAllReports();
+    },
+    
+    getAvailableMonths: () => {
+      const tracker = getMonthlyPriceTracker();
+      const months = tracker.getAvailableMonths();
+      // 添加当前月份（实时数据）
+      if (worldRef) {
+        const currentData = tracker.getCurrentMonthData(worldRef);
+        if (currentData) {
+          return [
+            { key: 'current', label: `${currentData.year}年${currentData.month}月 (实时)` },
+            ...months,
+          ];
+        }
+      }
+      return months;
+    },
+    
+    getMultiMonthComparison: (monthKeys: string[]) => {
+      const tracker = getMonthlyPriceTracker();
+      return tracker.getMultiMonthComparison(monthKeys);
+    },
+    
+    exportPriceDataCSV: (options?: Partial<PriceExportOptions>) => {
+      if (!worldRef) {
+        get().addNotification('error', '游戏未初始化');
+        return;
+      }
+      
+      const tracker = getMonthlyPriceTracker();
+      const report = tracker.getCurrentMonthData(worldRef);
+      
+      if (!report) {
+        get().addNotification('error', '无可用数据');
+        return;
+      }
+      
+      PriceDataExporter.downloadCurrentReportCSV(report, options);
+      get().addNotification('success', '月度价格数据已导出 (CSV)');
+    },
+    
+    exportPriceDataJSON: (options?: Partial<PriceExportOptions>) => {
+      if (!worldRef) {
+        get().addNotification('error', '游戏未初始化');
+        return;
+      }
+      
+      const tracker = getMonthlyPriceTracker();
+      const report = tracker.getCurrentMonthData(worldRef);
+      
+      if (!report) {
+        get().addNotification('error', '无可用数据');
+        return;
+      }
+      
+      PriceDataExporter.downloadCurrentReportJSON(report, options);
+      get().addNotification('success', '月度价格数据已导出 (JSON)');
+    },
+    
+    exportMonthComparisonCSV: (monthKeys: string[], options?: Partial<PriceExportOptions>) => {
+      const tracker = getMonthlyPriceTracker();
+      const comparison = tracker.getMultiMonthComparison(monthKeys);
+      
+      if (!comparison) {
+        get().addNotification('error', '无法生成对比报告，需要至少2个月份数据');
+        return;
+      }
+      
+      PriceDataExporter.downloadComparisonCSV(comparison, options);
+      get().addNotification('success', '多月份对比数据已导出 (CSV)');
+    },
+    
+    exportMonthComparisonJSON: (monthKeys: string[], options?: Partial<PriceExportOptions>) => {
+      const tracker = getMonthlyPriceTracker();
+      const comparison = tracker.getMultiMonthComparison(monthKeys);
+      
+      if (!comparison) {
+        get().addNotification('error', '无法生成对比报告，需要至少2个月份数据');
+        return;
+      }
+      
+      PriceDataExporter.downloadComparisonJSON(comparison, options);
+      get().addNotification('success', '多月份对比数据已导出 (JSON)');
     },
   }))
 );

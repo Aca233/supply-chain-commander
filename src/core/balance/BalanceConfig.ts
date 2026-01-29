@@ -86,7 +86,7 @@ const DEFAULT_PRICE_CONFIG: PriceConfig = {
   meanReversionRate: 0.002,
   supplyDemandSmoothing: 0.3,
   maxPriceRatio: 5.0,
-  minPriceRatio: 0.2,
+  minPriceRatio: 0.5,  // 【产业链平衡修复】从0.2提高到0.5，防止原材料价格崩溃
   volatilityDampening: 0.1,
   noTradeReversionMultiplier: 5.0,
 };
