@@ -235,6 +235,30 @@ export const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
     setIsDragging(false);
   }, []);
 
+  // 触摸事件处理（移动端）
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setIsDragging(true);
+      setDragStart({ x: touch.clientX - transform.x, y: touch.clientY - transform.y });
+    }
+  }, [transform]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (isDragging && e.touches.length === 1) {
+      const touch = e.touches[0];
+      setTransform(prev => ({
+        ...prev,
+        x: touch.clientX - dragStart.x,
+        y: touch.clientY - dragStart.y,
+      }));
+    }
+  }, [isDragging, dragStart]);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
   // 使用 useEffect 添加非 passive 的 wheel 事件监听器
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -364,11 +388,14 @@ export const SupplyChainGraph: React.FC<SupplyChainGraphProps> = ({
       {/* 可拖拽画布 */}
       <div
         ref={canvasRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
+        className="w-full h-full cursor-grab active:cursor-grabbing touch-none"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <svg
           width={canvasBounds.width}

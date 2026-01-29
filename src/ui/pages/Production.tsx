@@ -40,8 +40,8 @@ export const Production: React.FC = () => {
   const [selectedBuilding, setSelectedBuilding] = useState<number | null>(null);
   const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [showCatalog, setShowCatalog] = useState(true);
-  // 移动端默认隐藏建造队列，桌面端默认显示
+  // 移动端默认隐藏左侧建筑栏和建造队列
+  const [showCatalog, setShowCatalog] = useState(!isMobile);
   const [showConstructionQueue, setShowConstructionQueue] = useState(!isMobile);
   
   const processedStoreSelectionRef = useRef<number | null>(null);
