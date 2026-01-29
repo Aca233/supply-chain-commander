@@ -606,7 +606,8 @@ function processRestocking(world: GameWorld): number {
       
       // 检查是否需要进货（库存低于阈值时触发）
       const stockRatio = capacity > 0 ? currentStock / capacity : 0;
-      const restockThreshold = 0.5;  // 50%以下就进货（从60%调整）
+      // 使用常量中定义的进货阈值，默认0.3（30%以下触发进货）
+      const restockThreshold = RETAIL_RESTOCK_THRESHOLD;
       
       // 【P1修复】紧急进货检查 - 库存极低时使用更短的进货间隔
       const isEmergency = stockRatio < EMERGENCY_RESTOCK_THRESHOLD;
@@ -718,6 +719,394 @@ function processRestocking(world: GameWorld): number {
   }
   
   return ordersPlaced + directPurchases;
+}
+
+// ==================== AI批发直销系统 ====================
+
+/**
+ * 批发直销配置
+ */
+interface WholesaleConfig {
+  /** 批发价格折扣率（相对于市场价） */
+  wholesaleDiscount: number;
+  /** 最小批发量 */
+  minWholesaleQuantity: number;
+  /** 每tick最大批发交易数 */
+  maxWholesaleDealsPerTick: number;
+  /** 零售店库存低于此比例时接受批发 */
+  retailRestockThreshold: number;
+  /** AI生产商库存高于此比例时愿意批发 */
+  producerSurplusThreshold: number;
+}
+
+const DEFAULT_WHOLESALE_CONFIG: WholesaleConfig = {
+  wholesaleDiscount: 0.92,  // 批发价为市场价的92%
+  minWholesaleQuantity: 20,
+  maxWholesaleDealsPerTick: 30,
+  retailRestockThreshold: 0.5,  // 零售店库存低于50%时接受批发
+  producerSurplusThreshold: 0.3,  // 生产商库存高于30%容量时愿意批发
+};
+
+/** 批发交易记录 */
+interface WholesaleDeal {
+  producerId: number;
+  retailId: number;
+  goodsId: number;
+  quantity: number;
+  price: number;
+  timestamp: number;
+}
+
+/** 批发交易结果 */
+export interface WholesaleResult {
+  dealsCompleted: number;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+/** 批发交易批次控制 */
+let wholesaleBatchIndex = 0;
+const WHOLESALE_BATCH_SIZE = 15;  // 每tick处理15家零售店
+const WHOLESALE_EXECUTION_INTERVAL = 3;  // 每3tick执行一次
+
+/**
+ * 处理AI批发直销
+ * AI生产商主动向零售店供货，绕过订单簿
+ *
+ * 优势：
+ * 1. 减少订单簿压力
+ * 2. 加快商品流通
+ * 3. 为生产商提供稳定销售渠道
+ * 4. 为零售商提供稳定货源
+ */
+export function processWholesaleSupply(
+  world: GameWorld,
+  config: WholesaleConfig = DEFAULT_WHOLESALE_CONFIG
+): WholesaleResult {
+  const result: WholesaleResult = {
+    dealsCompleted: 0,
+    totalQuantity: 0,
+    totalRevenue: 0,
+  };
+  
+  // 性能优化：间隔执行
+  if (world.tick % WHOLESALE_EXECUTION_INTERVAL !== 0) {
+    return result;
+  }
+  
+  const retail = world.retail;
+  const c = world.companies;
+  
+  if (!retail || retail.count === 0) {
+    return result;
+  }
+  
+  // 计算本tick处理的零售店范围
+  const totalRetails = retail.count;
+  const startIdx = wholesaleBatchIndex * WHOLESALE_BATCH_SIZE;
+  const endIdx = Math.min(startIdx + WHOLESALE_BATCH_SIZE, totalRetails);
+  
+  // 更新批次索引
+  wholesaleBatchIndex = (wholesaleBatchIndex + 1) % Math.ceil(totalRetails / WHOLESALE_BATCH_SIZE);
+  
+  let dealsThisTick = 0;
+  
+  // 遍历本批次的零售店
+  for (let retailId = startIdx; retailId < endIdx && dealsThisTick < config.maxWholesaleDealsPerTick; retailId++) {
+    const buildingId = retail.buildingIds[retailId];
+    const buildingType = world.buildings.types[buildingId] as number;
+    const retailConfig = getRetailConfig(buildingType);
+    
+    if (!retailConfig) continue;
+    
+    const retailOwnerId = retail.owners[retailId];
+    
+    // 遍历该零售店销售的商品
+    for (const goodsId of retailConfig.allowedGoodsIds) {
+      if (dealsThisTick >= config.maxWholesaleDealsPerTick) break;
+      
+      const retailIdx = retailId * GOODS_COUNT + goodsId;
+      const currentStock = retail.inventories[retailIdx];
+      const capacity = retail.inventoryCapacities[retailIdx];
+      const stockRatio = capacity > 0 ? currentStock / capacity : 1;
+      
+      // 检查零售店是否需要进货
+      if (stockRatio >= config.retailRestockThreshold) {
+        continue;  // 库存充足，不需要批发
+      }
+      
+      // 计算需要的数量
+      const targetStock = capacity * 0.8;  // 目标补充到80%
+      const neededQuantity = targetStock - currentStock;
+      
+      if (neededQuantity < config.minWholesaleQuantity) {
+        continue;
+      }
+      
+      // 寻找愿意批发的AI生产商
+      const deal = findWholesaleProducer(
+        world,
+        goodsId,
+        neededQuantity,
+        retailOwnerId,
+        config
+      );
+      
+      if (deal) {
+        // 执行批发交易
+        const dealResult = executeWholesaleDeal(
+          world,
+          deal.producerId,
+          retailId,
+          goodsId,
+          deal.quantity,
+          deal.price
+        );
+        
+        if (dealResult.success) {
+          result.dealsCompleted++;
+          result.totalQuantity += dealResult.quantity;
+          result.totalRevenue += dealResult.revenue;
+          dealsThisTick++;
+        }
+      }
+    }
+  }
+  
+  // 调试日志（每100tick输出一次）
+  if (world.tick % 100 === 0 && result.dealsCompleted > 0) {
+    console.log(`[批发直销 T${world.tick}] 完成${result.dealsCompleted}笔交易, 总量:${result.totalQuantity.toFixed(0)}, 总额:${result.totalRevenue.toFixed(0)}`);
+  }
+  
+  return result;
+}
+
+/**
+ * 寻找愿意批发的AI生产商
+ * 优先选择库存充足、价格合理的生产商
+ */
+function findWholesaleProducer(
+  world: GameWorld,
+  goodsId: number,
+  neededQuantity: number,
+  excludeCompanyId: number,
+  config: WholesaleConfig
+): { producerId: number; quantity: number; price: number } | null {
+  const c = world.companies;
+  const goods = ALL_GOODS.find(g => g.id === goodsId);
+  if (!goods) return null;
+  
+  const basePrice = goods.basePrice;
+  const marketPrice = world.goods.prices[goodsId] || basePrice;
+  const wholesalePrice = marketPrice * config.wholesaleDiscount;
+  
+  let bestProducer: { producerId: number; quantity: number; price: number } | null = null;
+  let bestScore = -Infinity;
+  
+  // 遍历所有公司，寻找有库存的生产商（仅AI公司）
+  for (let companyId = 1; companyId < c.count; companyId++) {  // 跳过玩家公司(0)
+    if (companyId === excludeCompanyId) continue;
+    // 只允许AI公司参与批发
+    if (!c.isAI[companyId]) continue;
+    
+    const invIdx = companyId * GOODS_COUNT + goodsId;
+    const inventory = c.inventories[invIdx];
+    const reserved = c.inventoryReserved[invIdx] || 0;
+    const available = inventory - reserved;
+    
+    // 检查是否有足够的可用库存
+    if (available < config.minWholesaleQuantity) continue;
+    
+    // 计算该公司的库存容量（估算）
+    const estimatedCapacity = inventory * 3;  // 简化估算
+    const surplusRatio = available / Math.max(estimatedCapacity, 100);
+    
+    // 如果库存不够充裕，跳过
+    if (surplusRatio < config.producerSurplusThreshold) continue;
+    
+    // 计算批发吸引力分数
+    // 分数 = 可用库存量 × 库存过剩程度
+    const score = available * surplusRatio;
+    
+    if (score > bestScore) {
+      bestScore = score;
+      const dealQuantity = Math.min(available * 0.5, neededQuantity);  // 最多卖出50%可用库存
+      
+      if (dealQuantity >= config.minWholesaleQuantity) {
+        bestProducer = {
+          producerId: companyId,
+          quantity: dealQuantity,
+          price: wholesalePrice,
+        };
+      }
+    }
+  }
+  
+  return bestProducer;
+}
+
+/**
+ * 执行批发交易
+ * 直接将商品从生产商转移到零售店
+ */
+function executeWholesaleDeal(
+  world: GameWorld,
+  producerId: number,
+  retailId: number,
+  goodsId: number,
+  quantity: number,
+  price: number
+): { success: boolean; quantity: number; revenue: number } {
+  const retail = world.retail;
+  const c = world.companies;
+  const t = world.trades;
+  
+  const retailOwnerId = retail.owners[retailId];
+  const producerInvIdx = producerId * GOODS_COUNT + goodsId;
+  const retailInvIdx = retailId * GOODS_COUNT + goodsId;
+  const buyerInvIdx = retailOwnerId * GOODS_COUNT + goodsId;
+  
+  // 验证生产商库存
+  const producerInventory = c.inventories[producerInvIdx];
+  const reserved = c.inventoryReserved[producerInvIdx] || 0;
+  const available = producerInventory - reserved;
+  
+  if (available < quantity) {
+    quantity = available;
+  }
+  
+  if (quantity < 10) {
+    return { success: false, quantity: 0, revenue: 0 };
+  }
+  
+  // 验证零售店容量
+  const retailCapacity = retail.inventoryCapacities[retailInvIdx];
+  const retailStock = retail.inventories[retailInvIdx];
+  const spaceAvailable = retailCapacity - retailStock;
+  
+  if (spaceAvailable < quantity) {
+    quantity = spaceAvailable;
+  }
+  
+  if (quantity < 10) {
+    return { success: false, quantity: 0, revenue: 0 };
+  }
+  
+  const totalCost = quantity * price;
+  
+  // 验证零售商资金
+  if (c.cash[retailOwnerId] < totalCost) {
+    // 资金不足，减少购买量
+    const affordableQty = Math.floor(c.cash[retailOwnerId] * 0.8 / price);
+    if (affordableQty < 10) {
+      return { success: false, quantity: 0, revenue: 0 };
+    }
+    quantity = affordableQty;
+  }
+  
+  const actualCost = quantity * price;
+  
+  // ====== 执行批发交易 ======
+  
+  // 1. 生产商减少库存
+  c.inventories[producerInvIdx] -= quantity;
+  
+  // 2. 零售店增加库存
+  retail.inventories[retailInvIdx] += quantity;
+  
+  // 3. 更新零售店进货成本
+  retail.purchaseCosts[retailInvIdx] = price;
+  
+  // 4. 资金流转：零售商付款给生产商
+  c.cash[retailOwnerId] -= actualCost;
+  c.cash[producerId] += actualCost;
+  
+  // 5. 创建交易记录
+  const tradeIdx = t.count % t.maxTrades;
+  t.buyOrderIds[tradeIdx] = -3;  // -3 表示批发直销
+  t.sellOrderIds[tradeIdx] = -3;
+  t.buyCompanyIds[tradeIdx] = retailOwnerId;
+  t.sellCompanyIds[tradeIdx] = producerId;
+  t.goodsIds[tradeIdx] = goodsId;
+  t.quantities[tradeIdx] = quantity;
+  t.prices[tradeIdx] = price;
+  t.ticks[tradeIdx] = world.tick;
+  t.count++;
+  t.nextTradeId++;
+  
+  // 6. 更新累计销售统计（生产商的销售记录）
+  const sellStatsIdx = producerId * GOODS_COUNT + goodsId;
+  t.cumulativeSalesQuantity[sellStatsIdx] += quantity;
+  t.cumulativeSalesRevenue[sellStatsIdx] += actualCost;
+  
+  return {
+    success: true,
+    quantity,
+    revenue: actualCost,
+  };
+}
+
+/**
+ * 获取批发市场概览
+ * 用于UI显示和AI决策
+ */
+export function getWholesaleMarketOverview(world: GameWorld): {
+  activeProducers: number;
+  totalWholesaleCapacity: number;
+  avgWholesaleDiscount: number;
+  topWholesaleGoods: Array<{ goodsId: number; name: string; volume: number }>;
+} {
+  const c = world.companies;
+  const config = DEFAULT_WHOLESALE_CONFIG;
+  
+  let activeProducers = 0;
+  let totalCapacity = 0;
+  const volumeByGoods = new Map<number, number>();
+  
+  // 统计每个公司的批发潜力（仅AI公司）
+  for (let companyId = 1; companyId < c.count; companyId++) {
+    // 只统计AI公司
+    if (!c.isAI[companyId]) continue;
+    
+    let hasWholesaleCapacity = false;
+    
+    for (let goodsId = 0; goodsId < GOODS_COUNT; goodsId++) {
+      const invIdx = companyId * GOODS_COUNT + goodsId;
+      const inventory = c.inventories[invIdx];
+      const reserved = c.inventoryReserved[invIdx] || 0;
+      const available = inventory - reserved;
+      
+      if (available >= config.minWholesaleQuantity) {
+        hasWholesaleCapacity = true;
+        totalCapacity += available;
+        volumeByGoods.set(goodsId, (volumeByGoods.get(goodsId) || 0) + available);
+      }
+    }
+    
+    if (hasWholesaleCapacity) {
+      activeProducers++;
+    }
+  }
+  
+  // 排序获取top批发商品
+  const sortedGoods = Array.from(volumeByGoods.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([goodsId, volume]) => {
+      const goods = ALL_GOODS.find(g => g.id === goodsId);
+      return {
+        goodsId,
+        name: goods?.name || '未知商品',
+        volume,
+      };
+    });
+  
+  return {
+    activeProducers,
+    totalWholesaleCapacity: totalCapacity,
+    avgWholesaleDiscount: config.wholesaleDiscount,
+    topWholesaleGoods: sortedGoods,
+  };
 }
 
 /**

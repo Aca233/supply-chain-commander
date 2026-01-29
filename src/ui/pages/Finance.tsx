@@ -8,6 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { PriceChart } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
+import { FinancialReportChart, FinancialDataPoint } from '@/ui/components/Charts/FinancialReportChart';
 import { GOODS_COUNT } from '@/core/constants';
 import { LoanType } from '@/core/finance/BankingSystem';
 import { formatGameDate, tickToDate } from '@/core/world/GameWorld';
@@ -205,6 +206,39 @@ export const Finance: React.FC = () => {
       cumulativeProfit: revenue - cost,
     };
   }, [financialHistory]);
+
+  // 将财务历史转换为FinancialReportChart所需格式（按天聚合）
+  const financialReportData: FinancialDataPoint[] = useMemo(() => {
+    if (financialHistory.length === 0) return [];
+    
+    // 按天聚合数据
+    const dayMap = new Map<number, { revenue: number; costs: number; profit: number }>();
+    
+    for (const point of financialHistory) {
+      const dayIndex = Math.floor(point.tick / 24); // 24 ticks = 1 day
+      const existing = dayMap.get(dayIndex) || { revenue: 0, costs: 0, profit: 0 };
+      dayMap.set(dayIndex, {
+        revenue: existing.revenue + point.revenue,
+        costs: existing.costs + point.cost,
+        profit: existing.profit + point.profit,
+      });
+    }
+    
+    // 转换为数组
+    const sortedDays = Array.from(dayMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .slice(-14); // 最近14天
+    
+    return sortedDays.map(([dayIndex, data]) => ({
+      period: `Day ${dayIndex + 1}`,
+      revenue: data.revenue,
+      costs: data.costs,
+      profit: data.profit,
+      assets: playerAssets + playerCash,
+      liabilities: playerLiabilities,
+      equity: netWorth,
+    }));
+  }, [financialHistory, playerAssets, playerCash, playerLiabilities, netWorth]);
 
   // 资产分布数据
   const assetDistribution = useMemo(() => [
@@ -459,6 +493,21 @@ export const Finance: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* 增强版财务报表图表 */}
+      {financialReportData.length > 0 && (
+        <Card variant="elevated">
+          <CardContent className="p-0">
+            <FinancialReportChart
+              data={financialReportData}
+              title="财务分析"
+              height={350}
+              mode="income"
+              showComparison={true}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* 损益表 */}
       <Card variant="elevated">

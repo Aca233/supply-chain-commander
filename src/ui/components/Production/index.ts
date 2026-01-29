@@ -8,3 +8,4 @@ export { BuildModal } from './BuildModal';
 export { BuildingDetailPanel } from './BuildingDetailPanel';
 export { ProductionMethodsPanel } from './ProductionMethodsPanel';
 export { ConstructionQueuePanel } from './ConstructionQueuePanel';
+export { BuildingUpgradePanel, UpgradeConfirmDialog } from './BuildingUpgradePanel';

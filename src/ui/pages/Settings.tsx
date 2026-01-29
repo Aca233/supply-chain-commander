@@ -1,6 +1,6 @@
 /**
  * 设置页面
- * 游戏设置、存档管理、性能监控和系统信息
+ * 游戏设置、存档管理、性能监控、数值平衡和系统信息
  * 使用新设计系统组件重构
  */
 
@@ -37,6 +37,9 @@ import {
 
 // 懒加载性能监控面板
 const PerformanceDashboard = lazy(() => import('@/ui/components/Performance/PerformanceDashboard'));
+
+// 懒加载数值平衡调优面板
+const BalanceTuningPanel = lazy(() => import('@/ui/components/Balance/BalanceTuningPanel'));
 
 export const Settings: React.FC = () => {
   const { isMobile, isTablet } = useMobile();
@@ -198,9 +201,9 @@ export const Settings: React.FC = () => {
       <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>⚙️ 设置</h1>
 
       <Tabs defaultValue="game">
-        <TabsList 
-          variant="game" 
-          className={isMobile ? 'w-full grid grid-cols-4 gap-1 p-1' : ''}
+        <TabsList
+          variant="game"
+          className={isMobile ? 'w-full grid grid-cols-5 gap-1 p-1' : ''}
         >
           <TabsTrigger 
             value="game" 
@@ -226,9 +229,17 @@ export const Settings: React.FC = () => {
             <span className={isMobile ? 'text-lg' : ''}>📊</span>
             <span className={isMobile ? '' : 'ml-1'}>性能</span>
           </TabsTrigger>
-          <TabsTrigger 
-            value="about" 
-            variant="game" 
+          <TabsTrigger
+            value="balance"
+            variant="game"
+            className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
+          >
+            <span className={isMobile ? 'text-lg' : ''}>🎛️</span>
+            <span className={isMobile ? '' : 'ml-1'}>平衡</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="about"
+            variant="game"
             className={isMobile ? 'flex-col gap-0.5 py-2 px-1 text-[10px]' : ''}
           >
             <span className={isMobile ? 'text-lg' : ''}>ℹ️</span>
@@ -473,6 +484,22 @@ export const Settings: React.FC = () => {
             }
           >
             <PerformanceDashboard />
+          </Suspense>
+        </TabsContent>
+
+        {/* 数值平衡调优 */}
+        <TabsContent value="balance">
+          <Suspense
+            fallback={
+              <Card variant="elevated" padding="lg">
+                <div className="flex flex-col items-center justify-center h-64 gap-4">
+                  <div className="animate-spin w-10 h-10 border-3 border-[var(--accent)] border-t-transparent rounded-full" />
+                  <div className="text-[var(--text-muted)]">加载数值平衡面板...</div>
+                </div>
+              </Card>
+            }
+          >
+            <BalanceTuningPanel />
           </Suspense>
         </TabsContent>
 

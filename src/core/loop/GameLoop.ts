@@ -16,7 +16,7 @@ import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHea
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
@@ -28,6 +28,7 @@ import { tickAllPools } from '../performance/ObjectPool';
 import { processAITick, getAISchedulerStats, resetAIScheduler, initAISchedulerWorker, getAIWorkerStatus, destroyAIScheduler } from '../ai/AIScheduler';
 import { indicatorCache } from '../ai/IndicatorCache';
 import { clearAllModuleCache } from '../ai/ModuleCache';
+import { initializeUnifiedWorkerFacade, destroyUnifiedWorkerFacade } from '../workers/UnifiedWorkerFacade';
 
 // 导入新增的增强系统
 import { getCurrentSeason, getTotalSeasonalMultiplier, getActiveSeasonalEvents, Season, SeasonalEvent } from '../economy/SeasonalDemand';
@@ -38,11 +39,12 @@ import { distributionManager } from '../economy/DistributionChannels';
 import { supplyContractManager, ContractExecution } from '../economy/SupplyContracts';
 import { advancedOrderManager, AdvancedOrder } from '../market/AdvancedOrders';
 import { decayUnmetDemand } from '../economy/DemandCurve';
+import { applyMarketSubstitution } from '../economy/SubstitutionSystem';
 import { futuresMarket } from '../finance/FuturesMarket';
 import { tradingFeeManager } from '../market/TradingFees';
 import { executeConsumerPurchases, MarketConsumptionSummary, CONSUMER_MARKET_CONFIG } from '../economy/ConsumerMarket';
 import { executePlayerAutoTrade } from '../ai/PlayerAutoTrader';
-import { updateRetailSystem, RetailTickResult } from '../economy/RetailSystem';
+import { updateRetailSystem, RetailTickResult, processWholesaleSupply, WholesaleResult } from '../economy/RetailSystem';
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
 
@@ -101,6 +103,9 @@ export interface TickResult {
   
   // 零售系统结果
   retailResult: RetailTickResult;
+  
+  // 批发直销结果
+  wholesaleResult: WholesaleResult;
   
   // 服务消费结果
   serviceConsumption: ServiceConsumptionResult;
@@ -163,25 +168,39 @@ export class GameLoop {
     initializeStockMarket(world);
     initializeAcquisitionSystem();
     
-    // 【新增】初始化AI Worker（异步，不阻塞构造函数）
-    this.initializeAIWorker();
+    // 【新增】初始化所有Worker系统（异步，不阻塞构造函数）
+    this.initializeAllWorkers();
   }
   
   /**
-   * 【新增】初始化AI Worker
+   * 【新增】初始化所有Worker系统
    */
-  private async initializeAIWorker(): Promise<void> {
+  private async initializeAllWorkers(): Promise<void> {
     try {
-      const success = await initAISchedulerWorker();
-      this.aiWorkerInitialized = success;
+      // 并行初始化所有Worker系统
+      const [unifiedResult, aiResult] = await Promise.allSettled([
+        initializeUnifiedWorkerFacade(),  // 初始化统一Worker门面（含EconomyWorker）
+        initAISchedulerWorker(),           // 初始化AI调度器Worker
+      ]);
       
-      if (success) {
-        console.log('[GameLoop] AI Worker异步处理已启用');
-      } else {
+      const unifiedSuccess = unifiedResult.status === 'fulfilled' && unifiedResult.value;
+      const aiSuccess = aiResult.status === 'fulfilled' && aiResult.value;
+      
+      this.aiWorkerInitialized = aiSuccess;
+      
+      console.log(`[GameLoop] Worker系统初始化结果:
+        - UnifiedWorkerFacade (含EconomyWorker): ${unifiedSuccess ? '✓' : '✗'}
+        - AISchedulerWorker: ${aiSuccess ? '✓' : '✗'}
+      `);
+      
+      if (!unifiedSuccess) {
+        console.warn('[GameLoop] UnifiedWorkerFacade初始化失败，经济计算将使用主线程');
+      }
+      if (!aiSuccess) {
         console.warn('[GameLoop] AI Worker初始化失败，使用同步模式');
       }
     } catch (error) {
-      console.error('[GameLoop] AI Worker初始化异常:', error);
+      console.error('[GameLoop] Worker系统初始化异常:', error);
       this.aiWorkerInitialized = false;
     }
   }
@@ -269,6 +288,7 @@ export class GameLoop {
   destroy(): void {
     this.stop();
     destroyAIScheduler();
+    destroyUnifiedWorkerFacade();  // 销毁统一Worker门面
     console.log('[GameLoop] 已销毁');
   }
   
@@ -380,14 +400,14 @@ export class GameLoop {
                         aiSchedulerStats.deepProcessed;
     
     // 8.5. AI自动挂单（确保市场有流动性）
-    // 【性能优化】使用模8错峰执行，避免与Deep决策冲突
+    // 【流动性优化】提高频率：从每8tick改为每4tick，翻倍挂单频率
     let aiSellOrders = 0;
     let aiBuyOrders = 0;
-    if (currentTick % 8 === 1) {  // 从 tick%6===0 改为 tick%8===1
+    if (currentTick % 4 === 1) {  // 从 tick%8===1 改为 tick%4===1，频率翻倍
       aiSellOrders = autoPostSellOrders(this.world);
     }
     // 买单和卖单错峰执行
-    if (currentTick % 8 === 5) {  // 从 tick%6===3 改为 tick%8===5
+    if (currentTick % 4 === 3) {  // 从 tick%8===5 改为 tick%4===3，频率翻倍
       aiBuyOrders = autoPostBuyOrders(this.world);
     }
     
@@ -413,7 +433,12 @@ export class GameLoop {
     const retailResult = updateRetailSystem(this.world);
     endRetail();
     
-    // 10.6. 服务消费系统更新（医院、学校、银行等服务设施）
+    // 10.6. AI批发直销（生产商直接向零售店供货）
+    const endWholesale = perfMonitor.startMeasure('wholesale');
+    const wholesaleResult = processWholesaleSupply(this.world);
+    endWholesale();
+    
+    // 10.7. 服务消费系统更新（医院、学校、银行等服务设施）
     const endService = perfMonitor.startMeasure('service');
     const serviceConsumption = processServiceConsumption(this.world);
     endService();
@@ -496,6 +521,11 @@ export class GameLoop {
     // 17.5. 需求衰减（每天结束时处理未满足的需求）
     decayUnmetDemand(this.world);
     
+    // 17.6. 商品替代效应（每6tick应用一次，避免过于频繁）
+    if (currentTick % 6 === 0) {
+      applyMarketSubstitution(this.world);
+    }
+    
     endPricing();
     
     // 18. 更新经济周期
@@ -561,6 +591,13 @@ export class GameLoop {
       console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
     }
     
+    // 27. 冷门商品检测与自动补充
+    // 每200tick运行一次，检测有需求但无供应的商品并触发AI建造
+    const coldGoodsDecisions = buildForColdGoods(this.world);
+    if (coldGoodsDecisions > 0) {
+      console.log(`[冷门商品 T${currentTick}] 触发了${coldGoodsDecisions}个建造决策`);
+    }
+    
     endState();
     
     // 计算tick时间
@@ -600,6 +637,7 @@ export class GameLoop {
       expiredFuturesContracts,
       consumerPurchases,
       retailResult,
+      wholesaleResult,
       serviceConsumption,
       playerAutoTrade,
       aiAutoOrders: {

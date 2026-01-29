@@ -25,7 +25,15 @@ import { getBaseMaterials, calculateMaterialsValue } from '@/data/buildingMateri
 import { ALL_BUILDINGS } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { RECIPES, RecipeDefinition } from '@/data/recipes';
-import { GOODS_COUNT, AI_DECISION_INTERVAL, ACTUAL_GOODS_COUNT, MAX_SUBSIDIARIES } from '@/core/constants';
+import {
+  GOODS_COUNT,
+  AI_DECISION_INTERVAL,
+  ACTUAL_GOODS_COUNT,
+  MAX_SUBSIDIARIES,
+  AI_BUY_ORDER_EXPIRY,
+  AI_SELL_ORDER_EXPIRY,
+  BUILDING_MATERIAL_ORDER_EXPIRY,
+} from '@/core/constants';
 import { getOrderBookView, cancelOrder, hasExistingOrderForCompanyGoods, getActiveOrderIndices } from '@/core/market/OrderBook';
 import { calculateOptimalQuantity, calculateCostStructure } from '@/core/economy/SupplyCurve';
 import { createBuyOrder, createSellOrder } from '@/core/market/OrderBook';
@@ -337,7 +345,7 @@ function tryTakeSellOrderForMaterial(
     
     const availableCash = world.companies.cash[companyId] * 0.3;
     if (buyQty * buyPrice <= availableCash) {
-      createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+      createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, BUILDING_MATERIAL_ORDER_EXPIRY);
     }
     return false;
   }
@@ -356,7 +364,7 @@ function tryTakeSellOrderForMaterial(
     if (cost > world.companies.cash[companyId] * 0.4) continue;
     
     // 下买单以吃掉卖单
-    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, BUILDING_MATERIAL_ORDER_EXPIRY);
     
     if (world.tick % 50 === 0) {
       console.log(`[AI建材吃单] 公司${companyId}以¥${buyPrice.toFixed(2)}购买${goods.name}×${buyQty}`);
@@ -479,7 +487,7 @@ function ensureMaterialPurchaseOrder(
   // 检查资金
   const availableCash = world.companies.cash[companyId] * 0.5;
   if (buyQty * buyPrice <= availableCash) {
-    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, 9999999);
+    createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, BUILDING_MATERIAL_ORDER_EXPIRY);
   }
 }
 
@@ -1987,6 +1995,8 @@ export function generateStockTradingDecisions(
  * 2. 检查订单簿中的买单深度
  * 3. 根据库存积压程度调整折扣
  * 4. 优先保证流动性，其次考虑利润
+ * 5. 【任务5优化】考虑市场价格与基准价的偏离程度
+ * 6. 【任务5优化】根据供需比动态调整定价
  */
 function calculateSmartSellPrice(
   world: GameWorld,
@@ -1999,18 +2009,43 @@ function calculateSmartSellPrice(
   const goods = ALL_GOODS.find(g => g.id === goodsId);
   const basePrice = goods?.basePrice || currentPrice;
   
+  // 【任务5优化】计算供需比，用于调整定价策略
+  const supply = world.goods.supplies[goodsId];
+  const demand = world.goods.demands[goodsId];
+  const supplyDemandRatio = demand > 0 ? supply / demand : 2;
+  
+  // 【任务5优化】计算市场价格与基准价的偏离程度
+  const priceToBaseRatio = currentPrice / basePrice;
+  
   // 更激进的基础折扣：优先确保成交
+  // 【任务5优化】根据供需比调整折扣
   let baseDiscount: number;
   if (inventoryDays > 60) {
-    baseDiscount = 0.75;  // 严重积压：25%折扣
+    baseDiscount = 0.70;  // 严重积压：30%折扣（从25%增加）
   } else if (inventoryDays > 30) {
-    baseDiscount = 0.85;  // 中度积压：15%折扣
+    baseDiscount = 0.80;  // 中度积压：20%折扣（从15%增加）
   } else if (inventoryDays > 14) {
-    baseDiscount = 0.90;  // 轻度积压：10%折扣
+    baseDiscount = 0.88;  // 轻度积压：12%折扣
   } else if (inventoryDays > 7) {
-    baseDiscount = 0.93;  // 正常偏多：7%折扣
-  } else {
+    baseDiscount = 0.92;  // 正常偏多：8%折扣
+  } else if (inventoryDays > 3) {
     baseDiscount = 0.96;  // 正常：4%折扣
+  } else {
+    // 库存紧张时可以提价
+    baseDiscount = supplyDemandRatio < 0.7 ? 1.05 : 1.0;
+  }
+  
+  // 【任务5优化】供过于求时增加折扣
+  if (supplyDemandRatio > 1.5) {
+    baseDiscount *= 0.95;  // 额外5%折扣
+  } else if (supplyDemandRatio > 1.2) {
+    baseDiscount *= 0.98;  // 额外2%折扣
+  }
+  
+  // 【任务5优化】市场价格过高时，愿意以更低价格成交
+  if (priceToBaseRatio > 1.5) {
+    // 市场价高于基准价50%以上，可以接受基准价卖出
+    baseDiscount = Math.min(baseDiscount, 1.0 / priceToBaseRatio * 1.1);
   }
   
   // 如果有买单，参考最高买价
@@ -2024,19 +2059,19 @@ function calculateSmartSellPrice(
       return bestBid * 0.99;
     }
     
-    // 买价较低时，根据积压程度决定
-    if (inventoryDays > 30) {
-      // 积压严重时，愿意接受更低价格
-      return Math.max(bestBid * 0.98, basePrice * 0.6);
-    } else if (inventoryDays > 14) {
-      return Math.max(bestBid * 0.99, basePrice * 0.7);
+    // 【任务5优化】买价较低时，根据积压程度和供需比决定
+    if (inventoryDays > 30 || supplyDemandRatio > 1.5) {
+      // 积压严重或供过于求时，愿意接受更低价格
+      return Math.max(bestBid * 0.98, basePrice * 0.5);
+    } else if (inventoryDays > 14 || supplyDemandRatio > 1.2) {
+      return Math.max(bestBid * 0.99, basePrice * 0.6);
     }
   }
   
   // 没有买单时，使用更激进的折扣价以吸引买家
   const targetPrice = currentPrice * baseDiscount;
-  // 确保不低于基准价的50%
-  return Math.max(targetPrice, basePrice * 0.5);
+  // 【任务5优化】降低价格下限到40%基准价（从50%降低）
+  return Math.max(targetPrice, basePrice * 0.4);
 }
 
 /**
@@ -2223,7 +2258,7 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
         // 检查资金（保留至少一半现金）
         const availableCash = world.companies.cash[companyId] * 0.5;
         if (buyQty * buyPrice <= availableCash) {
-          const orderId = createBuyOrder(world, companyId, missing.goodsId, buyQty, buyPrice, 9999999);
+          const orderId = createBuyOrder(world, companyId, missing.goodsId, buyQty, buyPrice, BUILDING_MATERIAL_ORDER_EXPIRY);
           if (orderId !== null) {
             ordersCreated++;
           }
@@ -3086,7 +3121,7 @@ function adjustAIStaleOrderPrices(world: GameWorld, companyId: number): void {
           order.goodsId,
           order.remaining,
           newPrice,
-          9999999
+          AI_BUY_ORDER_EXPIRY
         );
         // 调试日志
         if (orderId !== null && world.tick % 100 === 0) {
@@ -3319,8 +3354,9 @@ function estimateDailyOutput(world: GameWorld, companyId: number, goodsId: numbe
  * 检查是否已有相似价格的挂单（使用O(1)索引查询）
  *
  * 【修复说明】
- * 恢复重复订单检查，防止AI公司对同一商品重复挂单导致订单池溢出。
- * 使用OrderBook中的索引进行O(1)查询，避免性能问题。
+ * 1. 恢复重复订单检查，防止AI公司对同一商品重复挂单导致订单池溢出
+ * 2. 使用OrderBook中的索引进行O(1)查询，避免性能问题
+ * 3. 【任务2增强】同时检查买单和卖单
  */
 function hasExistingOrder(
   world: GameWorld,
@@ -3329,8 +3365,10 @@ function hasExistingOrder(
   minPrice: number,
   maxPrice: number
 ): boolean {
-  // 使用索引进行O(1)查询，检查该公司是否已有该商品的卖单
-  return hasExistingOrderForCompanyGoods(companyId, goodsId, 1);  // 1 = sell
+  // 使用索引进行O(1)查询，检查该公司是否已有该商品的买单或卖单
+  const hasSellOrder = hasExistingOrderForCompanyGoods(companyId, goodsId, 1);  // 1 = sell
+  const hasBuyOrder = hasExistingOrderForCompanyGoods(companyId, goodsId, 0);   // 0 = buy
+  return hasSellOrder || hasBuyOrder;
 }
 
 /**
@@ -3442,8 +3480,8 @@ export function autoPostBuyOrders(world: GameWorld): number {
             : Math.floor(c.cash[companyId] / maxBuyPrice * 0.5);
           
           if (actualBuyQty > 0) {
-            // 建造材料订单永不过期
-            const orderId = createBuyOrder(world, companyId, goodsId, actualBuyQty, maxBuyPrice, 9999999);
+            // 建造材料订单使用较长过期时间
+            const orderId = createBuyOrder(world, companyId, goodsId, actualBuyQty, maxBuyPrice, BUILDING_MATERIAL_ORDER_EXPIRY);
             if (orderId !== null) {
               ordersCreated++;
             }
@@ -4047,4 +4085,233 @@ export function runStrategicMaterialCheck(world: GameWorld): number {
   }
   
   return triggeredDecisions;
+}
+
+// ==================== 冷门商品检测系统 ====================
+
+/**
+ * 冷门商品检测与自动补充
+ *
+ * 功能：检测市场上有需求但无供应的商品，触发AI建造决策
+ * 与战略建材检查的区别：
+ * 1. 战略建材检查：只检查预定义的关键建材
+ * 2. 冷门商品检测：检查所有商品，发现"冷门"后触发建造
+ *
+ * "冷门商品"定义：
+ * - 订单簿有买单需求 > 50 单位
+ * - 市场供应为0或极低
+ * - 没有任何公司生产该商品（或产能不足）
+ */
+
+interface ColdGoodsInfo {
+  goodsId: number;
+  name: string;
+  orderBookDemand: number;  // 订单簿买单总量
+  marketSupply: number;     // 市场供应量
+  producerCount: number;    // 生产该商品的建筑数量
+  urgencyScore: number;     // 紧急程度评分
+}
+
+/**
+ * 检测所有冷门商品
+ */
+function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
+  const coldGoods: ColdGoodsInfo[] = [];
+  
+  // 统计每种商品的生产建筑数量
+  const producerCounts = new Map<number, number>();
+  for (let i = 0; i < world.buildings.count; i++) {
+    if (!world.buildings.isActive[i]) continue;
+    
+    const recipeId = world.buildings.recipeIds[i];
+    const recipe = RECIPES.find(r => r.id === recipeId);
+    if (!recipe) continue;
+    
+    for (const output of recipe.outputs) {
+      const count = producerCounts.get(output.goodsId) || 0;
+      producerCounts.set(output.goodsId, count + 1);
+    }
+  }
+  
+  // 遍历所有商品检测冷门
+  for (let goodsId = 0; goodsId < ACTUAL_GOODS_COUNT; goodsId++) {
+    const goods = ALL_GOODS.find(g => g.id === goodsId);
+    if (!goods) continue;
+    
+    // 获取订单簿信息
+    const orderBook = getOrderBookView(world, goodsId);
+    const buyDemand = orderBook.totalBuyVolume;
+    const sellSupply = orderBook.totalSellVolume;
+    
+    // 获取市场供应
+    const marketSupply = world.goods.supplies[goodsId];
+    
+    // 获取生产者数量
+    const producerCount = producerCounts.get(goodsId) || 0;
+    
+    // 冷门判定条件：
+    // 1. 有一定的买单需求（>50单位）
+    // 2. 无卖单供应 且 市场供应极低
+    // 3. 生产该商品的建筑很少（<=1）
+    const isCold = buyDemand > 50 &&
+                   sellSupply === 0 &&
+                   marketSupply < 100 &&
+                   producerCount <= 1;
+    
+    if (isCold) {
+      // 计算紧急程度：买单需求越大、生产者越少，越紧急
+      const urgencyScore = Math.min(100, buyDemand / 10) +
+                           (producerCount === 0 ? 50 : 0) +
+                           (marketSupply === 0 ? 30 : 0);
+      
+      coldGoods.push({
+        goodsId,
+        name: goods.name,
+        orderBookDemand: buyDemand,
+        marketSupply,
+        producerCount,
+        urgencyScore,
+      });
+    }
+  }
+  
+  // 按紧急程度排序
+  coldGoods.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  
+  return coldGoods;
+}
+
+/**
+ * 为冷门商品分配AI建造任务
+ *
+ * @param world 游戏世界
+ * @returns 触发的建造决策数量
+ */
+export function buildForColdGoods(world: GameWorld): number {
+  // 每200tick运行一次（约8游戏小时）
+  if (world.tick % 200 !== 0) {
+    return 0;
+  }
+  
+  // 检测冷门商品
+  const coldGoods = detectColdGoods(world);
+  
+  if (coldGoods.length === 0) {
+    return 0;
+  }
+  
+  // 日志记录发现的冷门商品
+  if (coldGoods.length > 0) {
+    console.log(`[冷门商品检测 T${world.tick}] 发现${coldGoods.length}个冷门商品:`,
+      coldGoods.slice(0, 5).map(g => `${g.name}(需求${g.orderBookDemand},生产者${g.producerCount})`).join(', ')
+    );
+  }
+  
+  let triggeredDecisions = 0;
+  const c = world.companies;
+  
+  // 为每个冷门商品找一个合适的AI公司来建造
+  for (const cold of coldGoods.slice(0, 3)) { // 每次最多处理3个冷门商品
+    // 找能生产该商品的建筑
+    const buildingInfo = findBuildingForGoods(cold.goodsId);
+    if (!buildingInfo) {
+      continue; // 没有可建造的建筑
+    }
+    
+    const { building, recipe } = buildingInfo;
+    
+    // 找一个有资金的AI公司来建造
+    // 优先选择：
+    // 1. 现金充裕（>建造成本×1.5）
+    // 2. 已经有相关产业链（降低原材料采购难度）
+    // 3. 建筑数量不太多（避免过度集中）
+    
+    let bestCompanyId = -1;
+    let bestScore = 0;
+    
+    for (let companyId = 1; companyId < c.count; companyId++) {
+      if (!c.isAI[companyId]) continue;
+      
+      const cash = c.cash[companyId];
+      if (cash < building.buildCost * 1.5) continue; // 资金不足
+      
+      // 计算适合程度
+      let score = 0;
+      
+      // 现金越多越好
+      score += Math.min(50, cash / 1000000 * 10);
+      
+      // 检查是否有相关原材料生产能力
+      let hasRelatedIndustry = false;
+      for (let i = 0; i < world.buildings.count; i++) {
+        if (world.buildings.owners[i] !== companyId) continue;
+        
+        const recipeId = world.buildings.recipeIds[i];
+        const existingRecipe = RECIPES.find(r => r.id === recipeId);
+        if (!existingRecipe) continue;
+        
+        // 检查是否生产目标商品的原材料
+        for (const input of recipe.inputs) {
+          if (existingRecipe.outputs.some(o => o.goodsId === input.goodsId)) {
+            hasRelatedIndustry = true;
+            score += 20;
+            break;
+          }
+        }
+        if (hasRelatedIndustry) break;
+      }
+      
+      // 建筑数量适中更好（3-8个最佳）
+      const buildingCount = c.buildingCounts[companyId];
+      if (buildingCount >= 3 && buildingCount <= 8) {
+        score += 15;
+      } else if (buildingCount < 3) {
+        score += 5; // 太少可能是新公司
+      }
+      
+      // 随机因素避免总是同一家公司
+      score += Math.random() * 10;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestCompanyId = companyId;
+      }
+    }
+    
+    if (bestCompanyId >= 0) {
+      // 生成建造决策
+      const decision: AIDecision = {
+        type: 'investment',
+        companyId: bestCompanyId,
+        action: 'build',
+        params: {
+          buildingTypeId: building.id,
+          recipeId: recipe.id,
+          cost: building.buildCost,
+          targetGoodsId: cold.goodsId,
+          reason: 'cold_goods_supply',
+          orderBookDemand: cold.orderBookDemand,
+          producerCount: cold.producerCount,
+        },
+        priority: 14 + cold.urgencyScore / 20, // 14-19 高优先级
+        expectedProfit: building.buildCost * 0.4, // 预期利润较高因为市场急需
+        confidence: 0.85,
+      };
+      
+      // 执行决策
+      if (executeDecision(world, decision)) {
+        triggeredDecisions++;
+        console.log(`[冷门商品建造 T${world.tick}] 公司${c.names[bestCompanyId]}将建造${building.name}生产${cold.name}`);
+      }
+    }
+  }
+  
+  return triggeredDecisions;
+}
+
+/**
+ * 获取冷门商品报告（用于UI显示）
+ */
+export function getColdGoodsReport(world: GameWorld): ColdGoodsInfo[] {
+  return detectColdGoods(world);
 }

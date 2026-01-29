@@ -2,9 +2,15 @@
  * 性能监控面板
  * 实时显示FPS、Tick耗时、内存使用、系统breakdown等
  * 使用统一设计系统，支持主题切换
+ *
+ * 包含:
+ * - 基础性能指标(FPS、Tick耗时、内存)
+ * - 系统耗时分布图
+ * - 对象池使用率
+ * - Worker多线程性能监控
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import {
@@ -14,7 +20,8 @@ import {
   downloadPerformanceCSV,
   ExportOptions,
 } from '@/core/performance';
-import { Card, CardHeader, CardTitle, CardContent, Button, Switch, Badge } from '@/ui/design-system';
+import { Card, CardHeader, CardTitle, CardContent, Button, Switch, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '@/ui/design-system';
+import { WorkerMonitorPanel } from './WorkerMonitorPanel';
 
 // ==================== 类型定义 ====================
 
@@ -335,9 +342,18 @@ export const PerformanceDashboard: React.FC = () => {
   
   return (
     <div className="space-y-6">
-      {/* 标题和控制栏 */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <h2 className="text-xl font-bold text-[var(--text-primary)]">📊 性能监控</h2>
+      {/* 标题 */}
+      <h2 className="text-xl font-bold text-[var(--text-primary)]">📊 性能监控</h2>
+      
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList variant="game" className="mb-4">
+          <TabsTrigger value="overview" variant="game">📈 概览</TabsTrigger>
+          <TabsTrigger value="workers" variant="game">⚡ Workers</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="overview" className="space-y-6">
+          {/* 控制栏 */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4 flex-wrap">
           {/* 自动刷新开关 */}
           <label className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
@@ -488,21 +504,67 @@ export const PerformanceDashboard: React.FC = () => {
         </CardContent>
       </Card>
       
-      {/* 最近警告 */}
-      {latestSnapshot && latestSnapshot.warnings.length > 0 && (
-        <Card variant="elevated" className="bg-[var(--warning-muted)] border-[var(--warning)]">
-          <CardHeader>
-            <CardTitle className="text-[var(--warning)]">⚠️ 性能警告</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="text-sm text-[var(--text-primary)] space-y-1">
-              {latestSnapshot.warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
+          {/* 最近警告 */}
+          {latestSnapshot && latestSnapshot.warnings.length > 0 && (
+            <Card variant="elevated" className="bg-[var(--warning-muted)] border-[var(--warning)]">
+              <CardHeader>
+                <CardTitle className="text-[var(--warning)]">⚠️ 性能警告</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="text-sm text-[var(--text-primary)] space-y-1">
+                  {latestSnapshot.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="workers" className="space-y-6">
+          {/* Worker性能监控面板 */}
+          <WorkerMonitorPanel refreshInterval={refreshInterval} />
+          
+          {/* Worker使用说明 */}
+          <Card variant="elevated">
+            <CardHeader>
+              <CardTitle>📖 Worker系统说明</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="bg-[var(--bg-muted)] rounded-lg p-4">
+                  <h4 className="font-semibold text-[var(--text-primary)] mb-2">🔧 Worker Pool</h4>
+                  <p className="text-[var(--text-muted)]">
+                    通用任务池，处理各类计算密集型任务。自动负载均衡，支持任务优先级。
+                  </p>
+                </div>
+                <div className="bg-[var(--bg-muted)] rounded-lg p-4">
+                  <h4 className="font-semibold text-[var(--text-primary)] mb-2">📊 Economy Worker</h4>
+                  <p className="text-[var(--text-muted)]">
+                    专门处理经济计算，包括价格计算、市场撮合、供需分析等核心经济系统。
+                  </p>
+                </div>
+                <div className="bg-[var(--bg-muted)] rounded-lg p-4">
+                  <h4 className="font-semibold text-[var(--text-primary)] mb-2">🤖 AI Worker</h4>
+                  <p className="text-[var(--text-muted)]">
+                    处理AI决策计算，包括AI公司的生产规划、交易决策、战略规划等。
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mt-4 p-3 bg-[var(--bg-surface)] rounded-lg border border-[var(--border-default)]">
+                <h4 className="font-semibold text-[var(--text-primary)] mb-1">💡 优化提示</h4>
+                <ul className="text-sm text-[var(--text-muted)] space-y-1 list-disc list-inside">
+                  <li>当"主线程回退"计数增加时，表示Worker未能及时处理任务</li>
+                  <li>队列长度持续增长说明任务积压，可能需要降低游戏速度</li>
+                  <li>如果Worker离线，系统会自动降级到主线程处理</li>
+                  <li>Worker系统在首次使用时自动初始化</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

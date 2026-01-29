@@ -12,6 +12,8 @@ import { RECIPES } from '@/data/recipes';
 import { GOODS_COUNT, HISTORY_SIZE } from '@/core/constants';
 import { PriceChart, PriceDataPoint } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
+import { SupplyDemandChart, SupplyDemandData } from '@/ui/components/Charts/SupplyDemandChart';
+import { CandlestickChart, OHLCData } from '@/ui/components/Charts/CandlestickChart';
 import { findBestSubstitutes, findBestComplements } from '@/core/economy/SubstitutionSystem';
 import { tickToDate, formatGameDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
@@ -628,6 +630,146 @@ export const Market: React.FC = () => {
   const orderBook = useMemo(() => getOrderBook(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
   const playerOrders = useMemo(() => getPlayerOrders(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
 
+  // 供需数据计算
+  const supplyDemandData = useMemo((): SupplyDemandData | null => {
+    if (!world || !selectedGoods) return null;
+    
+    // 计算总供给和总需求（从订单簿）
+    let totalSupply = 0;
+    let totalDemand = 0;
+    
+    for (let i = 0; i < world.orders.maxOrders; i++) {
+      if (world.orders.isActive[i] && world.orders.goodsIds[i] === selectedGoodsId) {
+        const qty = world.orders.remainings[i];
+        
+        if (world.orders.types[i] === 0) {
+          // 买单 - 需求
+          totalDemand += qty;
+        } else {
+          // 卖单 - 供给
+          totalSupply += qty;
+        }
+      }
+    }
+    
+    // 如果没有订单数据，使用模拟数据
+    if (totalSupply === 0 && totalDemand === 0) {
+      totalSupply = 100;
+      totalDemand = 100;
+    }
+    
+    // 计算价格历史（从交易记录）
+    const priceHistory: { price: number; supply: number; demand: number }[] = [];
+    const t = world.trades;
+    const maxTrades = t.maxTrades;
+    const historyLimit = Math.min(t.count, 100);
+    
+    for (let i = 0; i < historyLimit; i++) {
+      const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
+      if (t.goodsIds[tradeIdx] === selectedGoodsId) {
+        priceHistory.push({
+          price: t.prices[tradeIdx],
+          supply: totalSupply * (0.8 + Math.random() * 0.4), // 模拟波动
+          demand: totalDemand * (0.8 + Math.random() * 0.4),
+        });
+      }
+    }
+    
+    return {
+      goodsId: selectedGoodsId.toString(),
+      goodsName: selectedGoods.name,
+      currentPrice: currentPrice,
+      basePrice: selectedGoods.basePrice,
+      supply: totalSupply,
+      demand: totalDemand,
+      equilibriumPrice: currentPrice,
+      priceHistory: priceHistory.slice(0, 20).reverse(),
+    };
+  }, [world, selectedGoodsId, selectedGoods, currentPrice, ordersActiveCount]);
+
+  // K线数据计算
+  const candlestickData = useMemo((): OHLCData[] => {
+    if (!world) return [];
+    
+    const t = world.trades;
+    const maxTrades = t.maxTrades;
+    
+    // 按天聚合交易数据 (24 tick = 1 day)
+    const dayDataMap = new Map<number, {
+      open: number;
+      high: number;
+      low: number;
+      close: number;
+      volume: number;
+      firstTick: number;
+      lastTick: number;
+    }>();
+    
+    const searchLimit = Math.min(t.count, 50000);
+    
+    for (let i = 0; i < searchLimit; i++) {
+      const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
+      if (t.goodsIds[tradeIdx] === selectedGoodsId) {
+        const tradeTick = t.ticks[tradeIdx];
+        const tradePrice = t.prices[tradeIdx];
+        const tradeQty = t.quantities[tradeIdx];
+        
+        if (tradePrice > 0 && tradeQty > 0) {
+          const dayIndex = Math.floor(tradeTick / 24);
+          
+          let data = dayDataMap.get(dayIndex);
+          if (!data) {
+            data = {
+              open: tradePrice,
+              high: tradePrice,
+              low: tradePrice,
+              close: tradePrice,
+              volume: 0,
+              firstTick: tradeTick,
+              lastTick: tradeTick,
+            };
+            dayDataMap.set(dayIndex, data);
+          }
+          
+          // 更新OHLC
+          if (tradeTick < data.firstTick) {
+            data.open = tradePrice;
+            data.firstTick = tradeTick;
+          }
+          if (tradeTick > data.lastTick) {
+            data.close = tradePrice;
+            data.lastTick = tradeTick;
+          }
+          data.high = Math.max(data.high, tradePrice);
+          data.low = Math.min(data.low, tradePrice);
+          data.volume += tradeQty;
+        }
+      }
+    }
+    
+    if (dayDataMap.size === 0) return [];
+    
+    // 转换为数组并排序
+    const sortedDays = Array.from(dayDataMap.keys()).sort((a, b) => a - b);
+    const recentDays = sortedDays.slice(-60); // 最近60天
+    
+    return recentDays.map(dayIndex => {
+      const data = dayDataMap.get(dayIndex)!;
+      const date = tickToDate(dayIndex * 24);
+      return {
+        time: `${date.year}/${date.month}/${date.day}`,
+        open: data.open,
+        high: data.high,
+        low: data.low,
+        close: data.close,
+        volume: data.volume,
+      };
+    });
+  }, [world, selectedGoodsId, tradesCount]);
+
+  // 图表视图模式
+  const [chartViewMode, setChartViewMode] = useState<'price' | 'candlestick' | 'supplyDemand'>('price');
+
   const playerStockMap = useMemo(() => {
     const map = new Map<number, number>();
     if (!world) return map;
@@ -712,9 +854,12 @@ export const Market: React.FC = () => {
                   <div className="p-2 rounded-lg bg-error/5">
                     <p className="text-xs text-error mb-1 font-medium">卖方</p>
                     {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
-                      <div key={idx} className="flex justify-between text-xs py-1">
-                        <span className="text-error">¥{order.price.toFixed(2)}</span>
-                        <span>{order.quantity.toFixed(0)}</span>
+                      <div key={idx} className="flex flex-col text-xs py-1">
+                        <div className="flex justify-between">
+                          <span className="text-error">¥{order.price.toFixed(2)}</span>
+                          <span>{order.quantity.toFixed(0)}</span>
+                        </div>
+                        <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
                       </div>
                     ))}
                     {orderBook.sellOrders.length === 0 && (
@@ -725,9 +870,12 @@ export const Market: React.FC = () => {
                   <div className="p-2 rounded-lg bg-success/5">
                     <p className="text-xs text-success mb-1 font-medium">买方</p>
                     {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
-                      <div key={idx} className="flex justify-between text-xs py-1">
-                        <span className="text-success">¥{order.price.toFixed(2)}</span>
-                        <span>{order.quantity.toFixed(0)}</span>
+                      <div key={idx} className="flex flex-col text-xs py-1">
+                        <div className="flex justify-between">
+                          <span className="text-success">¥{order.price.toFixed(2)}</span>
+                          <span>{order.quantity.toFixed(0)}</span>
+                        </div>
+                        <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
                       </div>
                     ))}
                     {orderBook.buyOrders.length === 0 && (
@@ -952,9 +1100,12 @@ export const Market: React.FC = () => {
               <div className="p-2 rounded-lg bg-error/5 mb-2">
                 <p className="text-xs text-error mb-1">卖方</p>
                 {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
-                  <div key={idx} className="flex justify-between text-xs py-1">
-                    <span className="text-error">¥{order.price.toFixed(2)}</span>
-                    <span>{order.quantity.toFixed(0)}</span>
+                  <div key={idx} className="flex flex-col text-xs py-1">
+                    <div className="flex justify-between">
+                      <span className="text-error">¥{order.price.toFixed(2)}</span>
+                      <span>{order.quantity.toFixed(0)}</span>
+                    </div>
+                    <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
                   </div>
                 ))}
               </div>
@@ -962,9 +1113,12 @@ export const Market: React.FC = () => {
               <div className="p-2 rounded-lg bg-success/5">
                 <p className="text-xs text-success mb-1">买方</p>
                 {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
-                  <div key={idx} className="flex justify-between text-xs py-1">
-                    <span className="text-success">¥{order.price.toFixed(2)}</span>
-                    <span>{order.quantity.toFixed(0)}</span>
+                  <div key={idx} className="flex flex-col text-xs py-1">
+                    <div className="flex justify-between">
+                      <span className="text-success">¥{order.price.toFixed(2)}</span>
+                      <span>{order.quantity.toFixed(0)}</span>
+                    </div>
+                    <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
                   </div>
                 ))}
               </div>
@@ -1171,106 +1325,217 @@ export const Market: React.FC = () => {
 
             {/* 销售排行榜 */}
             <Card variant="game" padding="md">
-              <div className="flex items-center justify-between mb-4">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <span>📊</span> 销售排行榜
-                </CardTitle>
-                <span className="text-xs text-accent">
-                  总销量 {(() => {
-                    if (!world) return 0;
-                    let total = 0;
-                    const t = world.trades;
-                    for (let i = Math.max(0, t.count - 5000); i < t.count; i++) {
-                      const idx = i % t.maxTrades;
-                      if (t.goodsIds[idx] === selectedGoodsId) total += t.quantities[idx];
-                    }
-                    return total.toLocaleString();
-                  })()}
-                </span>
-              </div>
               {(() => {
-                // 计算各公司销售份额
+                // 饼图颜色配置（与 MarketShareChart 一致）
+                const CHART_COLORS = [
+                  '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
+                  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+                ];
+                
+                // 格式化数字（使用万、亿单位）
+                const formatNumber = (num: number) => {
+                  if (num >= 100000000) {
+                    return (num / 100000000).toFixed(1) + '亿';
+                  } else if (num >= 10000) {
+                    return (num / 10000).toFixed(1) + '万';
+                  }
+                  return Math.round(num).toLocaleString('zh-CN');
+                };
+                
+                // 统一计算所有公司销售份额
                 if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
                 const companyVolumes = new Map<number, number>();
                 const t = world.trades;
-                for (let i = Math.max(0, t.count - 10000); i < t.count; i++) {
+                const searchLimit = 10000;
+                let totalVolume = 0;
+                
+                for (let i = Math.max(0, t.count - searchLimit); i < t.count; i++) {
                   const idx = i % t.maxTrades;
                   if (t.goodsIds[idx] === selectedGoodsId) {
                     const sellerId = t.sellCompanyIds[idx];
-                    companyVolumes.set(sellerId, (companyVolumes.get(sellerId) || 0) + t.quantities[idx]);
+                    const qty = t.quantities[idx];
+                    companyVolumes.set(sellerId, (companyVolumes.get(sellerId) || 0) + qty);
+                    totalVolume += qty;
                   }
                 }
-                const sortedCompanies = Array.from(companyVolumes.entries())
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 5);
-                if (sortedCompanies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
                 
-                const totalVolume = sortedCompanies.reduce((sum, [, v]) => sum + v, 0);
-                const chartData = sortedCompanies.map(([companyId, volume]) => ({
+                // 排序所有公司
+                const allSortedCompanies = Array.from(companyVolumes.entries())
+                  .sort((a, b) => b[1] - a[1]);
+                
+                // 取前5名
+                const top5Companies = allSortedCompanies.slice(0, 5);
+                
+                // 计算其他公司的销量
+                const othersVolume = allSortedCompanies.slice(5).reduce((sum, [, v]) => sum + v, 0);
+                
+                if (top5Companies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
+                
+                // 构建饼图数据（包含颜色）
+                const chartData = top5Companies.map(([companyId, volume], index) => ({
                   name: companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`),
                   value: volume,
+                  color: CHART_COLORS[index % CHART_COLORS.length],
                 }));
                 
+                // 添加"其他公司"到饼图（如果有的话）
+                if (othersVolume > 0) {
+                  chartData.push({
+                    name: '其他公司',
+                    value: othersVolume,
+                    color: '#64748b',
+                  });
+                }
+                
                 return (
-                  <div className="flex gap-6">
-                    {/* 左侧饼图 */}
-                    <div className="w-48 flex-shrink-0">
-                      <MarketShareChart data={chartData} height={200} showLegend={false} />
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <span>📊</span> 销售排行榜
+                      </CardTitle>
+                      <span className="text-xs text-accent">
+                        总销量 {formatNumber(totalVolume)}
+                      </span>
                     </div>
-                    {/* 右侧公司列表 */}
-                    <div className="flex-1 space-y-3">
-                      {sortedCompanies.map(([companyId, volume], index) => {
-                        const companyName = companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`);
-                        const percentage = totalVolume > 0 ? (volume / totalVolume * 100) : 0;
-                        const isPlayer = companyId === 0;
-                        return (
-                          <div key={companyId} className="flex items-center gap-3">
-                            {/* 排名/图标 */}
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${
-                              isPlayer ? 'bg-accent/20 text-accent' : 'bg-background-muted text-foreground-muted'
-                            }`}>
-                              {isPlayer ? '🏠' : index + 1}
-                            </div>
-                            {/* 公司信息 */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className={`text-sm font-medium truncate ${
-                                  isPlayer ? 'text-accent' : 'text-foreground'
-                                }`}>
-                                  {companyName}
-                                </span>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className="text-sm font-bold tabular-nums">{volume.toLocaleString()}</span>
-                                  <span className="text-xs text-foreground-muted w-12 text-right">{percentage.toFixed(1)}%</span>
+                
+                    <div className="flex gap-6">
+                      {/* 左侧饼图 */}
+                      <div className="w-48 flex-shrink-0">
+                        <MarketShareChart data={chartData} height={200} showLegend={false} />
+                      </div>
+                      {/* 右侧公司列表 */}
+                      <div className="flex-1 space-y-3">
+                        {top5Companies.map(([companyId, volume], index) => {
+                          const companyName = companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`);
+                          const percentage = totalVolume > 0 ? (volume / totalVolume * 100) : 0;
+                          const isPlayer = companyId === 0;
+                          const color = CHART_COLORS[index % CHART_COLORS.length];
+                          return (
+                            <div key={companyId} className="flex items-center gap-3">
+                              {/* 排名/图标 - 使用饼图颜色 */}
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white"
+                                style={{ backgroundColor: isPlayer ? undefined : color }}
+                              >
+                                {isPlayer ? '🏠' : index + 1}
+                              </div>
+                              {/* 公司信息 */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span
+                                    className="text-sm font-medium truncate"
+                                    style={{ color: isPlayer ? undefined : color }}
+                                  >
+                                    {companyName}
+                                  </span>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="text-sm font-bold tabular-nums">{formatNumber(volume)}</span>
+                                    <span className="text-xs text-foreground-muted w-12 text-right">{percentage.toFixed(1)}%</span>
+                                  </div>
+                                </div>
+                                {/* 进度条 - 使用饼图颜色 */}
+                                <div className="h-1.5 bg-background-muted rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{ width: `${percentage}%`, backgroundColor: color }}
+                                  />
                                 </div>
                               </div>
-                              {/* 进度条 */}
+                            </div>
+                          );
+                        })}
+                        {/* 其他公司 */}
+                        {othersVolume > 0 && (
+                          <div className="flex items-center gap-3 opacity-70">
+                            <div
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white"
+                              style={{ backgroundColor: '#64748b' }}
+                            >
+                              +
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium truncate text-slate-400">
+                                  其他公司
+                                </span>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-sm font-bold tabular-nums">{formatNumber(othersVolume)}</span>
+                                  <span className="text-xs text-foreground-muted w-12 text-right">
+                                    {totalVolume > 0 ? (othersVolume / totalVolume * 100).toFixed(1) : 0}%
+                                  </span>
+                                </div>
+                              </div>
                               <div className="h-1.5 bg-background-muted rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-success rounded-full transition-all duration-500"
-                                  style={{ width: `${percentage}%` }}
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{ width: `${totalVolume > 0 ? (othersVolume / totalVolume * 100) : 0}%`, backgroundColor: '#64748b' }}
                                 />
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 );
               })()}
             </Card>
 
-            {/* 价格走势图 */}
+            {/* 图表区域 - 支持多种视图 */}
             <Card variant="game" padding="md">
-              <MemoizedPriceChart
-                world={world}
-                selectedGoodsId={selectedGoodsId}
-                selectedGoods={selectedGoods}
-                tick={tick}
-                historyIndex={world?.goods.historyIndex ?? 0}
-                tradesCount={tradesCount}
-              />
+              <div className="flex items-center justify-between mb-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span>📊</span> 市场分析
+                </CardTitle>
+                <Tabs value={chartViewMode} onValueChange={(v) => setChartViewMode(v as 'price' | 'candlestick' | 'supplyDemand')}>
+                  <TabsList variant="game" size="sm">
+                    <TabsTrigger value="price" variant="game" className="text-xs">价格走势</TabsTrigger>
+                    <TabsTrigger value="candlestick" variant="game" className="text-xs">K线图</TabsTrigger>
+                    <TabsTrigger value="supplyDemand" variant="game" className="text-xs">供需分析</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              
+              {/* 价格走势视图 */}
+              {chartViewMode === 'price' && (
+                <MemoizedPriceChart
+                  world={world}
+                  selectedGoodsId={selectedGoodsId}
+                  selectedGoods={selectedGoods}
+                  tick={tick}
+                  historyIndex={world?.goods.historyIndex ?? 0}
+                  tradesCount={tradesCount}
+                />
+              )}
+              
+              {/* K线图视图 */}
+              {chartViewMode === 'candlestick' && (
+                candlestickData.length > 0 ? (
+                  <CandlestickChart
+                    data={candlestickData}
+                    title={`${selectedGoods.name} K线图`}
+                    height={280}
+                    showMA={true}
+                    showVolume={true}
+                    showBollinger={false}
+                    showRSI={false}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-[280px] text-foreground-muted">
+                    暂无足够的交易数据生成K线图
+                  </div>
+                )
+              )}
+              
+              {/* 供需分析视图 */}
+              {chartViewMode === 'supplyDemand' && supplyDemandData && (
+                <SupplyDemandChart
+                  data={supplyDemandData}
+                  height={280}
+                  showCurves={true}
+                  showHistory={true}
+                />
+              )}
             </Card>
 
             {/* 生产建筑与消耗建筑 */}
@@ -1438,11 +1703,14 @@ export const Market: React.FC = () => {
                   {orderBook.sellOrders.map((order, idx) => (
                     <div
                       key={idx}
-                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-error/10 cursor-pointer"
+                      className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-error/10 cursor-pointer"
                       onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                     >
-                      <span className="text-error font-semibold">¥{order.price.toFixed(2)}</span>
-                      <span>{order.quantity.toFixed(0)}</span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="text-error font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                        <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
+                      </div>
+                      <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
                     </div>
                   ))}
                 </div>
@@ -1459,11 +1727,14 @@ export const Market: React.FC = () => {
                   {orderBook.buyOrders.map((order, idx) => (
                     <div
                       key={idx}
-                      className="flex justify-between text-xs p-1.5 rounded-lg hover:bg-success/10 cursor-pointer"
+                      className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-success/10 cursor-pointer"
                       onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                     >
-                      <span className="text-success font-semibold">¥{order.price.toFixed(2)}</span>
-                      <span>{order.quantity.toFixed(0)}</span>
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="text-success font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                        <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
+                      </div>
+                      <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
                     </div>
                   ))}
                 </div>

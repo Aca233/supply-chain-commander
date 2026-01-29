@@ -137,42 +137,49 @@ const ConstructionTaskItem: React.FC<{
         </span>
       </div>
 
-      {/* 材料状态（紧凑显示）*/}
+      {/* 材料状态（紧凑显示）- 只显示缺少的材料 */}
       {task.status === 0 && task.materialsStatus && task.materialsStatus.length > 0 && (
         <div className="mt-1">
-          <button
-            onClick={() => setShowMaterials(!showMaterials)}
-            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] flex items-center gap-1"
-          >
-            {task.allMaterialsReady ? (
-              <span className="text-[var(--success)]">✓ 材料齐全</span>
-            ) : (
-              <span className="text-[var(--warning)]">⏳ 缺{missingMaterials}种材料</span>
-            )}
-            <span>{showMaterials ? '▲' : '▼'}</span>
-          </button>
-          {showMaterials && (
-            <div className="mt-1 space-y-0.5 max-h-16 overflow-y-auto scrollbar-thin">
-              {task.materialsStatus.slice(0, 4).map((mat, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-[10px] cursor-pointer hover:bg-[var(--bg-muted)] rounded px-1 py-0.5"
-                  onClick={() => onMaterialClick(mat.goodsId)}
-                >
-                  <span className="text-[var(--text-secondary)] truncate max-w-[100px]">
-                    {mat.goodsName}
-                  </span>
-                  <span className={mat.isSufficient ? 'text-[var(--success)]' : 'text-[var(--error)]'}>
-                    {mat.currentAmount.toFixed(0)}/{mat.requiredAmount.toFixed(0)}
-                  </span>
-                </div>
-              ))}
-              {task.materialsStatus.length > 4 && (
-                <div className="text-[10px] text-[var(--text-muted)] text-center">
-                  +{task.materialsStatus.length - 4}种...
+          {task.allMaterialsReady ? (
+            // 材料齐全时只显示简单提示
+            <span className="text-[10px] text-[var(--success)]">✓ 材料齐全</span>
+          ) : (
+            // 只显示缺少的材料
+            <>
+              <button
+                onClick={() => setShowMaterials(!showMaterials)}
+                className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] flex items-center gap-1"
+              >
+                <span className="text-[var(--warning)]">⏳ 缺{missingMaterials}种材料</span>
+                <span>{showMaterials ? '▲' : '▼'}</span>
+              </button>
+              {showMaterials && (
+                <div className="mt-1 space-y-0.5 max-h-16 overflow-y-auto scrollbar-thin">
+                  {task.materialsStatus
+                    .filter(mat => !mat.isSufficient) // 只显示缺少的材料
+                    .slice(0, 4)
+                    .map((mat, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between text-[10px] cursor-pointer hover:bg-[var(--bg-muted)] rounded px-1 py-0.5"
+                        onClick={() => onMaterialClick(mat.goodsId)}
+                      >
+                        <span className="text-[var(--text-secondary)] truncate max-w-[100px]">
+                          {mat.goodsName}
+                        </span>
+                        <span className="text-[var(--error)]">
+                          {mat.currentAmount.toFixed(0)}/{mat.requiredAmount.toFixed(0)}
+                        </span>
+                      </div>
+                    ))}
+                  {missingMaterials > 4 && (
+                    <div className="text-[10px] text-[var(--text-muted)] text-center">
+                      +{missingMaterials - 4}种...
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       )}

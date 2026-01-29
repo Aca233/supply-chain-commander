@@ -13,6 +13,7 @@ import { CompanyDetail } from '@/ui/components/Company/CompanyDetail';
 import { ControlledCompanies } from '@/ui/components/Company/ControlledCompanies';
 import { QuickTradeModal } from '@/ui/components/Company/TradePanel';
 import { ShareholderChart } from '@/ui/components/Company/ShareholderChart';
+import { StockMarketPanel } from '@/ui/components/Finance';
 import {
   CompanyProfile,
   getCompanyProfile,
@@ -48,7 +49,8 @@ import {
   Slider,
 } from '@/ui/design-system';
 
-type TabType = 'all' | 'holdings' | 'favorites' | 'gainers' | 'losers';
+type MainTabType = 'competitors' | 'stockmarket';
+type CompanyTabType = 'all' | 'holdings' | 'favorites' | 'gainers' | 'losers';
 
 function formatMoney(value: number): string {
   if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
@@ -74,7 +76,8 @@ export const CompetitorsAndInvestment: React.FC = () => {
   const world = getWorld();
   
   // 状态
-  const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [mainTab, setMainTab] = useState<MainTabType>('competitors');
+  const [activeTab, setActiveTab] = useState<CompanyTabType>('all');
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showIPOModal, setShowIPOModal] = useState(false);
@@ -242,15 +245,36 @@ export const CompetitorsAndInvestment: React.FC = () => {
   
   return (
     <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
-      {/* 页面标题 */}
-      <div className="flex justify-between items-center">
+      {/* 页面标题和主标签页切换 */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>📊 竞争与投资</h1>
-        {!playerStock && (
-          <Button variant="gradient" onClick={() => setShowIPOModal(true)}>
-            🚀 发起IPO
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTabType)}>
+            <TabsList variant="game">
+              <TabsTrigger value="competitors" variant="game">
+                🏢 竞争对手
+              </TabsTrigger>
+              <TabsTrigger value="stockmarket" variant="game">
+                📈 股票交易
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {mainTab === 'competitors' && !playerStock && (
+            <Button variant="gradient" size="sm" onClick={() => setShowIPOModal(true)}>
+              🚀 发起IPO
+            </Button>
+          )}
+        </div>
       </div>
+      
+      {/* 股票交易面板 - 当选择股票交易标签时显示 */}
+      {mainTab === 'stockmarket' && (
+        <StockMarketPanel />
+      )}
+      
+      {/* 竞争对手面板 - 当选择竞争对手标签时显示 */}
+      {mainTab === 'competitors' && (
+      <>
       
       {/* 顶部统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -373,7 +397,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
       {/* 标签页和搜索 */}
       <Card variant="elevated" padding="sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)}>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as CompanyTabType)}>
             <TabsList variant="game">
               <TabsTrigger value="all" variant="game">
                 🏢 全部 <Badge variant="outline" size="sm" className="ml-1">{allProfiles.length}</Badge>
@@ -488,6 +512,8 @@ export const CompetitorsAndInvestment: React.FC = () => {
           </p>
         </Card>
       </div>
+      </>
+      )}
       
       {/* 快速交易模态框 */}
       {showQuickTrade && (() => {
@@ -695,6 +721,8 @@ export const CompetitorsAndInvestment: React.FC = () => {
           </Dialog>
         );
       })()}
+      
+      {/* 股票交易模态框保留在主组件中以便两个标签页都可以使用 */}
     </div>
   );
 };

@@ -77,30 +77,31 @@ export const TARGET_INFLATION = 0.02;
 export const BASE_INTEREST_RATE = 0.03;
 
 // ==================== 价格稳定常量 ====================
+// 平衡性调优 v1.0: 降低价格波动，加速均值回归，收紧价格边界
 
-/** 单tick最大价格变化 */
-export const MAX_TICK_PRICE_CHANGE = 0.10;  // 从5%提升到10%，允许更灵活的价格调整
+/** 单tick最大价格变化 - 降低以减少市场剧烈波动 */
+export const MAX_TICK_PRICE_CHANGE = 0.05;  // 从10%降低到5%，市场更稳定
 
-/** 均值回归速率 */
-export const MEAN_REVERSION_RATE = 0.002;
+/** 均值回归速率 - 提高以加速价格恢复 */
+export const MEAN_REVERSION_RATE = 0.005;  // 从0.2%提高到0.5%，价格更快回归均值
 
-/** 波动抑制系数 */
-export const VOLATILITY_DAMPENING = 0.1;
+/** 波动抑制系数 - 略微降低以保持一定活力 */
+export const VOLATILITY_DAMPENING = 0.08;
 
-/** 供需数据平滑系数（统一使用） */
-export const SUPPLY_DEMAND_SMOOTHING = 0.5;  // 新数据占50%，历史占50%
+/** 供需数据平滑系数 - 提高以获得更稳定的供需数据 */
+export const SUPPLY_DEMAND_SMOOTHING = 0.4;  // 新数据占40%，历史占60%
 
-/** 需求计算平滑系数（统一使用） */
-export const DEMAND_SMOOTHING_FACTOR = 0.5;  // 新需求占50%，历史需求占50%
+/** 需求计算平滑系数 - 适度平滑需求波动 */
+export const DEMAND_SMOOTHING_FACTOR = 0.3;  // 新需求占30%，历史需求占70%
 
-/** 价格相对于基准价的最大倍数（防止价格无限上涨） */
-export const MAX_PRICE_RATIO = 5.0;  // 最高5倍基准价
+/** 价格相对于基准价的最大倍数 - 收紧以防止极端价格 */
+export const MAX_PRICE_RATIO = 3.0;  // 从5倍降低到3倍，限制暴利空间
 
-/** 价格相对于基准价的最小倍数（防止价格过低） */
-export const MIN_PRICE_RATIO = 0.2;  // 最低20%基准价
+/** 价格相对于基准价的最小倍数 - 提高以保护生产者 */
+export const MIN_PRICE_RATIO = 0.33;  // 从20%提高到33%，防止价格崩盘
 
-/** 无成交时的均值回归增强系数 */
-export const NO_TRADE_REVERSION_MULTIPLIER = 5.0;
+/** 无成交时的均值回归增强系数 - 降低以减少冷门商品价格跳跃 */
+export const NO_TRADE_REVERSION_MULTIPLIER = 3.0;  // 从5倍降低到3倍
 
 // ==================== 玩家初始常量 ====================
 
@@ -142,6 +143,26 @@ export const AI_DECISION_INTERVAL = 6;
 
 /** 每tick处理的AI批次大小（提高到10以加快决策频率） */
 export const AI_BATCH_SIZE = 10;
+
+// ==================== AI订单存活期常量 ====================
+
+/** 普通AI买单过期时间（tick）- 约8游戏天 */
+export const AI_BUY_ORDER_EXPIRY = 200;
+
+/** 普通AI卖单过期时间（tick）- 约12游戏天 */
+export const AI_SELL_ORDER_EXPIRY = 300;
+
+/** 紧急订单过期时间（tick）- 约2游戏天 */
+export const URGENT_ORDER_EXPIRY = 50;
+
+/** 建造材料买单过期时间（tick）- 约25游戏天，比普通买单更长 */
+export const BUILDING_MATERIAL_ORDER_EXPIRY = 600;
+
+/** 订单池健康警告阈值（使用率超过此比例时警告） */
+export const ORDER_POOL_WARNING_THRESHOLD = 0.7;
+
+/** 订单池危险阈值（使用率超过此比例时强制清理） */
+export const ORDER_POOL_CRITICAL_THRESHOLD = 0.85;
 
 // ==================== POPs常量 ====================
 

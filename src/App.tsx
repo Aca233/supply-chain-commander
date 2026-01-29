@@ -15,6 +15,9 @@ import Retail from '@/ui/pages/Retail';
 import { SupplyChainPage } from '@/ui/pages/SupplyChain';
 import { MainMenu, SettingsDialog } from '@/ui/pages/MainMenu';
 import { ToastProvider } from '@/ui/components/Toast/ToastContext';
+import { TutorialProvider, TutorialDialog, TutorialWelcomeDialog } from '@/ui/components/Tutorial';
+import { AchievementProvider } from '@/ui/components/Achievement';
+import { HelpProvider } from '@/ui/components/Help';
 import { soundManager } from '@/core/sound';
 import { useMobile } from '@/ui/hooks/useMobile';
 
@@ -378,48 +381,68 @@ const App: React.FC = () => {
   // 游戏主界面 - 移动端布局
   if (showMobileLayout) {
     return (
-      <ToastProvider>
-        <div className="flex flex-col h-screen bg-background text-text-primary">
-          {/* 移动端顶部栏 */}
-          <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
+      <HelpProvider>
+        <AchievementProvider>
+          <TutorialProvider>
+            <ToastProvider>
+              <div className="flex flex-col h-screen bg-background text-text-primary">
+            {/* 移动端顶部栏 */}
+            <MobileHeader onMenuClick={() => setDrawerOpen(true)} />
 
-          {/* 主内容区 */}
-          <main className="flex-1 overflow-y-auto pt-14 pb-16 px-3 sm:px-4">
-            {renderPage()}
-          </main>
+            {/* 主内容区 */}
+            <main className="flex-1 overflow-y-auto pt-14 pb-16 px-3 sm:px-4">
+              {renderPage()}
+            </main>
 
-          {/* 移动端底部导航 */}
-          <MobileBottomNav onMenuClick={() => setDrawerOpen(true)} />
+            {/* 移动端底部导航 */}
+            <MobileBottomNav onMenuClick={() => setDrawerOpen(true)} />
 
-          {/* 移动端抽屉导航 */}
-          <MobileDrawer 
-            isOpen={drawerOpen} 
-            onClose={() => setDrawerOpen(false)} 
-          />
-        </div>
-      </ToastProvider>
-);
+            {/* 移动端抽屉导航 */}
+            <MobileDrawer
+              isOpen={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+            />
+            
+                {/* 教程系统 */}
+                <TutorialWelcomeDialog />
+                <TutorialDialog />
+              </div>
+            </ToastProvider>
+          </TutorialProvider>
+        </AchievementProvider>
+      </HelpProvider>
+    );
   }
 
   // 游戏主界面 - 桌面端布局
   return (
-    <ToastProvider>
-      <div className="flex h-screen bg-background text-text-primary">
-        {/* 侧边栏 */}
-        <Sidebar />
+    <HelpProvider>
+      <AchievementProvider>
+        <TutorialProvider>
+          <ToastProvider>
+            <div className="flex h-screen bg-background text-text-primary">
+          {/* 侧边栏 */}
+          <Sidebar />
 
-        {/* 主内容区 - 根据侧边栏状态动态调整左边距 */}
-        <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-60'}`}>
-          {/* 顶部栏 */}
-          <Header />
+          {/* 主内容区 - 根据侧边栏状态动态调整左边距 */}
+          <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-60'}`}>
+            {/* 顶部栏 */}
+            <Header />
 
-          {/* 页面内容 */}
-          <main className="flex-1 overflow-y-auto p-6 mt-14">
-            {renderPage()}
-          </main>
-        </div>
-      </div>
-    </ToastProvider>
+            {/* 页面内容 */}
+            <main className="flex-1 overflow-y-auto p-6 mt-14">
+              {renderPage()}
+            </main>
+          </div>
+          
+              {/* 教程系统 */}
+              <TutorialWelcomeDialog />
+              <TutorialDialog />
+            </div>
+          </ToastProvider>
+        </TutorialProvider>
+      </AchievementProvider>
+    </HelpProvider>
   );
 };
 

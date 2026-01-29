@@ -31,17 +31,18 @@ export interface RecipeDefinition {
 }
 
 // ==================== 采掘类配方（ID 0-9）====================
+// 平衡性调优 v1.0: 增加瓶颈资源产量，缩短农业周期
 const EXTRACTION_RECIPES: RecipeDefinition[] = [
   { id: 0, key: 'iron-mining', name: '铁矿开采', buildingTypeId: 0, inputs: [], outputs: [{ goodsId: 0, amount: 100 }], ticksRequired: 1, laborRequired: 50, energyRequired: 200, description: '开采铁矿石' },
-  { id: 1, key: 'copper-mining', name: '铜矿开采', buildingTypeId: 1, inputs: [], outputs: [{ goodsId: 1, amount: 80 }], ticksRequired: 1, laborRequired: 50, energyRequired: 220, description: '开采铜矿石' },
+  { id: 1, key: 'copper-mining', name: '铜矿开采', buildingTypeId: 1, inputs: [], outputs: [{ goodsId: 1, amount: 100 }], ticksRequired: 1, laborRequired: 50, energyRequired: 220, description: '开采铜矿石' },  // 产量+25%: 80→100
   { id: 2, key: 'coal-mining', name: '煤炭开采', buildingTypeId: 2, inputs: [], outputs: [{ goodsId: 3, amount: 150 }], ticksRequired: 1, laborRequired: 40, energyRequired: 150, description: '开采煤炭' },
   { id: 3, key: 'oil-extraction', name: '原油开采', buildingTypeId: 3, inputs: [], outputs: [{ goodsId: 4, amount: 80 }], ticksRequired: 1, laborRequired: 30, energyRequired: 300, description: '开采原油' },
   { id: 4, key: 'gas-extraction', name: '天然气开采', buildingTypeId: 4, inputs: [], outputs: [{ goodsId: 5, amount: 100 }], ticksRequired: 1, laborRequired: 25, energyRequired: 250, description: '开采天然气' },
   { id: 5, key: 'logging', name: '木材采伐', buildingTypeId: 5, inputs: [], outputs: [{ goodsId: 6, amount: 120 }], ticksRequired: 1, laborRequired: 60, energyRequired: 100, description: '采伐木材' },
-  { id: 6, key: 'grain-farming', name: '粮食种植', buildingTypeId: 6, inputs: [], outputs: [{ goodsId: 8, amount: 200 }], ticksRequired: 24, laborRequired: 100, energyRequired: 50, description: '种植粮食作物' },
-  { id: 7, key: 'cotton-farming', name: '棉花种植', buildingTypeId: 6, inputs: [], outputs: [{ goodsId: 7, amount: 80 }], ticksRequired: 24, laborRequired: 80, energyRequired: 40, description: '种植棉花' },
+  { id: 6, key: 'grain-farming', name: '粮食种植', buildingTypeId: 6, inputs: [], outputs: [{ goodsId: 8, amount: 200 }], ticksRequired: 18, laborRequired: 100, energyRequired: 50, description: '种植粮食作物' },  // 周期-25%: 24→18
+  { id: 7, key: 'cotton-farming', name: '棉花种植', buildingTypeId: 6, inputs: [], outputs: [{ goodsId: 7, amount: 80 }], ticksRequired: 18, laborRequired: 80, energyRequired: 40, description: '种植棉花' },  // 周期-25%: 24→18
   { id: 8, key: 'silicon-mining', name: '硅石开采', buildingTypeId: 7, inputs: [], outputs: [{ goodsId: 9, amount: 90 }], ticksRequired: 1, laborRequired: 45, energyRequired: 180, description: '开采硅石' },
-  { id: 9, key: 'rare-earth-mining', name: '稀土开采', buildingTypeId: 7, inputs: [], outputs: [{ goodsId: 10, amount: 20 }], ticksRequired: 2, laborRequired: 60, energyRequired: 250, description: '开采稀土矿物' },
+  { id: 9, key: 'rare-earth-mining', name: '稀土开采', buildingTypeId: 7, inputs: [], outputs: [{ goodsId: 10, amount: 30 }], ticksRequired: 2, laborRequired: 60, energyRequired: 250, description: '开采稀土矿物' },  // 产量+50%: 20→30
 ];
 
 // ==================== 加工类配方（ID 10-20）====================
@@ -82,20 +83,22 @@ const POWER_RECIPES: RecipeDefinition[] = [
 ];
 
 // ==================== 农业产业链配方（ID 35-42）====================
+// 平衡性调优 v1.0: 缩短长周期配方，提高农业效率
 const AGRICULTURE_RECIPES: RecipeDefinition[] = [
-  { id: 35, key: 'vegetable-farming', name: '蔬菜种植', buildingTypeId: 25, inputs: [], outputs: [{ goodsId: 58, amount: 150 }], ticksRequired: 12, laborRequired: 80, energyRequired: 40, description: '种植各类蔬菜' },
-  { id: 36, key: 'fruit-farming', name: '水果种植', buildingTypeId: 25, inputs: [], outputs: [{ goodsId: 59, amount: 100 }], ticksRequired: 24, laborRequired: 60, energyRequired: 30, description: '种植各类水果' },
-  { id: 37, key: 'livestock-breeding', name: '牲畜养殖', buildingTypeId: 26, inputs: [{ goodsId: 8, amount: 200 }], outputs: [{ goodsId: 60, amount: 10 }], ticksRequired: 48, laborRequired: 100, energyRequired: 80, description: '养殖牛羊猪等牲畜' },
-  { id: 38, key: 'poultry-breeding', name: '家禽养殖', buildingTypeId: 26, inputs: [{ goodsId: 8, amount: 50 }], outputs: [{ goodsId: 61, amount: 100 }], ticksRequired: 12, laborRequired: 40, energyRequired: 30, description: '养殖鸡鸭等家禽' },
-  { id: 39, key: 'fish-farming', name: '水产养殖', buildingTypeId: 27, inputs: [], outputs: [{ goodsId: 62, amount: 80 }], ticksRequired: 24, laborRequired: 50, energyRequired: 60, description: '养殖鱼虾等水产' },
+  { id: 35, key: 'vegetable-farming', name: '蔬菜种植', buildingTypeId: 25, inputs: [], outputs: [{ goodsId: 58, amount: 150 }], ticksRequired: 10, laborRequired: 80, energyRequired: 40, description: '种植各类蔬菜' },  // 周期-17%: 12→10
+  { id: 36, key: 'fruit-farming', name: '水果种植', buildingTypeId: 25, inputs: [], outputs: [{ goodsId: 59, amount: 100 }], ticksRequired: 18, laborRequired: 60, energyRequired: 30, description: '种植各类水果' },  // 周期-25%: 24→18
+  { id: 37, key: 'livestock-breeding', name: '牲畜养殖', buildingTypeId: 26, inputs: [{ goodsId: 8, amount: 150 }], outputs: [{ goodsId: 60, amount: 12 }], ticksRequired: 36, laborRequired: 100, energyRequired: 80, description: '养殖牛羊猪等牲畜' },  // 周期-25%: 48→36, 饲料需求-25%, 产量+20%
+  { id: 38, key: 'poultry-breeding', name: '家禽养殖', buildingTypeId: 26, inputs: [{ goodsId: 8, amount: 50 }], outputs: [{ goodsId: 61, amount: 100 }], ticksRequired: 10, laborRequired: 40, energyRequired: 30, description: '养殖鸡鸭等家禽' },  // 周期-17%: 12→10
+  { id: 39, key: 'fish-farming', name: '水产养殖', buildingTypeId: 27, inputs: [], outputs: [{ goodsId: 62, amount: 80 }], ticksRequired: 18, laborRequired: 50, energyRequired: 60, description: '养殖鱼虾等水产' },  // 周期-25%: 24→18
   { id: 40, key: 'meat-processing', name: '肉类加工', buildingTypeId: 28, inputs: [{ goodsId: 60, amount: 5 }, { goodsId: 61, amount: 30 }], outputs: [{ goodsId: 63, amount: 100 }], ticksRequired: 2, laborRequired: 60, energyRequired: 150, description: '加工肉类产品' },
   { id: 41, key: 'dairy-production', name: '乳制品生产', buildingTypeId: 28, inputs: [{ goodsId: 60, amount: 2 }], outputs: [{ goodsId: 64, amount: 150 }], ticksRequired: 1, laborRequired: 30, energyRequired: 100, description: '生产牛奶、奶酪等乳制品' },
   { id: 42, key: 'frozen-food-production', name: '冷冻食品生产', buildingTypeId: 13, inputs: [{ goodsId: 63, amount: 30 }, { goodsId: 58, amount: 50 }], outputs: [{ goodsId: 65, amount: 60 }], ticksRequired: 2, laborRequired: 50, energyRequired: 200, unlockLevel: 2, description: '生产速冻食品' },
 ];
 
 // ==================== 医药产业链配方（ID 43-48）====================
+// 平衡性调优 v1.0: 缩短药材种植周期
 const PHARMA_RECIPES: RecipeDefinition[] = [
-  { id: 43, key: 'herb-cultivation', name: '药材种植', buildingTypeId: 29, inputs: [], outputs: [{ goodsId: 70, amount: 60 }], ticksRequired: 48, laborRequired: 40, energyRequired: 30, description: '种植中草药材' },
+  { id: 43, key: 'herb-cultivation', name: '药材种植', buildingTypeId: 29, inputs: [], outputs: [{ goodsId: 70, amount: 72 }], ticksRequired: 36, laborRequired: 40, energyRequired: 30, description: '种植中草药材' },  // 周期-25%: 48→36, 产量+20%: 60→72
   { id: 44, key: 'generic-drug-production', name: '仿制药生产', buildingTypeId: 30, inputs: [{ goodsId: 71, amount: 20 }], outputs: [{ goodsId: 74, amount: 100 }], ticksRequired: 3, laborRequired: 80, energyRequired: 200, description: '生产普通仿制药品' },
   { id: 45, key: 'patent-drug-production', name: '专利药生产', buildingTypeId: 30, inputs: [{ goodsId: 71, amount: 40 }, { goodsId: 20, amount: 20 }], outputs: [{ goodsId: 75, amount: 20 }], ticksRequired: 5, laborRequired: 120, energyRequired: 300, unlockLevel: 2, description: '生产高端专利药品' },
   { id: 46, key: 'vaccine-production', name: '疫苗生产', buildingTypeId: 30, inputs: [{ goodsId: 71, amount: 50 }, { goodsId: 20, amount: 30 }], outputs: [{ goodsId: 73, amount: 10 }], ticksRequired: 8, laborRequired: 150, energyRequired: 400, unlockLevel: 3, description: '生产疫苗制品' },
@@ -113,9 +116,10 @@ const LUXURY_RECIPES: RecipeDefinition[] = [
 ];
 
 // ==================== 补全产业链配方（ID 106-107为新建筑配方）====================
+// 平衡性调优 v1.0: 增加锂矿产量
 const SUPPLEMENTARY_RECIPES: RecipeDefinition[] = [
   { id: 106, key: 'rubber-harvesting', name: '天然橡胶采集', buildingTypeId: 32, inputs: [], outputs: [{ goodsId: 11, amount: 80 }], ticksRequired: 1, laborRequired: 60, energyRequired: 50, description: '采集天然橡胶原料' },
-  { id: 107, key: 'lithium-mining', name: '锂矿开采', buildingTypeId: 33, inputs: [], outputs: [{ goodsId: 13, amount: 40 }], ticksRequired: 2, laborRequired: 55, energyRequired: 280, description: '开采锂矿石' },
+  { id: 107, key: 'lithium-mining', name: '锂矿开采', buildingTypeId: 33, inputs: [], outputs: [{ goodsId: 13, amount: 50 }], ticksRequired: 2, laborRequired: 55, energyRequired: 280, description: '开采锂矿石' },  // 产量+25%: 40→50
 ];
 
 // ==================== 补全产业链配方（保留与核心产业链相关的配方）====================

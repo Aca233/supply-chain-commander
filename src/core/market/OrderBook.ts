@@ -9,7 +9,14 @@
  */
 
 import { GameWorld } from '../world/GameWorld';
-import { GOODS_COUNT, MAX_ORDERS, MAX_COMPANIES, ACTUAL_GOODS_COUNT } from '../constants';
+import {
+  GOODS_COUNT,
+  MAX_ORDERS,
+  MAX_COMPANIES,
+  ACTUAL_GOODS_COUNT,
+  ORDER_POOL_WARNING_THRESHOLD,
+  ORDER_POOL_CRITICAL_THRESHOLD,
+} from '../constants';
 import { getOrderBookIndex } from './OrderBookIndex';
 
 /**
@@ -1017,18 +1024,189 @@ export function getOrderPoolStats(world: GameWorld): OrderPoolStats {
 
 /**
  * 检查订单池健康状态（优化版：直接计算，不调用完整统计）
+ * 使用常量中定义的阈值：
+ * - ORDER_POOL_WARNING_THRESHOLD (70%)
+ * - ORDER_POOL_CRITICAL_THRESHOLD (85%)
  * @returns 'healthy' | 'warning' | 'critical'
  */
 export function getOrderPoolHealth(world: GameWorld): 'healthy' | 'warning' | 'critical' {
   const activeOrders = world.orders.activeCount;
-  const usagePercent = (activeOrders / MAX_ORDERS) * 100;
+  const usageRatio = activeOrders / MAX_ORDERS;
   
-  if (usagePercent >= 90) {
+  // 使用constants.ts中定义的阈值
+  if (usageRatio >= ORDER_POOL_CRITICAL_THRESHOLD) {
     return 'critical';
-  } else if (usagePercent >= 70) {
+  } else if (usageRatio >= ORDER_POOL_WARNING_THRESHOLD) {
     return 'warning';
   }
   return 'healthy';
+}
+
+/**
+ * 【任务6】订单池健康监控和自动清理系统
+ *
+ * 功能：
+ * 1. 监控订单池使用率
+ * 2. 当使用率超过警告阈值时输出日志
+ * 3. 当使用率超过危险阈值时自动清理最旧的订单
+ *
+ * @param world 游戏世界
+ * @returns 清理的订单数量
+ */
+export function performOrderPoolHealthCheck(world: GameWorld): {
+  status: 'healthy' | 'warning' | 'critical';
+  usagePercent: number;
+  cleanedCount: number;
+} {
+  const o = world.orders;
+  const activeOrders = o.activeCount;
+  const usageRatio = activeOrders / MAX_ORDERS;
+  const usagePercent = usageRatio * 100;
+  
+  let cleanedCount = 0;
+  let status: 'healthy' | 'warning' | 'critical' = 'healthy';
+  
+  if (usageRatio >= ORDER_POOL_CRITICAL_THRESHOLD) {
+    status = 'critical';
+    // 危险状态：强制清理最旧的10%订单
+    cleanedCount = performEmergencyCleanup(world, 0.1);
+    console.warn(`[订单池危机 T${world.tick}] 使用率${usagePercent.toFixed(1)}%! 紧急清理了${cleanedCount}个订单`);
+  } else if (usageRatio >= ORDER_POOL_WARNING_THRESHOLD) {
+    status = 'warning';
+    // 警告状态：清理过期订单
+    cleanedCount = cleanupExpiredOrders(world);
+    if (world.tick % 100 === 0) {
+      console.log(`[订单池警告 T${world.tick}] 使用率${usagePercent.toFixed(1)}%, 清理了${cleanedCount}个过期订单`);
+    }
+  }
+  
+  return { status, usagePercent, cleanedCount };
+}
+
+/**
+ * 【任务6】紧急清理订单池
+ * 当订单池使用率超过危险阈值时调用
+ *
+ * 清理策略：
+ * 1. 优先清理最旧的订单
+ * 2. 优先清理价格偏离市场价较大的订单
+ * 3. 保留近期创建的订单
+ *
+ * @param world 游戏世界
+ * @param cleanupRatio 要清理的订单比例（0.1 = 10%）
+ * @returns 清理的订单数量
+ */
+function performEmergencyCleanup(world: GameWorld, cleanupRatio: number): number {
+  const o = world.orders;
+  const targetCleanupCount = Math.floor(o.activeCount * cleanupRatio);
+  
+  if (targetCleanupCount <= 0) return 0;
+  
+  // 收集所有活跃订单信息
+  const orderInfos: Array<{
+    idx: number;
+    createdTick: number;
+    priceDeviation: number;  // 价格偏离度
+  }> = [];
+  
+  for (const idx of activeOrderIndices) {
+    const goodsId = o.goodsIds[idx];
+    const orderPrice = o.prices[idx];
+    const marketPrice = world.goods.prices[goodsId];
+    
+    // 计算价格偏离度（与市场价的差异）
+    let priceDeviation = 0;
+    if (o.types[idx] === 0) {  // 买单
+      // 买单价格远低于市场价 = 高偏离度
+      priceDeviation = marketPrice > 0 ? Math.max(0, (marketPrice - orderPrice) / marketPrice) : 0;
+    } else {  // 卖单
+      // 卖单价格远高于市场价 = 高偏离度
+      priceDeviation = marketPrice > 0 ? Math.max(0, (orderPrice - marketPrice) / marketPrice) : 0;
+    }
+    
+    orderInfos.push({
+      idx,
+      createdTick: o.createdTicks[idx],
+      priceDeviation,
+    });
+  }
+  
+  // 按优先级排序：先按价格偏离度（高偏离优先清理），再按创建时间（旧订单优先清理）
+  orderInfos.sort((a, b) => {
+    // 价格偏离度权重0.6，时间权重0.4
+    const scoreA = a.priceDeviation * 0.6 + (world.tick - a.createdTick) / 1000 * 0.4;
+    const scoreB = b.priceDeviation * 0.6 + (world.tick - b.createdTick) / 1000 * 0.4;
+    return scoreB - scoreA;  // 降序，分数高的先清理
+  });
+  
+  // 清理订单
+  let cleanedCount = 0;
+  for (let i = 0; i < Math.min(targetCleanupCount, orderInfos.length); i++) {
+    const orderIdx = orderInfos[i].idx;
+    if (cancelOrder(world, orderIdx)) {
+      cleanedCount++;
+    }
+  }
+  
+  return cleanedCount;
+}
+
+/**
+ * 【任务6】获取订单池健康报告
+ * 用于UI显示或调试
+ */
+export function getOrderPoolHealthReport(world: GameWorld): {
+  status: 'healthy' | 'warning' | 'critical';
+  activeOrders: number;
+  maxOrders: number;
+  usagePercent: number;
+  buyOrders: number;
+  sellOrders: number;
+  oldestOrderAge: number;  // 最旧订单的tick数
+  avgOrderAge: number;     // 平均订单年龄
+  recommendation: string;
+} {
+  const o = world.orders;
+  const stats = getOrderPoolStats(world);
+  const status = getOrderPoolHealth(world);
+  
+  // 计算订单年龄统计
+  let oldestAge = 0;
+  let totalAge = 0;
+  let orderCount = 0;
+  
+  for (const idx of activeOrderIndices) {
+    const age = world.tick - o.createdTicks[idx];
+    oldestAge = Math.max(oldestAge, age);
+    totalAge += age;
+    orderCount++;
+  }
+  
+  const avgOrderAge = orderCount > 0 ? totalAge / orderCount : 0;
+  
+  // 生成建议
+  let recommendation = '';
+  if (status === 'critical') {
+    recommendation = '订单池即将溢出！建议立即减少新订单创建并清理陈旧订单。';
+  } else if (status === 'warning') {
+    recommendation = '订单池使用率较高，建议检查是否存在订单堆积问题。';
+  } else if (avgOrderAge > 500) {
+    recommendation = '订单平均存活时间较长，可能存在交易不活跃的问题。';
+  } else {
+    recommendation = '订单池状态正常。';
+  }
+  
+  return {
+    status,
+    activeOrders: stats.activeOrders,
+    maxOrders: stats.maxOrders,
+    usagePercent: stats.usagePercent,
+    buyOrders: stats.buyOrders,
+    sellOrders: stats.sellOrders,
+    oldestOrderAge: oldestAge,
+    avgOrderAge,
+    recommendation,
+  };
 }
 
 /**

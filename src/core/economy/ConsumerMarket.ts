@@ -95,16 +95,16 @@ export interface ConsumerBuyConfig {
 }
 
 // 默认配置
-// 性能优化：降低执行频率，增加单次处理量
+// 【任务8优化】提高消费速率，加快商品流通，减少订单积压
 const DEFAULT_CONFIG: ConsumerBuyConfig = {
-  consumptionRatePerTick: 0.32, // 提高到32%（因为每4tick执行一次，0.08*4=0.32）
-  maxPremiumRatio: 1.5,          // 最多接受150%基准价
-  minTradeQuantity: 1,           // 最小成交1单位
-  priceSensitivity: 0.5,         // 价格敏感度
-  executionInterval: 4,          // 每4tick执行一次消费者购买
-  b2bExecutionInterval: 4,       // 每4tick执行一次B2B采购
-  goodsBatchGroups: 4,           // 商品分4组轮询处理
-  b2bBuildingBatchGroups: 4,     // 【性能优化】建筑分4组轮询处理B2B采购
+  consumptionRatePerTick: 0.48, // 【提高】从32%提升到48%（加快50%消费速度）
+  maxPremiumRatio: 1.8,          // 【提高】从150%提升到180%（消费者愿意接受更高溢价）
+  minTradeQuantity: 0.5,         // 【降低】从1降到0.5（允许更小额交易）
+  priceSensitivity: 0.35,        // 【降低】从0.5降到0.35（消费者对价格不那么敏感）
+  executionInterval: 3,          // 【提高频率】从每4tick改为每3tick执行
+  b2bExecutionInterval: 3,       // 【提高频率】从每4tick改为每3tick执行B2B采购
+  goodsBatchGroups: 3,           // 【优化】商品分3组轮询处理（配合3tick间隔）
+  b2bBuildingBatchGroups: 3,     // 【优化】建筑分3组轮询处理B2B采购
 };
 
 // 消费者购买结果

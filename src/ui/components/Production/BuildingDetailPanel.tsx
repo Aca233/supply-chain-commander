@@ -12,6 +12,7 @@ import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { SubsidiaryPanel } from './SubsidiaryPanel';
+import { UpgradeConfirmDialog } from './BuildingUpgradePanel';
 import { getBuildingConstructionConfig, isHazardousBuilding, MaterialRequirement } from '@/data/buildingMaterials';
 
 // 设计系统组件
@@ -41,6 +42,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
   const world = getWorld();
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [showDemolishModal, setShowDemolishModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const buildingData = useMemo(() => {
     if (!world) return null;
@@ -398,14 +400,12 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             variant="gradient"
             size="lg"
             fullWidth
-            onClick={handleUpgrade}
-            disabled={!buildingData.canUpgrade}
+            onClick={() => setShowUpgradeModal(true)}
           >
             <div>
-              <div className="font-medium">升级到 Lv.{buildingData.level + 1}</div>
+              <div className="font-medium">🚀 升级到 Lv.{buildingData.level + 1}</div>
               <div className="text-xs opacity-80">
-                费用: {formatMoney(buildingData.upgradeCost)} | 
-                产能: +{((buildingData.nextCapacity - 1) * 100).toFixed(0)}% | 
+                产能: +{((buildingData.nextCapacity - 1) * 100).toFixed(0)}% |
                 效率: +{((buildingData.nextEfficiency - 1) * 100).toFixed(0)}%
               </div>
             </div>
@@ -611,6 +611,14 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 升级确认弹窗 */}
+      <UpgradeConfirmDialog
+        open={showUpgradeModal}
+        onOpenChange={setShowUpgradeModal}
+        buildingIndex={buildingIndex}
+        onConfirm={handleUpgrade}
+      />
     </div>
   );
 };
