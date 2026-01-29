@@ -555,6 +555,61 @@ const PREMIUM_BEHAVIOR: BehaviorPattern = {
 };
 
 /**
+ * 产业链开拓者行为模式
+ */
+const PIONEER_BEHAVIOR: BehaviorPattern = {
+  personality: 'pioneer',
+  
+  scenarioActions: new Map([
+    ['high_cash', ['expand', 'aggressive_buy']],
+    ['low_cash', ['hold', 'conservative_sell']],
+    ['inventory_surplus', ['hold', 'conservative_sell']], // 愿意持有库存
+    ['inventory_shortage', ['aggressive_buy', 'expand']], // 缺货时积极扩张
+    ['market_opportunity', ['expand', 'aggressive_buy']],
+    ['market_threat', ['hold', 'expand']], // 面对威胁仍坚持扩张
+    ['high_profit', ['expand', 'aggressive_buy']],
+    ['low_profit', ['hold', 'expand']], // 低利润也坚持扩张
+    ['price_rising', ['hold', 'expand']],
+    ['price_falling', ['aggressive_buy', 'hold']],
+    ['competitor_weak', ['expand', 'aggressive_buy']],
+    ['competitor_strong', ['expand', 'hold']], // 不怕竞争
+  ]),
+  
+  weights: {
+    profitImportance: 0.2,        // 不太看重短期利润
+    marketShareImportance: 0.6,   // 看重市场份额
+    cashFlowImportance: 0.3,      // 现金流次要
+    riskAvoidance: 0.1,           // 极低风险规避
+    opportunitySeizing: 0.9,      // 极高机会把握
+    longTermPlanning: 1.0,        // 极高长期规划
+  },
+  
+  thresholds: {
+    buySignalStrength: -20,
+    sellSignalStrength: 40,       // 很难卖出，倾向持有
+    profitMarginMin: -0.05,       // 接受亏损
+    inventoryDaysMax: 60,         // 容忍高库存
+    cashRatioMin: 0.1,            // 容忍低现金
+    marketShareTarget: 0.4,       // 追求高份额
+    priceDeviationMax: 0.8,
+  },
+  
+  tradingStrategy: {
+    buyAggressiveness: 0.9,
+    sellAggressiveness: 0.2,
+    spreadPreference: 0.2,
+    volumePreference: 0.8,
+    timingPatience: 0.1,          // 不等待时机，立即行动
+  },
+  
+  expansionStrategy: {
+    buildingPriority: [33, 20, 16, 17], // 锂矿、电池厂、电子厂、半导体厂
+    maxBuildingsPerTick: 3,       // 快速扩张
+    expansionCondition: (a) => a.cashRatio > 0.1, // 只要有钱就扩张
+  },
+};
+
+/**
  * 所有行为模式映射
  */
 export const BEHAVIOR_PATTERNS: Record<PersonalityType, BehaviorPattern> = {
@@ -566,6 +621,7 @@ export const BEHAVIOR_PATTERNS: Record<PersonalityType, BehaviorPattern> = {
   innovator: INNOVATOR_BEHAVIOR,
   cost_leader: COST_LEADER_BEHAVIOR,
   premium: PREMIUM_BEHAVIOR,
+  pioneer: PIONEER_BEHAVIOR,
 };
 
 // ==================== 场景检测 ====================

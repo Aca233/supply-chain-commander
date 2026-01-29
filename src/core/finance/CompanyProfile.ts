@@ -152,12 +152,13 @@ const personalityLabels: Record<PersonalityType, string> = {
   innovator: '创新型',
   cost_leader: '成本领先',
   premium: '高端型',
+  pioneer: '开拓者',
 };
 
 // 人格类型列表（用于动态分配）
 const personalityTypes: PersonalityType[] = [
   'aggressive', 'conservative', 'innovator', 'opportunist',
-  'specialist', 'diversified', 'cost_leader', 'premium',
+  'specialist', 'diversified', 'cost_leader', 'premium', 'pioneer',
 ];
 
 /**
@@ -273,6 +274,7 @@ function getCompanySpecialization(world: GameWorld, companyId: number): string {
     case 'diversified': return '多元化经营';
     case 'cost_leader': return '食品、日用品';
     case 'premium': return '奢侈品、高端产品';
+    case 'pioneer': return '新兴产业、关键材料';
     default: return '多元化经营';
   }
 }
