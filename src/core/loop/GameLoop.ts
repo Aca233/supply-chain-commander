@@ -18,6 +18,7 @@ import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
 import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
+import { applyOperatingCosts } from '../finance/OperatingCosts';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
 import { addBuilding } from '../world/WorldInitializer';
@@ -559,6 +560,9 @@ export class GameLoop {
     
     // 19. 更新银行系统（每个tick处理还款等）
     updateBankingSystem(this.world);
+    
+    // 19.5. 结算建筑运营成本（维护、人力、能耗）
+    applyOperatingCosts(this.world);
     
     // ==================== 阶段6: 品牌和状态更新 ====================
     

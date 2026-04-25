@@ -83,6 +83,7 @@ const CONSUMPTION_BATCH_SIZE = 10;  // 每tick处理10种商品（从5提高到1
 let reusableTickResult: RetailTickResult = {
   totalSales: 0,
   totalRevenue: 0,
+  playerRevenue: 0,
   totalCustomers: 0,
   restockOrders: 0,
   priceAdjustments: 0,
@@ -93,6 +94,7 @@ let reusableTickResult: RetailTickResult = {
 let reusableConsumptionResult: PopConsumptionResult = {
   totalQuantity: 0,
   totalSpent: 0,
+  playerRevenue: 0,
   customerCount: 0,
   satisfiedDemand: 0,
   purchasesByGoods: new Map(),
@@ -104,6 +106,7 @@ function createTickResult(): RetailTickResult {
   return {
     totalSales: 0,
     totalRevenue: 0,
+    playerRevenue: 0,
     totalCustomers: 0,
     restockOrders: 0,
     priceAdjustments: 0,
@@ -116,6 +119,7 @@ function createConsumptionResult(): PopConsumptionResult {
   return {
     totalQuantity: 0,
     totalSpent: 0,
+    playerRevenue: 0,
     customerCount: 0,
     satisfiedDemand: 0,
     purchasesByGoods: new Map(),
@@ -161,6 +165,7 @@ export interface RetailSystemData {
 export interface RetailTickResult {
   totalSales: number;
   totalRevenue: number;
+  playerRevenue: number;
   totalCustomers: number;
   restockOrders: number;
   priceAdjustments: number;
@@ -171,6 +176,7 @@ export interface RetailTickResult {
 export interface PopConsumptionResult {
   totalQuantity: number;
   totalSpent: number;
+  playerRevenue: number;
   customerCount: number;
   satisfiedDemand: number;  // 满足的需求比例
   purchasesByGoods: Map<number, { quantity: number; spent: number }>;
@@ -331,6 +337,7 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
   try {
     reusableTickResult.totalSales = 0;
     reusableTickResult.totalRevenue = 0;
+    reusableTickResult.playerRevenue = 0;
     reusableTickResult.totalCustomers = 0;
     reusableTickResult.restockOrders = 0;
     reusableTickResult.priceAdjustments = 0;
@@ -356,6 +363,7 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
   const consumptionResult = processPopConsumption(world);
   result.totalSales = consumptionResult.totalQuantity;
   result.totalRevenue = consumptionResult.totalSpent;
+  result.playerRevenue = consumptionResult.playerRevenue;
   result.totalCustomers = consumptionResult.customerCount;
   
   // 4. 动态价格调整（每24tick一次）
@@ -1221,6 +1229,7 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
   try {
     reusableConsumptionResult.totalQuantity = 0;
     reusableConsumptionResult.totalSpent = 0;
+    reusableConsumptionResult.playerRevenue = 0;
     reusableConsumptionResult.customerCount = 0;
     reusableConsumptionResult.satisfiedDemand = 0;
     reusableConsumptionResult.purchasesByGoods.clear();
@@ -1316,6 +1325,9 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
       // 资金流入零售商
       const ownerId = retail.owners[retailId];
       world.companies.cash[ownerId] += spent;
+      if (ownerId === 0) {
+        result.playerRevenue += spent;
+      }
       
       // 更新市场供给统计
       world.goods.supplies[goodsId] += actualQty;

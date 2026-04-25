@@ -4361,8 +4361,8 @@ function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
  * 优先分配给pioneer人格公司
  */
 export function forceBuildzeroSupplyGoods(world: GameWorld): number {
-  // 每100tick运行一次
-  if (world.tick % 100 !== 0) {
+  // 从每100tick改为每48tick运行一次（更高频率，约2游戏天）
+  if (world.tick % 48 !== 0) {
     return 0;
   }
   
@@ -4400,7 +4400,7 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
   }
   
   // 为每个零供应商品分配建造任务
-  for (const zeroGoods of zeroSupplyGoods.slice(0, 5)) { // 每次最多处理5个
+  for (const zeroGoods of zeroSupplyGoods.slice(0, 8)) { // 每次最多处理8个（从5提升）
     const { goodsId, buildingTypeId, outputModeId, buildingCost } = zeroGoods;
     
     if (buildingTypeId < 0 || outputModeId < 0) continue;
@@ -4496,6 +4496,31 @@ interface ColdGoodsInfo {
 }
 
 /**
+ * 获取指定商品的下游依赖数（有多少种建筑以此商品为输入）
+ * 用于评估商品在产业链中的结构重要性
+ */
+function getDependencyCountForGoods(goodsId: number): number {
+  let count = 0;
+  for (const building of ALL_BUILDINGS) {
+    const production = building.production;
+    if (!production) continue;
+    const checkInputs = (inputs: Array<{ goodsId: number; amount: number }> | undefined) => {
+      if (!inputs) return;
+      for (const input of inputs) {
+        if (input.goodsId === goodsId) { count++; return; }
+      }
+    };
+    checkInputs(production.inputs);
+    if (production.outputModes) {
+      for (const mode of production.outputModes) {
+        checkInputs(mode.inputs);
+      }
+    }
+  }
+  return count;
+}
+
+/**
  * 检测所有冷门商品
  */
 function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
@@ -4534,19 +4559,22 @@ function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
     const producerCount = producerCounts.get(goodsId) || 0;
     
     // 冷门判定条件：
-    // 1. 有一定的买单需求（>50单位）
+    // 1. 有一定的买单需求（>50单位）或商品有结构性依赖（重要中间品）
     // 2. 无卖单供应 且 市场供应极低
     // 3. 生产该商品的建筑很少（<=1）
-    const isCold = buyDemand > 50 &&
+    const hasStructuralImportance = (world.goods.demands[goodsId] > 100) || (getDependencyCountForGoods(goodsId) >= 2);
+    const isCold = (buyDemand > 50 || (marketSupply < 10 && hasStructuralImportance)) &&
                    sellSupply === 0 &&
                    marketSupply < 100 &&
                    producerCount <= 1;
-    
+
     if (isCold) {
-      // 计算紧急程度：买单需求越大、生产者越少，越紧急
-      const urgencyScore = Math.min(100, buyDemand / 10) +
+      // 计算紧急程度：买单需求越大、生产者越少、结构性依赖越强，越紧急
+      const deps = getDependencyCountForGoods(goodsId);
+      const urgencyScore = Math.min(100, Math.max(buyDemand, world.goods.demands[goodsId]) / 10) +
                            (producerCount === 0 ? 50 : 0) +
-                           (marketSupply === 0 ? 30 : 0);
+                           (marketSupply === 0 ? 30 : 0) +
+                           Math.min(30, deps * 5);
       
       coldGoods.push({
         goodsId,
@@ -4572,8 +4600,8 @@ function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
  * @returns 触发的建造决策数量
  */
 export function buildForColdGoods(world: GameWorld): number {
-  // 每200tick运行一次（约8游戏小时）
-  if (world.tick % 200 !== 0) {
+  // 从每200tick改为每96tick运行一次（约4游戏小时，提高响应速度）
+  if (world.tick % 96 !== 0) {
     return 0;
   }
   
@@ -4595,7 +4623,7 @@ export function buildForColdGoods(world: GameWorld): number {
   const c = world.companies;
   
   // 为每个冷门商品找一个合适的AI公司来建造
-  for (const cold of coldGoods.slice(0, 3)) { // 每次最多处理3个冷门商品
+  for (const cold of coldGoods.slice(0, 5)) { // 每次最多处理5个冷门商品（从3提升）
     // 找能生产该商品的建筑
     const buildingInfo = findBuildingForGoods(cold.goodsId);
     if (!buildingInfo) {

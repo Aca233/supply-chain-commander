@@ -1088,6 +1088,52 @@ export function calculateBuildingModifiers(
   };
 }
 
+function normalizeBuildingSpecificMethods(
+  buildingTypeId: number,
+  selectedMethods: Record<string, number> | number[]
+): Record<string, number> {
+  if (!Array.isArray(selectedMethods)) {
+    return selectedMethods;
+  }
+
+  const slots = NewMethodsSystem.getBuildingSlots(buildingTypeId);
+  const normalized: Record<string, number> = {};
+
+  for (let i = 0; i < slots.length; i++) {
+    const methodId = selectedMethods[i];
+    if (methodId > 0) {
+      normalized[slots[i].id] = methodId;
+    }
+  }
+
+  return normalized;
+}
+
+function convertComputedModifiersToLegacy(
+  modifiers: NewMethodsSystem.ComputedModifiers
+): ProductionModifiers {
+  const inputMultipliers = new Map(modifiers.inputMultipliers);
+  const outputMultipliers = new Map(modifiers.outputMultipliers);
+
+  if (modifiers.allInputMultiplier !== 1.0) {
+    inputMultipliers.set(0, (inputMultipliers.get(0) ?? 1.0) * modifiers.allInputMultiplier);
+  }
+
+  if (modifiers.allOutputMultiplier !== 1.0) {
+    outputMultipliers.set(0, (outputMultipliers.get(0) ?? 1.0) * modifiers.allOutputMultiplier);
+  }
+
+  return {
+    inputMultipliers,
+    outputMultipliers,
+    laborMultiplier: modifiers.laborMultiplier,
+    energyMultiplier: modifiers.energyMultiplier,
+    maintenanceMultiplier: modifiers.maintenanceMultiplier,
+    qualityBonus: modifiers.qualityBonus,
+    pollutionMultiplier: modifiers.pollutionMultiplier,
+  };
+}
+
 /**
  * 获取建筑的综合生产修正（统一接口）
  * 优先使用新系统
@@ -1098,22 +1144,9 @@ export function getProductionModifiersForBuilding(
 ): ProductionModifiers {
   // 优先使用新系统
   if (newSystemInitialized && hasBuildingSpecificMethods(buildingTypeId)) {
-    const methodsRecord = Array.isArray(selectedMethods)
-      ? {} // 旧格式不适用于新系统
-      : selectedMethods;
-    
-    if (!Array.isArray(selectedMethods)) {
-      const modifiers = NewMethodsSystem.computeModifiers(buildingTypeId, methodsRecord);
-      return {
-        inputMultipliers: modifiers.inputMultipliers,
-        outputMultipliers: modifiers.outputMultipliers,
-        laborMultiplier: modifiers.laborMultiplier,
-        energyMultiplier: modifiers.energyMultiplier,
-        maintenanceMultiplier: modifiers.maintenanceMultiplier,
-        qualityBonus: modifiers.qualityBonus,
-        pollutionMultiplier: modifiers.pollutionMultiplier,
-      };
-    }
+    const methodsRecord = normalizeBuildingSpecificMethods(buildingTypeId, selectedMethods);
+    const modifiers = NewMethodsSystem.computeModifiers(buildingTypeId, methodsRecord);
+    return convertComputedModifiersToLegacy(modifiers);
   }
   
   // 回退到旧系统

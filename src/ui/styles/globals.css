@@ -829,6 +829,13 @@
 .animate-slideUpAndFade { animation: slideUpAndFade 200ms ease-out; }
 .animate-slideRightAndFade { animation: slideRightAndFade 200ms ease-out; }
 
+/* 新闻面板 - 从右侧滑入 */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.animate-slide-in-right { animation: slideInRight 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
 /* ==================== 浅色主题特殊覆盖 ==================== */
 
 /* 确保表格行悬停在浅色模式下正确显示 */

@@ -662,10 +662,22 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
     const maxDemand = Math.min(supplyBasedMax, priceBasedMax, absoluteMax);
     newDemand = Math.min(newDemand, maxDemand);
     
-    // 使用滑动平均更新需求
+    // 使用非对称滑动平均更新需求
+    // 核心思路：消费者"想要"商品是相对稳定的，不应因供给短缺而消失
     const oldDemand = world.goods.demands[goods.id];
     if (oldDemand > 0) {
-      world.goods.demands[goods.id] = newDemand * smoothingFactor + oldDemand * (1 - smoothingFactor);
+      // 当新需求高于旧需求时，快速响应（消费者购买意愿增强）
+      // 当新需求低于旧需求时，缓慢下降（消费者不会突然不想要某件商品）
+      if (newDemand >= oldDemand) {
+        // 需求上升：70%新+30%旧，响应更快
+        world.goods.demands[goods.id] = newDemand * 0.7 + oldDemand * 0.3;
+      } else {
+        // 需求下降：30%新+70%旧，防止因短期供给中断导致需求崩溃
+        world.goods.demands[goods.id] = newDemand * 0.3 + oldDemand * 0.7;
+      }
+      // 底线保护：永远不低于新鲜计算值的20%
+      // 这确保即使供给完全中断，消费者"想要"的基本需求不会归零
+      world.goods.demands[goods.id] = Math.max(world.goods.demands[goods.id], newDemand * 0.2);
     } else {
       world.goods.demands[goods.id] = newDemand;
     }
@@ -913,29 +925,25 @@ export function getDemandSummary(world: GameWorld): {
 export function decayUnmetDemand(world: GameWorld): void {
   // 每天结束时执行衰减
   if (world.tick % TICKS_PER_DAY !== 0) return;
-  
+
   const DECAY_RATE = 0.9;  // 保留90%的未满足需求
-  const MINIMUM_DEMAND_FLOOR = 50;  // 每种商品最低需求50单位
-  
+
   for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
     let currentDemand = world.goods.demands[i];
     const supply = world.goods.supplies[i];
-    
-    // 【P0修复v2】强制供需比约束
-    // 在衰减前先检查并限制供需比
+
+    // 强制供需比约束
     if (supply > 0) {
       const currentRatio = currentDemand / supply;
       if (currentRatio > MAX_SUPPLY_DEMAND_RATIO) {
-        // 将需求限制到供给的MAX_SUPPLY_DEMAND_RATIO倍
         currentDemand = supply * MAX_SUPPLY_DEMAND_RATIO;
         world.goods.demands[i] = currentDemand;
       }
     } else if (currentDemand > 100000) {
-      // 供给为0但需求很大，限制需求上限
       currentDemand = 100000;
       world.goods.demands[i] = currentDemand;
     }
-    
+
     // 只对未满足的需求部分进行衰减
     if (currentDemand > supply && currentDemand > 0) {
       const satisfiedRatio = supply / currentDemand;
@@ -943,26 +951,21 @@ export function decayUnmetDemand(world: GameWorld): void {
       const unsatisfiedDemand = currentDemand * (1 - satisfiedRatio);
       world.goods.demands[i] = satisfiedDemand + unsatisfiedDemand * DECAY_RATE;
     }
-    
-    // 确保需求不低于最低底线（针对消费品）
-    const goods = ALL_GOODS[i];
-    if (goods && goods.isConsumerGood) {
-      const priceAdjustedFloor = MINIMUM_DEMAND_FLOOR * (100 / Math.max(10, goods.basePrice));
-      world.goods.demands[i] = Math.max(world.goods.demands[i], priceAdjustedFloor);
-    }
-    
-    // 同时重置供给数据（每天重新计算）
-    world.goods.supplies[i] *= 0.7;
+
+    // 供给平滑衰减（从0.7改为0.85，避免供给数据短期剧烈下降）
+    world.goods.supplies[i] *= 0.85;
   }
-  
+
   // 调试日志
   if (world.tick % (TICKS_PER_DAY * 10) === 0) {
     let totalDemand = 0;
     let totalSupply = 0;
+    let dormantCount = 0;
     for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
       totalDemand += world.goods.demands[i];
       totalSupply += world.goods.supplies[i];
+      if (world.goods.supplies[i] < 1) dormantCount++;
     }
-    console.log(`[需求衰减 T${world.tick}] 总需求:${totalDemand.toFixed(0)}, 总供给:${totalSupply.toFixed(0)}, 衰减率:${DECAY_RATE}`);
+    console.log(`[需求衰减 T${world.tick}] 总需求:${totalDemand.toFixed(0)}, 总供给:${totalSupply.toFixed(0)}, 零供应:${dormantCount}`);
   }
 }

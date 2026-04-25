@@ -1,7 +1,7 @@
 /**
  * 生产引擎
  * 批量处理所有建筑的生产计算
- * 包含劳动力和能源系统以及生产方式槽位修正
+ * 包含劳动力约束与生产方式槽位修正
  * 支持新的建筑专属生产方式系统
  * 集成附属建筑效果系统
  * 
@@ -62,10 +62,7 @@ const productionCache: Map<string, ProductionCache> = new Map();
 interface CompanyResources {
   totalLabor: number;         // 总可用劳动力
   usedLabor: number;          // 已使用劳动力
-  totalEnergy: number;        // 总可用能源
-  usedEnergy: number;         // 已使用能源
   laborShortage: boolean;     // 是否劳动力短缺
-  energyShortage: boolean;    // 是否能源短缺
 }
 
 // 公司资源追踪
@@ -152,27 +149,15 @@ function getProductionCache(buildingTypeId: number, modeId: number): ProductionC
 /**
  * 计算公司的总可用资源
  * 劳动力 = 基础值 + 建筑数量 × 建筑劳动力
- * 能源 = 发电厂产能 + 基础电网
  */
 function calculateCompanyResources(world: GameWorld, companyId: number): CompanyResources {
   let totalLabor = 1000; // 基础劳动力池
-  let totalEnergy = 5000; // 基础电网供应
   
   // 统计公司建筑数量和类型
   let buildingCount = 0;
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] === companyId) {
       buildingCount++;
-      const typeId = world.buildings.types[i];
-      const modeId = world.buildings.outputModeIds[i];
-      
-      // 发电厂产生能源 (建筑类型39是发电厂，检查输出是否包含电力)
-      if (typeId === 39) { // POWER_PLANT
-        const cache = getProductionCache(typeId, modeId);
-        if (cache && cache.outputGoods.includes(79)) { // GoodsId.ELECTRICITY = 79
-          totalEnergy += cache.outputAmounts[0];
-        }
-      }
     }
   }
   
@@ -187,10 +172,7 @@ function calculateCompanyResources(world: GameWorld, companyId: number): Company
   return {
     totalLabor,
     usedLabor: 0,
-    totalEnergy,
-    usedEnergy: 0,
     laborShortage: false,
-    energyShortage: false,
   };
 }
 
@@ -209,13 +191,10 @@ function getBuildingProductionModifiers(world: GameWorld, buildingId: number): P
   // 检查是否使用新的建筑专属生产方式系统
   if (hasBuildingSpecificMethods(buildingTypeId)) {
     // 新系统：使用建筑专属的生产方式
-    const slotCount = MAX_SLOTS; // 新系统可能有更多槽位
+    const slotCount = getBuildingSlotCount(buildingTypeId);
     
     for (let i = 0; i < slotCount; i++) {
-      const methodId = b.slotMethods[slotOffset + i];
-      if (methodId > 0) {
-        slotMethods.push(methodId);
-      }
+      slotMethods.push(b.slotMethods[slotOffset + i] ?? 0);
     }
     
     // 使用新系统计算修正，并转换为旧格式
@@ -316,12 +295,11 @@ function processBuildingProduction(
   world: GameWorld,
   buildingId: number,
   resources: CompanyResources
-): { produced: boolean; laborUsed: number; energyUsed: number; qualityBonus: number } {
+): { produced: boolean; laborUsed: number; qualityBonus: number } {
   const b = world.buildings;
-  const c = world.companies;
   const g = world.goods;
   
-  const result = { produced: false, laborUsed: 0, energyUsed: 0, qualityBonus: 0 };
+  const result = { produced: false, laborUsed: 0, qualityBonus: 0 };
   
   // 检查建筑是否激活
   if (!b.isActive[buildingId]) {
@@ -401,24 +379,6 @@ function processBuildingProduction(
     }
   }
   
-  // 计算能源修正（生产方式 + 附属建筑）
-  const energyMultiplier = modifiers.energyMultiplier * (1 - subsidiaryEffects.energyReduction);
-  
-  // 检查能源是否足够（应用能源修正）
-  const energyNeeded = cache.energyRequired * efficiency * energyMultiplier;
-  const availableEnergy = resources.totalEnergy - resources.usedEnergy;
-  if (energyNeeded > availableEnergy) {
-    // 能源不足，降低产能
-    if (availableEnergy > 0) {
-      const energyRatio = availableEnergy / energyNeeded;
-      tickOutput *= energyRatio;
-      resources.energyShortage = true;
-    } else {
-      resources.energyShortage = true;
-      return result; // 完全没有能源，无法生产
-    }
-  }
-  
   // 计算输入修正（生产方式 + 附属建筑的输入减少）
   const inputReductionMultiplier = 1 - subsidiaryEffects.inputReduction;
   
@@ -458,7 +418,6 @@ function processBuildingProduction(
   
   // 记录资源使用
   result.laborUsed = Math.min(laborNeeded, availableLabor);
-  result.energyUsed = Math.min(energyNeeded, availableEnergy);
   
   // 合并品质加成（生产方式 + 附属建筑）
   result.qualityBonus = modifiers.qualityBonus + subsidiaryEffects.qualityBonus;
@@ -610,9 +569,7 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     producedCount: 0,
     blockedCount: 0,
     laborShortage: 0,
-    energyShortage: 0,
     totalLaborUsed: 0,
-    totalEnergyUsed: 0,
     totalQualityBonus: 0,
   };
   
@@ -644,9 +601,7 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     if (prodResult.produced) {
       result.producedCount++;
       resources.usedLabor += prodResult.laborUsed;
-      resources.usedEnergy += prodResult.energyUsed;
       result.totalLaborUsed += prodResult.laborUsed;
-      result.totalEnergyUsed += prodResult.energyUsed;
       result.totalQualityBonus += prodResult.qualityBonus;
     } else if (b.isActive[i]) {
       result.blockedCount++;
@@ -656,7 +611,6 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
   // 统计资源短缺情况
   for (const [, res] of companyResources) {
     if (res.laborShortage) result.laborShortage++;
-    if (res.energyShortage) result.energyShortage++;
   }
   
   return result;
@@ -721,9 +675,7 @@ export interface ProductionResult {
   producedCount: number;    // 成功生产的建筑数
   blockedCount: number;     // 因缺少输入而阻塞的建筑数
   laborShortage: number;    // 劳动力短缺的公司数
-  energyShortage: number;   // 能源短缺的公司数
   totalLaborUsed: number;   // 总劳动力使用
-  totalEnergyUsed: number;  // 总能源使用
   totalQualityBonus: number; // 总品质加成
 }
 
