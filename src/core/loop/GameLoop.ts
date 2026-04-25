@@ -22,7 +22,16 @@ import { applyOperatingCosts } from '../finance/OperatingCosts';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
 import { addBuilding } from '../world/WorldInitializer';
-import { DEFAULT_TICK_INTERVAL, BASE_INTEREST_RATE, TARGET_INFLATION, GOODS_COUNT, AI_BATCH_SIZE } from '../constants';
+import {
+  DEFAULT_TICK_INTERVAL,
+  BASE_INTEREST_RATE,
+  TARGET_INFLATION,
+  GOODS_COUNT,
+  AI_BATCH_SIZE,
+  TICKS_PER_DAY,
+  TICKS_PER_MONTH,
+  TICKS_PER_YEAR,
+} from '../constants';
 import { perfMonitor, TickPerformanceReport } from '../performance/PerformanceMonitor';
 import { memoryManager } from '../performance/MemoryManager';
 import { tickAllPools } from '../performance/ObjectPool';
@@ -155,8 +164,8 @@ export class GameLoop {
   private lastPerfReport: TickPerformanceReport | null = null;
   private aiWorkerInitialized: boolean = false;
   private newsSystemInitialized: boolean = false;
-  private readonly recentRetailRevenue = new Float64Array(24);
-  private readonly recentServiceRevenue = new Float64Array(24);
+  private readonly recentRetailRevenue = new Float64Array(TICKS_PER_MONTH);
+  private readonly recentServiceRevenue = new Float64Array(TICKS_PER_MONTH);
   
   constructor(world: GameWorld) {
     this.world = world;
@@ -471,7 +480,7 @@ export class GameLoop {
     const serviceConsumption = processServiceConsumption(this.world);
     endService();
 
-    const dailyActivitySlot = (currentTick - 1) % 24;
+    const dailyActivitySlot = (currentTick - 1) % TICKS_PER_MONTH;
     this.recentRetailRevenue[dailyActivitySlot] = retailResult.totalRevenue ?? 0;
     this.recentServiceRevenue[dailyActivitySlot] = serviceConsumption.totalRevenue ?? 0;
     
@@ -506,12 +515,14 @@ export class GameLoop {
     
     // 14. 处理渠道订单交付和付款
     // 【性能优化】错峰执行：避免与Deep决策(tick%8===0)冲突
-    if (currentTick % 24 === 2) {  // 从 tick%24===0 改为 tick%24===2
+    const monthlyPhase = (currentTick - 1) % TICKS_PER_MONTH;
+
+    if (monthlyPhase === 1) {
       const endDistribution = perfMonitor.startMeasure('distribution');
       distributionManager.processDeliveries(currentTick);
       endDistribution();
     }
-    if (currentTick % 24 === 10) {  // 从 tick%24===6 改为 tick%24===10
+    if (monthlyPhase === 9) {
       const endPayments = perfMonitor.startMeasure('distribution-payments');
       distributionManager.processPayments(currentTick);
       endPayments();
@@ -530,7 +541,7 @@ export class GameLoop {
     
     // 17. 更新期货市场（错峰执行：从tick%24===0改为tick%24===18）
     let expiredFuturesContracts = 0;
-    if (currentTick % 24 === 18) {
+    if (monthlyPhase === 17) {
       const endFutures = perfMonitor.startMeasure('futures');
       const spotPrices = new Map<number, number>();
       for (let i = 0; i < this.world.goods.count; i++) {
@@ -538,7 +549,7 @@ export class GameLoop {
       }
       
       // 创建新合约（每月初）
-      if (currentTick % (30 * 24) === 18) {
+      if (currentTick % TICKS_PER_MONTH === 0) {
         futuresMarket.createMonthlyContracts(currentTick, spotPrices);
       }
       
@@ -808,7 +819,7 @@ export class GameLoop {
    */
   private updateBusinessCycle(): void {
     const stats = this.world.economyStats;
-    const cycleLength = 8760 * 5;  // 5年周期 (5年 × 8760 ticks/年)
+    const cycleLength = TICKS_PER_YEAR * 5;
     
     // 1. 计算周期位置 (0-1，使用正弦波)
     const radians = (this.world.tick % cycleLength) / cycleLength * 2 * Math.PI;
@@ -829,7 +840,7 @@ export class GameLoop {
     this.applyCycleEffects(stats);
     
     // 4. 每天更新GDP：等待一整天数据后再初始化，避免开局占位值导致假暴跌
-    if (this.world.tick >= 24 && this.world.tick % 24 === 0) {
+    if (this.world.tick >= TICKS_PER_DAY && this.world.tick % TICKS_PER_DAY === 0) {
       this.updateGDP();
     }
   }
@@ -849,13 +860,14 @@ export class GameLoop {
     
     // 通胀：繁荣期高，衰退期低
     // 滞后于周期位置约1/4周期
-    const inflationLag = Math.sin((this.world.tick % (8760 * 5)) / (8760 * 5) * 2 * Math.PI - Math.PI / 4);
+    const cycleLength = TICKS_PER_YEAR * 5;
+    const inflationLag = Math.sin((this.world.tick % cycleLength) / cycleLength * 2 * Math.PI - Math.PI / 4);
     const inflationPosition = (inflationLag + 1) / 2;
     stats.inflation = TARGET_INFLATION + (inflationPosition - 0.5) * 0.04; // 目标2%，波动±2%
     
     // 失业率：与周期相反，衰退期高
     // 失业率滞后于经济周期约1/8周期
-    const unemploymentLag = Math.sin((this.world.tick % (8760 * 5)) / (8760 * 5) * 2 * Math.PI + Math.PI / 8);
+    const unemploymentLag = Math.sin((this.world.tick % cycleLength) / cycleLength * 2 * Math.PI + Math.PI / 8);
     const unemploymentPosition = (unemploymentLag + 1) / 2;
     stats.unemployment = 0.03 + (1 - unemploymentPosition) * 0.07; // 3%-10%范围
     
@@ -1000,31 +1012,34 @@ export class GameLoop {
    * 更新GDP
    */
   private updateGDP(): void {
-    // 这里更接近“日经济活动规模”，包含市场成交与零售/服务终端收入。
-    let dailyGDP = 0;
+    // Use a rolling day window under the day model so GDP updates every tick
+    // without exploding the annualization factor when each tick is already a day.
+    const windowLength = Math.max(TICKS_PER_DAY, Math.min(TICKS_PER_MONTH, this.world.tick));
+    let windowRevenue = 0;
     
-    // 统计最近24个tick的成交总额
+    // 统计滚动窗口内的成交总额
     const trades = this.world.trades;
     const currentTick = this.world.tick;
     
     forEachRetainedTradeNewestFirst(this.world, tradeIdx => {
       const tradeTick = trades.ticks[tradeIdx];
-      if (tradeTick <= currentTick - 24) {
+      if (tradeTick <= currentTick - windowLength) {
         return false;
       }
 
-      if (tradeTick > currentTick - 24 && tradeTick <= currentTick) {
-        dailyGDP += trades.quantities[tradeIdx] * trades.prices[tradeIdx];
+      if (tradeTick > currentTick - windowLength && tradeTick <= currentTick) {
+        windowRevenue += trades.quantities[tradeIdx] * trades.prices[tradeIdx];
       }
     });
 
-    for (let i = 0; i < 24; i++) {
-      dailyGDP += this.recentRetailRevenue[i];
-      dailyGDP += this.recentServiceRevenue[i];
+    for (let offset = 0; offset < windowLength; offset++) {
+      const slot = (currentTick - 1 - offset + TICKS_PER_MONTH) % TICKS_PER_MONTH;
+      windowRevenue += this.recentRetailRevenue[slot];
+      windowRevenue += this.recentServiceRevenue[slot];
     }
 
-    // 年化GDP（乘以365天）
-    const annualizedGDP = dailyGDP * 365;
+    const averageDailyGDP = windowRevenue / windowLength;
+    const annualizedGDP = averageDailyGDP * TICKS_PER_YEAR;
 
     if (this.world.economyStats.gdp <= 0) {
       this.world.economyStats.gdp = annualizedGDP;

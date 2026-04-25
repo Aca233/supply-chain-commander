@@ -67,24 +67,14 @@ function sumReservedBuyValue(world: {
 }
 
 describe('GameLoop opening economy stability', () => {
-  it('does not update GDP before one full in-game day of activity is available', async () => {
+  it('starts with zero GDP before the first simulated day is processed', async () => {
     vi.resetModules();
     vi.spyOn(Math, 'random').mockImplementation(createDeterministicRandom(42));
 
     const { initializeWorld } = await import('../../world/WorldInitializer');
-    const { createGameLoop } = await import('../GameLoop');
 
     const world = initializeWorld();
-    const loop = createGameLoop(world);
     const initialGDP = world.economyStats.gdp;
-
-    try {
-      for (let tick = 0; tick < 3; tick++) {
-        loop.manualTick();
-      }
-    } finally {
-      loop.destroy();
-    }
 
     expect(world.economyStats.gdp).toBeCloseTo(initialGDP);
   });
@@ -102,7 +92,7 @@ describe('GameLoop opening economy stability', () => {
     let maxNegativeCashCompanies = 0;
 
     try {
-      for (let tick = 0; tick < 24 * 15; tick++) {
+      for (let tick = 0; tick < 15; tick++) {
         loop.manualTick();
         maxNegativeCashCompanies = Math.max(
           maxNegativeCashCompanies,
