@@ -49,7 +49,7 @@ export function createEmptyPlayerFinancialSnapshot(): PlayerFinancialSnapshot {
 }
 
 function safeNumber(value: number | undefined): number {
-  return Number.isFinite(value) ? value : 0;
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function sumHistoryWindow<T extends FinancialHistoryPointLike>(

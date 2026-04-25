@@ -66,6 +66,13 @@ import {
   CreditProfile,
   LoanType
 } from '@/core/finance/BankingSystem';
+import { calculateCompanyOperatingCostPerTick } from '@/core/finance/OperatingCosts';
+import {
+  PlayerFinancialSnapshot,
+  calculateCompanyAssetBreakdown,
+  calculatePlayerFinancialSnapshot,
+  createEmptyPlayerFinancialSnapshot,
+} from '@/core/finance/FinancialSnapshot';
 import {
   getMarketState,
   getStock,
@@ -221,6 +228,7 @@ interface HistoryDataPoint {
   // 额外的支出来源
   maintenanceCost: number;
   laborCost: number;
+  energyCost: number;
 }
 
 export interface BuildingProductionControlView {
@@ -254,6 +262,7 @@ interface GameState {
   playerCash: number;
   playerAssets: number;
   playerBuildings: number;
+  playerFinancialSnapshot: PlayerFinancialSnapshot;
   
   // UI状态
   ui: UIState;
@@ -462,6 +471,22 @@ interface GameActions {
   exportMonthComparisonJSON: (monthKeys: string[], options?: Partial<PriceExportOptions>) => void;
 }
 
+function syncPlayerFinancialState(
+  state: Pick<GameState, 'playerCash' | 'playerAssets' | 'playerFinancialSnapshot' | 'financialHistory'>,
+  world: GameWorld | null,
+  fallbackTick: number,
+) {
+  const snapshot = calculatePlayerFinancialSnapshot({
+    world,
+    currentTick: world?.tick ?? fallbackTick,
+    financialHistory: state.financialHistory,
+  });
+
+  state.playerCash = snapshot.cash;
+  state.playerAssets = snapshot.operatingAssets;
+  state.playerFinancialSnapshot = snapshot;
+}
+
 let notificationId = 0;
 
 // 将world和gameLoop保存在store外部，避免被immer冻结
@@ -494,6 +519,7 @@ export const useGameStore = create<GameState & GameActions>()(
     playerCash: 0,
     playerAssets: 0,
     playerBuildings: 0,
+    playerFinancialSnapshot: createEmptyPlayerFinancialSnapshot(),
     ui: {
       selectedGoodsId: null,
       selectedBuildingId: null,
@@ -515,6 +541,13 @@ export const useGameStore = create<GameState & GameActions>()(
     // ==================== 初始化 ====================
     initGame: () => {
       const world = initializeWorld();
+      let lastRecordedPlayerCash = world.companies.cash[0];
+      let pendingTradeRevenue = 0;
+      let pendingTradeCost = 0;
+      let pendingRetailRevenue = 0;
+      let pendingMaintenanceCost = 0;
+      let pendingLaborCost = 0;
+      let pendingEnergyCost = 0;
       
       // 【重要】在创建GameLoop之前重置新闻系统，因为GameLoop会初始化并捕获快照
       fullResetNewsStore();  // 清除localStorage中的旧新闻
@@ -548,6 +581,28 @@ export const useGameStore = create<GameState & GameActions>()(
         const currentTick = result.tick;
         const shouldUpdateUI = currentTick - lastUIUpdateTick >= UI_UPDATE_INTERVAL;
         const shouldUpdateHistory = currentTick % HISTORY_UPDATE_INTERVAL === 0;
+        const playerOperatingCosts = worldRef
+          ? calculateCompanyOperatingCostPerTick(worldRef, 0)
+          : { maintenance: 0, labor: 0, energy: 0, total: 0 };
+        
+        let tradeRevenue = 0;
+        let tradeCost = 0;
+        const trades = result.matching.trades || [];
+        for (const trade of trades) {
+          if (trade.sellCompanyId === 0) {
+            tradeRevenue += trade.value;
+          }
+          if (trade.buyCompanyId === 0) {
+            tradeCost += trade.value;
+          }
+        }
+        
+        pendingTradeRevenue += tradeRevenue;
+        pendingTradeCost += tradeCost;
+        pendingRetailRevenue += result.retailResult.playerRevenue || 0;
+        pendingMaintenanceCost += playerOperatingCosts.maintenance;
+        pendingLaborCost += playerOperatingCosts.labor;
+        pendingEnergyCost += playerOperatingCosts.energy;
         
         // 始终更新tick（轻量级）
         set((state) => {
@@ -561,8 +616,7 @@ export const useGameStore = create<GameState & GameActions>()(
             
             // 更新玩家数据（从外部引用读取）
             if (worldRef) {
-              state.playerCash = worldRef.companies.cash[0];
-              state.playerAssets = worldRef.companies.totalAssets[0];
+              syncPlayerFinancialState(state, worldRef, currentTick);
               
               // 优化：使用缓存的建筑数量，仅在特定间隔更新
               if (currentTick - cachedBuildingCountTick >= BUILDING_COUNT_CACHE_INTERVAL) {
@@ -583,47 +637,19 @@ export const useGameStore = create<GameState & GameActions>()(
           
           // 财务历史数据更新（降低频率）
           if (shouldUpdateHistory && worldRef) {
-            // 从交易中计算收入支出
-            let tradeRevenue = 0;
-            let tradeCost = 0;
-            const trades = result.matching.trades || [];
-            for (const trade of trades) {
-              if (trade.sellCompanyId === 0) {
-                tradeRevenue += trade.value;
-              }
-              if (trade.buyCompanyId === 0) {
-                tradeCost += trade.value;
-              }
-            }
-            
             // 计算生产价值（估算：基于玩家建筑的产出）
             let productionValue = 0;
-            let maintenanceCost = 0;
-            let laborCost = 0;
-            let retailRevenue = 0;
-            
-            // 从建筑计算维护和劳动力成本
-            for (let i = 0; i < worldRef.buildings.count; i++) {
-              if (worldRef.buildings.owners[i] === 0) {
-                const typeId = worldRef.buildings.types[i];
-                const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-                if (buildingDef) {
-                  maintenanceCost += buildingDef.maintenanceCost / 24; // 每tick的维护成本
-                  laborCost += buildingDef.laborCost / 24; // 每tick的劳动力成本
-                }
-              }
-            }
+            const maintenanceCost = pendingMaintenanceCost;
+            const laborCost = pendingLaborCost;
+            const energyCost = pendingEnergyCost;
+            const retailRevenue = pendingRetailRevenue;
             
             // 综合收入和支出
-            const totalRevenue = tradeRevenue + retailRevenue;
-            const totalCost = tradeCost + maintenanceCost + laborCost;
+            const totalRevenue = pendingTradeRevenue + retailRevenue;
+            const totalCost = pendingTradeCost + maintenanceCost + laborCost + energyCost;
             
-            // 使用现金变化来补充未跟踪的收支
-            const prevCash = state.financialHistory.length > 0
-              ? state.financialHistory[state.financialHistory.length - 1].cash
-              : worldRef.companies.cash[0];
             const currentCash = worldRef.companies.cash[0];
-            const cashChange = currentCash - prevCash;
+            const cashChange = currentCash - lastRecordedPlayerCash;
             
             // 如果现金变化与计算的利润不符，调整收入或支出
             const calculatedProfit = totalRevenue - totalCost;
@@ -631,6 +657,7 @@ export const useGameStore = create<GameState & GameActions>()(
             
             let adjustedRevenue = totalRevenue;
             let adjustedCost = totalCost;
+            const assetBreakdown = calculateCompanyAssetBreakdown(worldRef, 0);
             
             if (unmatchedChange > 0) {
               // 有未记录的收入
@@ -646,11 +673,12 @@ export const useGameStore = create<GameState & GameActions>()(
               cost: adjustedCost,
               profit: adjustedRevenue - adjustedCost,
               cash: currentCash,
-              assets: worldRef.companies.totalAssets[0],
+              assets: assetBreakdown.totalAssets,
               retailRevenue,
               productionValue,
               maintenanceCost,
               laborCost,
+              energyCost,
             };
             
             state.financialHistory.push(historyPoint);
@@ -659,15 +687,25 @@ export const useGameStore = create<GameState & GameActions>()(
             if (state.financialHistory.length > 100) {
               state.financialHistory = state.financialHistory.slice(-100);
             }
+
+            syncPlayerFinancialState(state, worldRef, currentTick);
+            
+            lastRecordedPlayerCash = currentCash;
+            pendingTradeRevenue = 0;
+            pendingTradeCost = 0;
+            pendingRetailRevenue = 0;
+            pendingMaintenanceCost = 0;
+            pendingLaborCost = 0;
+            pendingEnergyCost = 0;
           }
         });
       });
       
       set((state) => {
         state.initialized = true;
-        state.playerCash = world.companies.cash[0];
         state.tick = world.tick;
         state.gameDate = formatGameDate(world.tick);
+        syncPlayerFinancialState(state, world, world.tick);
       });
     },
     
@@ -721,7 +759,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const orderId = createBuyOrder(worldRef, 0, goodsId, quantity, price);
       if (orderId !== null) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playOrderPlace();
         get().addNotification('success', `买单已提交: ${quantity}单位 @ ¥${price.toFixed(2)}`);
@@ -755,7 +793,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const success = cancelOrder(worldRef, orderIdx);
       if (success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playOrderCancel();
         get().addNotification('info', '订单已取消');
@@ -829,9 +867,9 @@ export const useGameStore = create<GameState & GameActions>()(
         }
         
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
           // 强制触发 tick 更新以刷新建造队列UI
           state.tick = state.tick + 0.001;
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         
         soundManager.playBuildComplete();
@@ -935,9 +973,9 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       
       set((state) => {
-        state.playerCash = worldRef!.companies.cash[0];
         // 强制触发 tick 更新以刷新建造队列UI
         state.tick = state.tick + 0.001;
+        syncPlayerFinancialState(state, worldRef, state.tick);
       });
       
       soundManager.playUpgrade();
@@ -1125,7 +1163,7 @@ export const useGameStore = create<GameState & GameActions>()(
       
       if (result.approved) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
         get().addNotification('success', `贷款申请成功！获得 ¥${amount.toLocaleString()}`);
@@ -1144,7 +1182,7 @@ export const useGameStore = create<GameState & GameActions>()(
       
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playTradeSuccess();
         get().addNotification('success', `贷款已提前还清${result.penalty ? `，罚金 ¥${result.penalty.toFixed(0)}` : ''}`);
@@ -1452,9 +1490,9 @@ export const useGameStore = create<GameState & GameActions>()(
         worldRef.buildings.slotMethods[slotOffset + slotIndex] = methodId;
         
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
           // 强制增加tick来触发UI刷新
           state.tick = state.tick + 0.001;
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         
         get().addNotification('success', `已切换到「${newMethod.name}」，花费 ¥${switchCost.toLocaleString()}`);
@@ -1491,7 +1529,7 @@ export const useGameStore = create<GameState & GameActions>()(
       
       if (success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         
         const method = METHODS_BY_ID.get(methodId);
@@ -1682,7 +1720,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const orderId = buyStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
       if (orderId !== null) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         const stock = getStock(stockCompanyId);
         soundManager.playTradeSuccess();
@@ -1717,7 +1755,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const success = initiateIPO(worldRef, 0, offeringShares, offeringPrice);
       if (success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
         get().addNotification('success', `IPO成功！发行${offeringShares}股 @ ¥${offeringPrice}`);
@@ -1746,7 +1784,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const result = initiateAcquisition(worldRef, 0, targetId, 'friendly', targetSharePercent, offerPrice);
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playTradeSuccess();
         get().addNotification('success', `收购要约已发起，目标持股 ${(targetSharePercent * 100).toFixed(0)}%`);
@@ -1767,8 +1805,8 @@ export const useGameStore = create<GameState & GameActions>()(
         const confirmResult = confirmAssetTransaction(worldRef, result.transactionId);
         if (confirmResult.success) {
           set((state) => {
-            state.playerCash = worldRef!.companies.cash[0];
             state.playerBuildings++;
+            syncPlayerFinancialState(state, worldRef, state.tick);
           });
           soundManager.playCoin();
           get().addNotification('success', `资产购买成功！`);
@@ -1847,7 +1885,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const result = requestDividend(worldRef, companyId, amount);
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
         get().addNotification('success', `分红成功！获得 ¥${result.playerReceived?.toLocaleString() || 0}`);
@@ -1863,6 +1901,7 @@ export const useGameStore = create<GameState & GameActions>()(
           if (toId === 0) {
             state.playerBuildings++;
           }
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         get().addNotification('success', '资产转移成功');
       }
@@ -1991,9 +2030,9 @@ export const useGameStore = create<GameState & GameActions>()(
       
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
           // 强制触发 tick 更新以刷新 UI
           state.tick = state.tick + 0.001;
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playBuildComplete();
         get().addNotification('success', `已安装「${def.name}」，花费 ¥${def.buildCost.toLocaleString()}`);
@@ -2057,7 +2096,7 @@ export const useGameStore = create<GameState & GameActions>()(
       
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         
         soundManager.playUpgrade();
@@ -2163,7 +2202,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const result = cancelConstructionTask(worldRef, taskId);
       if (result.success) {
         set((state) => {
-          state.playerCash = worldRef!.companies.cash[0];
+          syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playOrderCancel();
         get().addNotification('info', `建造已取消，退还材料 ${result.refundedMaterials.length} 种`);

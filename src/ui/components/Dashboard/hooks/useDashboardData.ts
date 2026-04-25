@@ -184,12 +184,10 @@ function getControlLevelName(level: ControlLevel): string {
 export function useDashboardData(): DashboardData {
   const {
     getWorld,
-    playerCash,
-    playerAssets,
+    playerFinancialSnapshot,
     playerBuildings,
     tick,
     financialHistory,
-    getPlayerLoans,
     getPlayerCreditProfile,
     getPlayerPortfolio,
     getPlayerHoldings,
@@ -212,10 +210,6 @@ export function useDashboardData(): DashboardData {
 
   // ==================== KPI 数据 ====================
   const kpi = useMemo((): KPIData => {
-    const loans = getPlayerLoans();
-    const totalLiabilities = loans.reduce((sum, loan) => sum + loan.remainingPrincipal, 0);
-    const netWorth = playerCash + playerAssets - totalLiabilities;
-    
     // 建筑统计
     let active = 0, paused = 0, starved = 0;
     const buildings = getPlayerBuildings();
@@ -233,13 +227,6 @@ export function useDashboardData(): DashboardData {
       }
     }
 
-    // 日利润（最近24个tick）
-    let dailyProfit = 0;
-    const recentHistory = financialHistory.slice(-24);
-    for (const point of recentHistory) {
-      dailyProfit += point.profit;
-    }
-
     // 投资组合
     const portfolio = getPlayerPortfolio();
 
@@ -247,9 +234,9 @@ export function useDashboardData(): DashboardData {
     const credit = getPlayerCreditProfile();
 
     return {
-      netWorth,
-      cash: playerCash,
-      dailyProfit,
+      netWorth: playerFinancialSnapshot.netWorth,
+      cash: playerFinancialSnapshot.cash,
+      dailyProfit: playerFinancialSnapshot.dailyProfit,
       buildingCount: {
         total: playerBuildings,
         active,
@@ -260,7 +247,7 @@ export function useDashboardData(): DashboardData {
       creditRating: credit?.rating || 'N/A',
       creditScore: credit?.score || 0,
     };
-  }, [playerCash, playerAssets, playerBuildings, financialHistory, tick]);
+  }, [getPlayerBuildings, getPlayerCreditProfile, getPlayerPortfolio, playerBuildings, playerFinancialSnapshot]);
 
   // ==================== KPI 变化率 ====================
   const kpiChanges = useMemo((): KPIChanges => {

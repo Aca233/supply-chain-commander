@@ -137,9 +137,8 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
   className = '',
 }) => {
   const tick = useGameStore(s => s.tick);
-  const playerCash = useGameStore(s => s.playerCash);
-  const playerAssets = useGameStore(s => s.playerAssets);
   const playerBuildings = useGameStore(s => s.playerBuildings);
+  const playerFinancialSnapshot = useGameStore(s => s.playerFinancialSnapshot);
   const getWorld = useGameStore(s => s.getWorld);
   const getAllCompanyProfiles = useGameStore(s => s.getAllCompanyProfiles);
   
@@ -159,17 +158,6 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
       }
     }
 
-    // 计算总库存价值
-    let inventoryValue = 0;
-    for (let i = 0; i < (world.goods?.count || 0); i++) {
-      const qty = world.companies.inventories[i] || 0;
-      const price = world.goods.prices[i] || 0;
-      inventoryValue += qty * price;
-    }
-
-    // 计算净资产
-    const netWorth = playerCash + playerAssets + inventoryValue;
-
     // AI公司数量
     const companyProfiles = getAllCompanyProfiles();
     const aiCompanies = companyProfiles.filter(c => c.id !== 0).length;
@@ -180,15 +168,15 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
     return {
       general: [
         { label: '游戏时间', value: formatTime(tick), icon: '⏱️' },
-        { label: '净资产', value: formatMoney(netWorth), icon: '💰' },
-        { label: '现金余额', value: formatMoney(playerCash), icon: '💵' },
-        { label: '资产价值', value: formatMoney(playerAssets + inventoryValue), icon: '🏦' },
+        { label: '净资产', value: formatMoney(playerFinancialSnapshot.netWorth), icon: '💰' },
+        { label: '现金余额', value: formatMoney(playerFinancialSnapshot.cash), icon: '💵' },
+        { label: '资产价值', value: formatMoney(playerFinancialSnapshot.operatingAssets), icon: '🏦' },
       ] as StatItem[],
       production: [
         { label: '建筑数量', value: playerBuildingCount, icon: '🏭' },
         { label: '商品种类', value: GOODS_BY_ID.size, icon: '📦' },
         { label: '建筑类型', value: BUILDINGS_BY_ID.size, icon: '🏗️' },
-        { label: '库存价值', value: formatMoney(inventoryValue), icon: '📊' },
+        { label: '库存价值', value: formatMoney(playerFinancialSnapshot.inventoryValue), icon: '📊' },
       ] as StatItem[],
       market: [
         { label: 'AI对手', value: aiCompanies, icon: '🤖' },
@@ -197,11 +185,11 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
         { label: '总公司数', value: world.companies.count, icon: '🏢' },
       ] as StatItem[],
     };
-  }, [world, tick, playerCash, playerAssets, getAllCompanyProfiles]);
+  }, [world, tick, playerFinancialSnapshot, getAllCompanyProfiles]);
 
   // 计算里程碑进度
   const milestones = useMemo((): MilestoneItem[] => {
-    const netWorth = playerCash + playerAssets;
+    const netWorth = playerFinancialSnapshot.netWorth;
     const buildingCount = world ?
       Array.from({ length: world.buildings.count })
         .filter((_, i) => world.buildings.owners[i] === 0).length : 0;
@@ -262,7 +250,7 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
         achieved: tick >= 8760,
       },
     ];
-  }, [playerCash, playerAssets, world, tick, playerBuildings]);
+  }, [playerFinancialSnapshot.netWorth, world, tick, playerBuildings]);
 
   // 统计里程碑完成情况
   const achievedCount = milestones.filter(m => m.achieved).length;

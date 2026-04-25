@@ -1,0 +1,30 @@
+export interface BuildingOutputEstimate {
+  dailyAmount: number;
+  price: number;
+}
+
+export interface BuildingFinancialEstimateInput {
+  isActive: boolean;
+  dailyCost: number;
+  outputs: BuildingOutputEstimate[];
+}
+
+export interface BuildingFinancialEstimate {
+  dailyRevenue: number;
+  dailyCost: number;
+  dailyProfit: number;
+}
+
+export function calculateBuildingFinancialEstimate(
+  input: BuildingFinancialEstimateInput,
+): BuildingFinancialEstimate {
+  const dailyRevenue = input.isActive
+    ? input.outputs.reduce((sum, output) => sum + output.dailyAmount * output.price, 0)
+    : 0;
+
+  return {
+    dailyRevenue,
+    dailyCost: input.dailyCost,
+    dailyProfit: dailyRevenue - input.dailyCost,
+  };
+}

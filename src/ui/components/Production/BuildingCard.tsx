@@ -11,6 +11,7 @@ import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { CompactResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { BuildingProductionControlInline } from './BuildingProductionControlInline';
+import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
 
 // 设计系统组件
 import { Card, Badge, Button, ProgressBar } from '@/ui/design-system';
@@ -117,14 +118,12 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       price: number;
     }> = [];
     
-    let dailyRevenue = 0;
     const ticksRequired = production?.ticksRequired || 1;
     if (production && production.outputs) {
       for (const output of production.outputs) {
         const goods = ALL_GOODS.find(g => g.id === output.goodsId);
         const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
-        dailyRevenue += dailyAmount * price;
         
         outputs.push({
           goodsId: output.goodsId,
@@ -139,6 +138,11 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     const dailyCost = buildingDef
       ? buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost
       : 0;
+    const financialEstimate = calculateBuildingFinancialEstimate({
+      isActive: Boolean(isActive),
+      dailyCost,
+      outputs,
+    });
 
     // 确定状态
     let status: BuildingStatus = 'active';
@@ -186,9 +190,9 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       productionName,
       inputs,
       outputs,
-      dailyRevenue,
-      dailyCost,
-      dailyProfit: dailyRevenue - dailyCost,
+      dailyRevenue: financialEstimate.dailyRevenue,
+      dailyCost: financialEstimate.dailyCost,
+      dailyProfit: financialEstimate.dailyProfit,
       status,
       upgradeCost,
       canUpgrade,

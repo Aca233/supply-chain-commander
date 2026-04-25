@@ -8,9 +8,9 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT } from '@/core/constants';
 import { PersonalityType, AI_COMPANIES, AI_PERSONALITIES, AICompanyConfig } from '@/core/ai/AIPersonality';
 import { getStock, getHoldings, Holding, Stock, StockMarketState, getMarketState } from './StockMarket';
+import { calculateCompanyAssetBreakdown } from './FinancialSnapshot';
 
 /**
  * 股票信息视图
@@ -516,26 +516,19 @@ export function getCompanyProfile(world: GameWorld, companyId: number): CompanyP
   const name = world.companies.names[companyId] || `公司#${companyId}`;
   const personality = isPlayer ? 'diversified' : getCompanyPersonality(companyId);
   
-  // 财务数据 - 使用 safeNumber 防止 NaN
-  const cash = safeNumber(world.companies.cash[companyId], 0);
-  
-  let inventoryValue = 0;
-  for (let i = 0; i < GOODS_COUNT; i++) {
-    const qty = safeNumber(world.companies.inventories[companyId * GOODS_COUNT + i], 0);
-    const price = safeNumber(world.goods.prices[i], 0);
-    inventoryValue += qty * price;
-  }
-  
-  let buildingValue = 0;
+  const assetBreakdown = calculateCompanyAssetBreakdown(world, companyId);
+  const cash = assetBreakdown.cash;
+  const inventoryValue = assetBreakdown.inventoryValue;
+  const buildingValue = assetBreakdown.buildingValue;
+
   let buildingCount = 0;
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] === companyId) {
-      buildingValue += 500000;
       buildingCount++;
     }
   }
   
-  const totalAssets = safeNumber(cash + inventoryValue + buildingValue, 0);
+  const totalAssets = assetBreakdown.totalAssets;
   
   // 市场份额
   const totalCash = calculateTotalCash(world);

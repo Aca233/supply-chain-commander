@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
+import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -50,6 +51,8 @@ export const ProductionOverview: React.FC = () => {
         const typeId = world.buildings.types[i];
         const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
         
+        const outputEstimates: Array<{ dailyAmount: number; price: number }> = [];
+
         if (isActive) {
           activeCount++;
           totalEfficiency += efficiency;
@@ -62,8 +65,8 @@ export const ProductionOverview: React.FC = () => {
               if (goods) {
                 const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
                 const price = world.goods.prices[output.goodsId] || goods.basePrice;
-                dailyRevenue += dailyAmount * price;
                 totalOutput += dailyAmount * price;
+                outputEstimates.push({ dailyAmount, price });
               }
             }
             
@@ -81,7 +84,14 @@ export const ProductionOverview: React.FC = () => {
         }
         
         if (buildingDef) {
-          dailyCost += buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost;
+          const buildingDailyCost =
+            buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost;
+          dailyCost += buildingDailyCost;
+          dailyRevenue += calculateBuildingFinancialEstimate({
+            isActive: Boolean(isActive),
+            dailyCost: buildingDailyCost,
+            outputs: outputEstimates,
+          }).dailyRevenue;
         }
       }
     }
@@ -146,7 +156,7 @@ export const ProductionOverview: React.FC = () => {
         />
         <StatWidget
           icon="💰"
-          title={`${timeLabel}利润`}
+          title={`${timeLabel}预估利润`}
           value={formatMoney(stats.periodProfit)}
           status={stats.periodProfit >= 0 ? 'success' : 'error'}
           compact

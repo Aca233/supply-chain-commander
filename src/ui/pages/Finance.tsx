@@ -9,7 +9,6 @@ import { useGameStore } from '@/stores/gameStore';
 import { PriceChart } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { FinancialReportChart, FinancialDataPoint } from '@/ui/components/Charts/FinancialReportChart';
-import { GOODS_COUNT } from '@/core/constants';
 import { LoanType } from '@/core/finance/BankingSystem';
 import { formatGameDate, tickToDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
@@ -64,6 +63,8 @@ export const Finance: React.FC = () => {
     applyLoan,
     prepayPlayerLoan,
   } = useGameStore();
+  const playerFinancialSnapshot = useGameStore(state => state.playerFinancialSnapshot);
+  const financialHistory = useGameStore(state => state.financialHistory);
   const world = getWorld();
 
   // 贷款模态框状态
@@ -73,26 +74,16 @@ export const Finance: React.FC = () => {
   const [collateralType, setCollateralType] = useState<'none' | 'inventory' | 'building'>('none');
 
   // 实时数据
-  const playerCash = world?.companies.cash[0] || 1000000;
-  const playerAssets = world?.companies.totalAssets[0] || 0;
-  const playerLiabilities = world?.companies.totalLiabilities[0] || 0;
-
-  // 计算真实的库存价值
-  const inventoryValue = useMemo(() => {
-    if (!world) return 0;
-    let total = 0;
-    for (let i = 0; i < GOODS_COUNT; i++) {
-      const qty = world.companies.inventories[0 * GOODS_COUNT + i];
-      const price = world.goods.prices[i];
-      total += qty * price;
-    }
-    return total;
-  }, [world, tick]);
+  const playerCash = playerFinancialSnapshot.cash;
+  const playerAssets = playerFinancialSnapshot.operatingAssets;
+  const playerTotalAssets = playerFinancialSnapshot.totalAssets;
+  const playerLiabilities = playerFinancialSnapshot.liabilities;
+  const inventoryValue = playerFinancialSnapshot.inventoryValue;
 
   // 计算真实交易收入
-  const { totalRevenue, totalCost, recentTrades } = useMemo(() => {
+  const { recentTrades } = useMemo(() => {
     if (!world) {
-      return { totalRevenue: 0, totalCost: 0, recentTrades: [] };
+      return { recentTrades: [] };
     }
 
     const t = world.trades;
@@ -107,16 +98,9 @@ export const Finance: React.FC = () => {
       tick: number;
     }> = [];
 
-    let revenue = 0;
-    let cost = 0;
-    const currentTick = world.tick;
-    const lookbackTicks = 100;
-
     for (let i = t.count - 1; i >= Math.max(0, t.count - 1000); i--) {
       const idx = i % t.maxTrades;
       const tradeTick = t.ticks[idx];
-
-      if (tradeTick < currentTick - lookbackTicks) continue;
 
       const buyCompanyId = t.buyCompanyIds[idx];
       const sellCompanyId = t.sellCompanyIds[idx];
@@ -138,32 +122,24 @@ export const Finance: React.FC = () => {
         tick: tradeTick,
       });
 
-      if (tradeTick >= currentTick - 24) {
-        if (sellCompanyId === 0) revenue += value;
-        if (buyCompanyId === 0) cost += value;
-      }
-
       if (trades.length >= 50) break;
     }
 
-    return { totalRevenue: revenue, totalCost: cost, recentTrades: trades };
+    return { recentTrades: trades };
   }, [world, tick]);
 
   // 计算净资产
-  const netWorth = playerAssets - playerLiabilities + playerCash;
+  const netWorth = playerFinancialSnapshot.netWorth;
 
   // 财务指标
   const metrics: FinancialMetric[] = [
     { label: '现金余额', value: playerCash, format: 'currency', icon: '💵' },
-    { label: '总资产', value: playerAssets + playerCash, format: 'currency', icon: '🏦' },
+    { label: '总资产', value: playerTotalAssets, format: 'currency', icon: '🏦' },
     { label: '总负债', value: playerLiabilities, format: 'currency', icon: '📉' },
     { label: '净资产', value: netWorth, format: 'currency', icon: '💰' },
-    { label: '资产负债率', value: playerAssets > 0 ? playerLiabilities / (playerAssets + playerCash) : 0, format: 'percent', icon: '📊' },
+    { label: '资产负债率', value: playerTotalAssets > 0 ? playerLiabilities / playerTotalAssets : 0, format: 'percent', icon: '📊' },
     { label: '流动比率', value: playerLiabilities > 0 ? playerCash / playerLiabilities : 10, format: 'number', icon: '💧' },
   ];
-
-  // 获取真实财务历史数据
-  const financialHistory = useGameStore(state => state.financialHistory);
 
   // 现金余额趋势数据
   const incomeData = useMemo(() => {
@@ -184,30 +160,12 @@ export const Finance: React.FC = () => {
   }, [financialHistory, tick, playerCash]);
 
   // 计算日收入变化
-  const dailyIncomeChange = useMemo(() => {
-    if (financialHistory.length < 2) return 0;
-    const recent = financialHistory.slice(-24);
-    let totalProfit = 0;
-    for (const point of recent) {
-      totalProfit += point.profit;
-    }
-    return totalProfit;
-  }, [financialHistory]);
+  const dailyIncomeChange = playerFinancialSnapshot.dailyProfit;
 
   // 计算累计收入和成本
-  const { cumulativeRevenue, cumulativeCost, cumulativeProfit } = useMemo(() => {
-    let revenue = 0;
-    let cost = 0;
-    for (const point of financialHistory) {
-      revenue += point.revenue;
-      cost += point.cost;
-    }
-    return {
-      cumulativeRevenue: revenue,
-      cumulativeCost: cost,
-      cumulativeProfit: revenue - cost,
-    };
-  }, [financialHistory]);
+  const cumulativeRevenue = playerFinancialSnapshot.cumulativeRevenue;
+  const cumulativeCost = playerFinancialSnapshot.cumulativeCost;
+  const cumulativeProfit = playerFinancialSnapshot.cumulativeProfit;
 
   // 将财务历史转换为FinancialReportChart所需格式（按天聚合）
   const financialReportData: FinancialDataPoint[] = useMemo(() => {
@@ -236,20 +194,22 @@ export const Finance: React.FC = () => {
       revenue: data.revenue,
       costs: data.costs,
       profit: data.profit,
-      assets: playerAssets + playerCash,
+      assets: playerTotalAssets,
       liabilities: playerLiabilities,
       equity: netWorth,
     }));
-  }, [financialHistory, playerAssets, playerCash, playerLiabilities, netWorth]);
+  }, [financialHistory, playerLiabilities, playerTotalAssets, netWorth]);
 
   // 资产分布数据
   const assetDistribution = useMemo(() => [
     { name: '现金', value: playerCash },
     { name: '库存价值', value: inventoryValue },
-    { name: '建筑资产', value: Math.max(0, playerAssets - inventoryValue) },
-  ], [playerCash, playerAssets, inventoryValue]);
+    { name: '建筑资产', value: playerFinancialSnapshot.buildingValue },
+  ], [inventoryValue, playerCash, playerFinancialSnapshot.buildingValue]);
 
-  const netProfit = totalRevenue - totalCost;
+  const totalRevenue = playerFinancialSnapshot.dailyRevenue;
+  const totalCost = playerFinancialSnapshot.dailyCost;
+  const netProfit = playerFinancialSnapshot.dailyProfit;
 
   const formatValue = (value: number, format: FinancialMetric['format']) => {
     switch (format) {
@@ -598,9 +558,6 @@ export const Finance: React.FC = () => {
                     <div className="text-right tabular-nums">
                       <span className="text-[var(--text-primary)]">
                         ¥{trade.price.toFixed(2)} × {trade.quantity.toFixed(0)}
-                      </span>
-                      <span className="text-[var(--text-muted)] ml-2">
-                        = ¥{trade.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                   </div>

@@ -107,6 +107,10 @@ export function usePlayerAssets() {
   return useGameStore((state) => state.playerAssets);
 }
 
+export function usePlayerFinancialSnapshot() {
+  return useGameStore((state) => state.playerFinancialSnapshot);
+}
+
 export function usePlayerBuildingCount() {
   return useGameStore((state) => state.playerBuildings);
 }
@@ -151,16 +155,17 @@ export function usePerformanceReport() {
 
 // 玩家财务摘要
 export function usePlayerFinancialSummary() {
-  const cash = usePlayerCash();
-  const assets = usePlayerAssets();
+  const snapshot = usePlayerFinancialSnapshot();
   const buildings = usePlayerBuildingCount();
   
   return useMemo(() => ({
-    cash,
-    assets,
+    cash: snapshot.cash,
+    assets: snapshot.operatingAssets,
+    totalAssets: snapshot.totalAssets,
+    liabilities: snapshot.liabilities,
     buildings,
-    netWorth: cash + assets,
-  }), [cash, assets, buildings]);
+    netWorth: snapshot.netWorth,
+  }), [snapshot, buildings]);
 }
 
 // 价格趋势数据（按商品ID）

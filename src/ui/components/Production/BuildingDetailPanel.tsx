@@ -12,6 +12,7 @@ import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { SubsidiaryPanel } from './SubsidiaryPanel';
 import { UpgradeConfirmDialog } from './BuildingUpgradePanel';
+import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
 import { getBuildingConstructionConfig, isHazardousBuilding, MaterialRequirement } from '@/data/buildingMaterials';
 
 // 设计系统组件
@@ -111,7 +112,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       price: number;
     }> = [];
 
-    let dailyRevenue = 0;
     if (production && production.outputs) {
       for (let j = 0; j < production.outputs.length; j++) {
         const output = production.outputs[j];
@@ -119,7 +119,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
         const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
         const buffer = world.buildings.outputBuffers[buildingIndex * 8 + j];
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
-        dailyRevenue += dailyAmount * price;
 
         outputs.push({
           goodsId: output.goodsId,
@@ -134,6 +133,11 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     const dailyCost = buildingDef
       ? buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost
       : 0;
+    const financialEstimate = calculateBuildingFinancialEstimate({
+      isActive: Boolean(isActive),
+      dailyCost,
+      outputs,
+    });
 
     const maxLevel = buildingDef?.maxLevel || 5;
     const upgradeCost = buildingDef?.upgradeCosts[level] || 0;
@@ -180,10 +184,13 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       productionName,
       inputs,
       outputs,
-      dailyRevenue,
-      dailyCost,
-      dailyProfit: dailyRevenue - dailyCost,
-      profitMargin: dailyRevenue > 0 ? ((dailyRevenue - dailyCost) / dailyRevenue) * 100 : 0,
+      dailyRevenue: financialEstimate.dailyRevenue,
+      dailyCost: financialEstimate.dailyCost,
+      dailyProfit: financialEstimate.dailyProfit,
+      profitMargin:
+        financialEstimate.dailyRevenue > 0
+          ? (financialEstimate.dailyProfit / financialEstimate.dailyRevenue) * 100
+          : 0,
       status,
       upgradeCost,
       canUpgrade,
@@ -340,11 +347,11 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
               <span className="text-[var(--error)] tabular-nums">{formatMoney(buildingData.dailyCost)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-[var(--text-muted)]">日收益</span>
+              <span className="text-[var(--text-muted)]">预估日收益</span>
               <span className="text-[var(--success)] tabular-nums">{formatMoney(buildingData.dailyRevenue)}</span>
             </div>
             <div className="flex justify-between text-sm pt-2 border-t border-[var(--border-muted)]">
-              <span className="text-[var(--text-secondary)] font-medium">日利润</span>
+              <span className="text-[var(--text-secondary)] font-medium">预估日利润</span>
               <span className={`font-medium tabular-nums ${buildingData.dailyProfit >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
                 {formatMoney(buildingData.dailyProfit)}
               </span>
