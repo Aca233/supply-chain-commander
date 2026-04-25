@@ -11,27 +11,21 @@ import { useGameStore } from '@/stores/gameStore';
 // 设计系统组件
 import { Card, Badge, Button, Input, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
 
-// 产业链配置
+// 产业链配置 - 匹配 BUILDINGS_BY_INDUSTRY 结构（按产业链分类）
 const INDUSTRY_CONFIG: Record<string, { name: string; icon: string; color: string; gradient: string }> = {
-  core: { name: '核心产业', icon: '🏭', color: 'text-blue-400', gradient: 'from-blue-500/20' },
-  agriculture: { name: '农业产业链', icon: '🌾', color: 'text-green-400', gradient: 'from-green-500/20' },
-  pharma: { name: '医药产业链', icon: '💊', color: 'text-pink-400', gradient: 'from-pink-500/20' },
-  military: { name: '军工产业链', icon: '🛡️', color: 'text-red-400', gradient: 'from-red-500/20' },
-  luxury: { name: '奢侈品产业链', icon: '💎', color: 'text-purple-400', gradient: 'from-purple-500/20' },
-  tech: { name: '科技产业链', icon: '🔬', color: 'text-cyan-400', gradient: 'from-cyan-500/20' },
-  extended: { name: '扩展产业链', icon: '🔧', color: 'text-slate-400', gradient: 'from-slate-500/20' },
-  retail: { name: '零售建筑', icon: '🏪', color: 'text-orange-400', gradient: 'from-orange-500/20' },
-  dailyChemical: { name: '日化产业链', icon: '🧴', color: 'text-teal-400', gradient: 'from-teal-500/20' },
-  transport: { name: '交通运输', icon: '🚂', color: 'text-indigo-400', gradient: 'from-indigo-500/20' },
-  miningExtended: { name: '矿业扩展', icon: '⛏️', color: 'text-amber-400', gradient: 'from-amber-500/20' },
-  textileExtended: { name: '纺织扩展', icon: '🧵', color: 'text-rose-400', gradient: 'from-rose-500/20' },
-  buildingExtended: { name: '建材扩展', icon: '🧱', color: 'text-stone-400', gradient: 'from-stone-500/20' },
-  agriDeepProcess: { name: '农产品深加工', icon: '🍷', color: 'text-lime-400', gradient: 'from-lime-500/20' },
-  energyExtended: { name: '能源扩展', icon: '⚡', color: 'text-yellow-400', gradient: 'from-yellow-500/20' },
-  telecom: { name: '通信产业链', icon: '📡', color: 'text-sky-400', gradient: 'from-sky-500/20' },
-  serviceExtended: { name: '服务业', icon: '🏨', color: 'text-violet-400', gradient: 'from-violet-500/20' },
-  cultural: { name: '文化传媒', icon: '🎬', color: 'text-fuchsia-400', gradient: 'from-fuchsia-500/20' },
-  misc: { name: '杂项', icon: '📦', color: 'text-gray-400', gradient: 'from-gray-500/20' },
+  mining: { name: '矿业', icon: '⛏️', color: 'text-stone-400', gradient: 'from-stone-500/20' },
+  energy: { name: '能源', icon: '⚡', color: 'text-yellow-400', gradient: 'from-yellow-500/20' },
+  agriculture: { name: '农林牧渔', icon: '🌾', color: 'text-green-400', gradient: 'from-green-500/20' },
+  food: { name: '食品', icon: '🍞', color: 'text-orange-400', gradient: 'from-orange-500/20' },
+  chemical: { name: '化工建材', icon: '🧪', color: 'text-emerald-400', gradient: 'from-emerald-500/20' },
+  metallurgy: { name: '冶金', icon: '🔩', color: 'text-slate-400', gradient: 'from-slate-500/20' },
+  textile: { name: '纺织家具', icon: '🧵', color: 'text-rose-400', gradient: 'from-rose-500/20' },
+  electronics: { name: '电子科技', icon: '💻', color: 'text-cyan-400', gradient: 'from-cyan-500/20' },
+  automotive: { name: '汽车', icon: '🚗', color: 'text-blue-400', gradient: 'from-blue-500/20' },
+  appliance: { name: '家电', icon: '📺', color: 'text-indigo-400', gradient: 'from-indigo-500/20' },
+  newEnergy: { name: '新能源', icon: '☀️', color: 'text-lime-400', gradient: 'from-lime-500/20' },
+  pharma: { name: '医药', icon: '💊', color: 'text-pink-400', gradient: 'from-pink-500/20' },
+  luxury: { name: '奢侈品', icon: '💎', color: 'text-purple-400', gradient: 'from-purple-500/20' },
 };
 
 interface BuildingCatalogProps {
@@ -172,12 +166,7 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
                             {isRetail && <Badge variant="warning" size="sm">零售</Badge>}
                           </div>
                           <div className="text-[10px] text-[var(--text-muted)] truncate">
-                            {building.category === 'extraction' && '采掘'}
-                            {building.category === 'processing' && '加工'}
-                            {building.category === 'manufacturing' && '制造'}
-                            {building.category === 'service' && '服务'}
-                            {building.category === 'retail' && '零售'}
-                            {' · '}最高Lv.{building.maxLevel}
+                            建造 ¥{formatCost(building.buildCost)} · 工期 {building.buildTime}h · 最高Lv.{building.maxLevel}
                           </div>
                         </div>
                         <Badge

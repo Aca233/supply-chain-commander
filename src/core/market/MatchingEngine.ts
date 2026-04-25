@@ -11,11 +11,12 @@
 
 import { GameWorld } from '../world/GameWorld';
 import { GOODS_COUNT, MAX_ORDERS, ACTUAL_GOODS_COUNT } from '../constants';
-import { Trade, getOrderBookView, releaseOrderSlot, removeFromCompanyGoodsIndex, getActiveOrderIndices } from './OrderBook';
+import { Trade, getOrderBookView, getActiveOrderIndices, finalizeFilledOrder } from './OrderBook';
 import { getOrderBookIndex } from './OrderBookIndex';
 import { updatePriceCache } from './PriceCache';
 import { perfMonitor } from '../performance/PerformanceMonitor';
 import { tradeHistory, TradeRecord } from '../performance/DataStructures';
+import { forEachRetainedTradeNewestFirst, recordTrade } from './TradeLedger';
 
 /**
  * 撮合结果
@@ -66,7 +67,6 @@ function matchOrdersForGoodsOptimized(
 ): number {
   const o = world.orders;
   const c = world.companies;
-  const t = world.trades;
   const orderIndex = getOrderBookIndex();
   
   // 从索引获取已排序的订单列表
@@ -140,24 +140,16 @@ function matchOrdersForGoodsOptimized(
     o.remainings[buyIdx] -= matchQty;
     o.remainings[sellIdx] -= matchQty;
     
-    // 记录成交到世界交易历史
-    const tradeId = t.nextTradeId++;
-    const tradeIdx = t.count % t.maxTrades;
-    
-    t.buyOrderIds[tradeIdx] = buyIdx;
-    t.sellOrderIds[tradeIdx] = sellIdx;
-    t.buyCompanyIds[tradeIdx] = buyCompanyId;
-    t.sellCompanyIds[tradeIdx] = sellCompanyId;
-    t.goodsIds[tradeIdx] = goodsId;
-    t.quantities[tradeIdx] = matchQty;
-    t.prices[tradeIdx] = matchPrice;
-    t.ticks[tradeIdx] = world.tick;
-    t.count++;
-    
-    // 更新累计销售统计
-    const sellStatsIdx = sellCompanyId * GOODS_COUNT + goodsId;
-    t.cumulativeSalesQuantity[sellStatsIdx] += matchQty;
-    t.cumulativeSalesRevenue[sellStatsIdx] += totalValue;
+    const tradeId = recordTrade(world, {
+      buyOrderId: buyIdx,
+      sellOrderId: sellIdx,
+      buyCompanyId,
+      sellCompanyId,
+      goodsId,
+      quantity: matchQty,
+      price: matchPrice,
+      tick: world.tick,
+    });
     
     // 复用预分配的Trade对象
     const outIdx = tradesStartIdx + tradesCount;
@@ -178,21 +170,11 @@ function matchOrdersForGoodsOptimized(
     
     // 标记已完成的订单并释放槽位
     if (o.remainings[buyIdx] <= 0) {
-      o.isActive[buyIdx] = 0;
-      o.activeCount--;
-      orderIndex.removeOrder(buyIdx);
-      // 【修复】释放订单槽位回对象池，并从公司商品索引移除
-      removeFromCompanyGoodsIndex(buyIdx, buyCompanyId, goodsId, 0);
-      releaseOrderSlot(buyIdx, 0);
+      finalizeFilledOrder(world, buyIdx);
       buyPtr++;
     }
     if (o.remainings[sellIdx] <= 0) {
-      o.isActive[sellIdx] = 0;
-      o.activeCount--;
-      orderIndex.removeOrder(sellIdx);
-      // 【修复】释放订单槽位回对象池，并从公司商品索引移除
-      removeFromCompanyGoodsIndex(sellIdx, sellCompanyId, goodsId, 1);
-      releaseOrderSlot(sellIdx, 1);
+      finalizeFilledOrder(world, sellIdx);
       sellPtr++;
     }
   }
@@ -209,7 +191,6 @@ function matchOrdersForGoods(
 ): Trade[] {
   const o = world.orders;
   const c = world.companies;
-  const t = world.trades;
   const trades: Trade[] = [];
   
   // 使用预分配数组收集订单
@@ -293,22 +274,16 @@ function matchOrdersForGoods(
     o.remainings[buyIdx] -= matchQty;
     o.remainings[sellIdx] -= matchQty;
     
-    const tradeId = t.nextTradeId++;
-    const tradeIdx = t.count % t.maxTrades;
-    
-    t.buyOrderIds[tradeIdx] = buyIdx;
-    t.sellOrderIds[tradeIdx] = sellIdx;
-    t.buyCompanyIds[tradeIdx] = buyCompanyId;
-    t.sellCompanyIds[tradeIdx] = sellCompanyId;
-    t.goodsIds[tradeIdx] = goodsId;
-    t.quantities[tradeIdx] = matchQty;
-    t.prices[tradeIdx] = matchPrice;
-    t.ticks[tradeIdx] = world.tick;
-    t.count++;
-    
-    const sellStatsIdx = sellCompanyId * GOODS_COUNT + goodsId;
-    t.cumulativeSalesQuantity[sellStatsIdx] += matchQty;
-    t.cumulativeSalesRevenue[sellStatsIdx] += totalValue;
+    const tradeId = recordTrade(world, {
+      buyOrderId: buyIdx,
+      sellOrderId: sellIdx,
+      buyCompanyId,
+      sellCompanyId,
+      goodsId,
+      quantity: matchQty,
+      price: matchPrice,
+      tick: world.tick,
+    });
     
     trades.push({
       id: tradeId,
@@ -324,19 +299,11 @@ function matchOrdersForGoods(
     });
     
     if (o.remainings[buyIdx] <= 0) {
-      o.isActive[buyIdx] = 0;
-      o.activeCount--;
-      // 【修复】释放订单槽位回对象池
-      removeFromCompanyGoodsIndex(buyIdx, buyCompanyId, goodsId, 0);
-      releaseOrderSlot(buyIdx, 0);
+      finalizeFilledOrder(world, buyIdx);
       buyPtr++;
     }
     if (o.remainings[sellIdx] <= 0) {
-      o.isActive[sellIdx] = 0;
-      o.activeCount--;
-      // 【修复】释放订单槽位回对象池
-      removeFromCompanyGoodsIndex(sellIdx, sellCompanyId, goodsId, 1);
-      releaseOrderSlot(sellIdx, 1);
+      finalizeFilledOrder(world, sellIdx);
       sellPtr++;
     }
   }
@@ -529,15 +496,11 @@ export function getRecentTrades(
 ): Trade[] {
   const t = world.trades;
   const trades: Trade[] = [];
-  
-  // 从最新的成交往回找
-  const startIdx = Math.max(0, t.count - limit);
-  
-  for (let i = t.count - 1; i >= startIdx && trades.length < limit; i--) {
-    const idx = i % t.maxTrades;
+
+  forEachRetainedTradeNewestFirst(world, (idx, logicalIndex) => {
     if (t.goodsIds[idx] === goodsId) {
       trades.push({
-        id: i,
+        id: logicalIndex,
         buyOrderId: t.buyOrderIds[idx],
         sellOrderId: t.sellOrderIds[idx],
         buyCompanyId: t.buyCompanyIds[idx],
@@ -549,7 +512,11 @@ export function getRecentTrades(
         tick: t.ticks[idx],
       });
     }
-  }
+
+    if (trades.length >= limit) {
+      return false;
+    }
+  });
   
   return trades;
 }
@@ -567,16 +534,17 @@ export function getVWAP(
   let totalVolume = 0;
   
   const startTick = world.tick - ticks;
-  
-  for (let i = t.count - 1; i >= 0; i--) {
-    const idx = i % t.maxTrades;
-    if (t.ticks[idx] < startTick) break;
-    
+
+  forEachRetainedTradeNewestFirst(world, idx => {
+    if (t.ticks[idx] < startTick) {
+      return false;
+    }
+
     if (t.goodsIds[idx] === goodsId) {
       totalValue += t.quantities[idx] * t.prices[idx];
       totalVolume += t.quantities[idx];
     }
-  }
+  });
   
   return totalVolume > 0 ? totalValue / totalVolume : null;
 }
@@ -588,15 +556,16 @@ export function get24hVolume(world: GameWorld, goodsId: number): number {
   const t = world.trades;
   let volume = 0;
   const startTick = world.tick - 24;
-  
-  for (let i = t.count - 1; i >= 0; i--) {
-    const idx = i % t.maxTrades;
-    if (t.ticks[idx] < startTick) break;
-    
+
+  forEachRetainedTradeNewestFirst(world, idx => {
+    if (t.ticks[idx] < startTick) {
+      return false;
+    }
+
     if (t.goodsIds[idx] === goodsId) {
       volume += t.quantities[idx];
     }
-  }
+  });
   
   return volume;
 }
@@ -613,18 +582,19 @@ export function get24hHighLow(
   let low = Infinity;
   let found = false;
   const startTick = world.tick - 24;
-  
-  for (let i = t.count - 1; i >= 0; i--) {
-    const idx = i % t.maxTrades;
-    if (t.ticks[idx] < startTick) break;
-    
+
+  forEachRetainedTradeNewestFirst(world, idx => {
+    if (t.ticks[idx] < startTick) {
+      return false;
+    }
+
     if (t.goodsIds[idx] === goodsId) {
       found = true;
       const price = t.prices[idx];
       if (price > high) high = price;
       if (price < low) low = price;
     }
-  }
+  });
   
   return found ? { high, low } : null;
 }

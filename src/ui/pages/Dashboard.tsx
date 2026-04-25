@@ -8,6 +8,7 @@ import React, { useEffect, useCallback } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { formatGameDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { getDashboardLayoutMode } from './dashboardLayout';
 
 // 导入仪表盘组件
 import {
@@ -23,7 +24,8 @@ import {
 
 export const Dashboard: React.FC = () => {
   const { tick, performance, setCurrentPage, setSelectedGoods } = useGameStore();
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const layoutMode = getDashboardLayoutMode({ isMobile, isTablet, isNarrowDesktop });
 
   // 获取聚合的仪表盘数据
   const {
@@ -99,7 +101,7 @@ export const Dashboard: React.FC = () => {
   }, [handleNavigate, isMobile, isTablet]);
 
   // 移动端布局
-  if (isMobile) {
+  if (layoutMode === 'mobile') {
     return (
       <div className="flex flex-col gap-3 pb-4">
         {/* 顶部信息栏 - 简化版 */}
@@ -160,7 +162,7 @@ export const Dashboard: React.FC = () => {
   }
 
   // 平板布局 - 双列
-  if (isTablet) {
+  if (layoutMode === 'tablet') {
     return (
       <div className="flex flex-col gap-4 pb-4">
         {/* 顶部信息栏 */}
@@ -220,15 +222,69 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  // 桌面端布局 - 三列
+  if (layoutMode === 'narrow-desktop') {
+    return (
+      <div className="flex flex-col gap-4 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xl font-semibold">控制台</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-foreground-muted">
+            <span className="tabular-nums">{formatGameDate(tick)}</span>
+            <span className="tabular-nums">
+              {performance?.avgTickTime.toFixed(2) || '0.00'}ms/tick
+            </span>
+          </div>
+        </div>
+
+        <KPIBar kpi={kpi} changes={kpiChanges} />
+
+        <div className="grid grid-cols-2 items-start gap-4">
+          <div className="space-y-4">
+            <AlertCenter
+              onNavigate={handleNavigate}
+              maxAlerts={4}
+            />
+            <FinancialTrends
+              data={financialTrends}
+              dailyProfit={kpi.dailyProfit}
+            />
+            <ProductionOverviewPanel
+              stats={productionStats}
+              onNavigate={handleNavigate}
+              onGoodsClick={handleGoodsClick}
+            />
+          </div>
+
+          <div className="space-y-4">
+            <MarketDynamicsPanel
+              stats={marketStats}
+              onNavigate={handleNavigate}
+              onTrade={handleTrade}
+            />
+            <InventoryOverview
+              stats={inventoryStats}
+              onNavigate={handleNavigate}
+              onSellItem={handleSellItem}
+            />
+            <InvestmentPanel
+              stats={investmentStats}
+              onNavigate={handleNavigate}
+              onViewCompany={handleViewCompany}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 宽桌面布局 - 三列
   return (
-    <div className="h-full flex flex-col gap-4 overflow-hidden">
+    <div className="flex flex-col gap-4 pb-4">
       {/* 顶部信息栏 */}
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold">控制台</h2>
         </div>
-        <div className="flex items-center gap-4 text-sm text-text-tertiary">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-text-tertiary">
           <span className="tabular-nums">{formatGameDate(tick)}</span>
           <span className="text-text-tertiary">|</span>
           <span className="tabular-nums">
@@ -243,50 +299,42 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* 主要内容区域 - 3栏布局 */}
-      <div className="flex-1 min-h-0 grid grid-cols-12 gap-4">
+      <div className="grid grid-cols-12 items-start gap-4">
         {/* 左侧栏 - 财务与生产 */}
-        <div className="col-span-4 flex flex-col gap-4 overflow-hidden">
+        <div className="col-span-4 space-y-4">
           {/* 财务趋势 */}
-          <div className="flex-1 min-h-0">
-            <FinancialTrends
-              data={financialTrends}
-              dailyProfit={kpi.dailyProfit}
-            />
-          </div>
+          <FinancialTrends
+            data={financialTrends}
+            dailyProfit={kpi.dailyProfit}
+          />
           
           {/* 生产概览 */}
-          <div className="flex-1 min-h-0">
-            <ProductionOverviewPanel
-              stats={productionStats}
-              onNavigate={handleNavigate}
-              onGoodsClick={handleGoodsClick}
-            />
-          </div>
+          <ProductionOverviewPanel
+            stats={productionStats}
+            onNavigate={handleNavigate}
+            onGoodsClick={handleGoodsClick}
+          />
         </div>
 
         {/* 中间栏 - 市场与投资 */}
-        <div className="col-span-4 flex flex-col gap-4 overflow-hidden">
+        <div className="col-span-4 space-y-4">
           {/* 市场动态 */}
-          <div className="flex-1 min-h-0">
-            <MarketDynamicsPanel
-              stats={marketStats}
-              onNavigate={handleNavigate}
-              onTrade={handleTrade}
-            />
-          </div>
+          <MarketDynamicsPanel
+            stats={marketStats}
+            onNavigate={handleNavigate}
+            onTrade={handleTrade}
+          />
           
           {/* 投资组合 */}
-          <div className="flex-1 min-h-0">
-            <InvestmentPanel
-              stats={investmentStats}
-              onNavigate={handleNavigate}
-              onViewCompany={handleViewCompany}
-            />
-          </div>
+          <InvestmentPanel
+            stats={investmentStats}
+            onNavigate={handleNavigate}
+            onViewCompany={handleViewCompany}
+          />
         </div>
 
         {/* 右侧栏 - 告警、库存 */}
-        <div className="col-span-4 flex flex-col gap-4 overflow-hidden">
+        <div className="col-span-4 space-y-4">
           {/* 告警中心 */}
           <div className="h-56 flex-shrink-0">
             <AlertCenter
@@ -296,13 +344,11 @@ export const Dashboard: React.FC = () => {
           </div>
           
           {/* 库存概览 */}
-          <div className="flex-1 min-h-0">
-            <InventoryOverview
-              stats={inventoryStats}
-              onNavigate={handleNavigate}
-              onSellItem={handleSellItem}
-            />
-          </div>
+          <InventoryOverview
+            stats={inventoryStats}
+            onNavigate={handleNavigate}
+            onSellItem={handleSellItem}
+          />
         </div>
       </div>
     </div>

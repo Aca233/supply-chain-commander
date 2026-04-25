@@ -14,6 +14,7 @@ import { AI_PERSONALITIES, AIPersonality } from './AIPersonality';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
 import { createBuyOrder, createSellOrder } from '@/core/market/OrderBook';
 import { ALL_GOODS } from '@/data/goods';
+import { applyAutomaticEfficiencySafely } from '@/core/production/ProductionControl';
 
 // ==================== 决策层级 ====================
 
@@ -647,12 +648,16 @@ function executeSimpleDecision(world: GameWorld, decision: AIDecision): boolean 
     const buildingId = decision.params.buildingId as number;
     const targetEfficiency = decision.params.targetEfficiency as number;
     if (buildingId !== undefined && targetEfficiency !== undefined) {
-      world.buildings.efficiencies[buildingId] = Math.max(0.3, Math.min(1.5, targetEfficiency));
-      return true;
+      return applyAutomaticEfficiencySafely(world, buildingId, Math.max(0.3, Math.min(1.5, targetEfficiency)));
     }
   }
   
   return false;
+}
+
+// Test hook for deterministic verification of decision execution paths.
+export function executeSimpleDecisionForTest(world: GameWorld, decision: AIDecision): boolean {
+  return executeSimpleDecision(world, decision);
 }
 
 // ==================== 导出 ====================

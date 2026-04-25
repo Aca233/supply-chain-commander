@@ -1,7 +1,15 @@
 import React from 'react';
 import { useGameStore } from '@/stores/gameStore';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  showNavigationToggle?: boolean;
+  onNavigationToggle?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  showNavigationToggle = false,
+  onNavigationToggle,
+}) => {
   const {
     gameDate,
     paused,
@@ -29,19 +37,29 @@ export const Header: React.FC = () => {
 
   return (
     <header className="fixed top-0 left-0 right-0 h-14 z-50 bg-background-elevated border-b border-border">
-      <div className="h-full flex items-center justify-between px-4">
+      <div className="h-full flex items-center justify-between gap-3 px-4">
         {/* Logo和游戏名称 */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          {showNavigationToggle && (
+            <button
+              type="button"
+              onClick={onNavigationToggle}
+              className="w-10 h-10 rounded-lg bg-background-muted hover:bg-background-secondary transition-colors flex items-center justify-center"
+              aria-label="Toggle navigation"
+            >
+              ☰
+            </button>
+          )}
           <div className="w-8 h-8 bg-brand-primary rounded-lg flex items-center justify-center">
             <span className="text-white font-bold">SC</span>
           </div>
-          <h1 className="text-lg font-semibold text-text-primary">
+          <h1 className="text-lg font-semibold text-text-primary truncate">
             供应链指挥官
           </h1>
         </div>
 
         {/* 游戏时间和控制 */}
-        <div className="flex items-center gap-6">
+        <div className="hidden lg:flex items-center gap-4 xl:gap-6">
           {/* 游戏日期 */}
           <div className="text-sm">
             <span className="text-text-tertiary">游戏时间：</span>
@@ -91,7 +109,7 @@ export const Header: React.FC = () => {
         </div>
 
         {/* 玩家资金和设置 */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <div className="text-right min-w-[80px]">
             <div className="text-xs text-text-tertiary">现金</div>
             <div className="text-lg font-semibold text-text-primary tabular-nums">

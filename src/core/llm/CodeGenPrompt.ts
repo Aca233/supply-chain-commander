@@ -2,6 +2,8 @@
  * 代码生成模式提示词
  * 让LLM生成代码来操作游戏世界
  *
+ * v4.0更新：配方系统改为产品模式系统
+ *
  * 扩展版：支持所有游戏操作
  */
 
@@ -246,10 +248,10 @@ setGoodsPrice("钢材", 50)                   // 设置商品价格
 adjustGoodsPrice("钢材", 20)                // 调整商品价格（百分比）
 \`\`\`
 
-### 建筑配方与效率（新增！）
+### 建筑产品模式与效率（v4.0更新！）
 \`\`\`javascript
-setBuildingRecipe(buildingId, recipeId)       // 设置建筑的生产配方
-getBuildingAvailableRecipes(buildingId)       // 获取建筑可用配方列表
+setBuildingRecipe(buildingId, outputModeId)   // 设置建筑的产品模式
+getBuildingAvailableRecipes(buildingId)       // 获取建筑可用产品模式列表
 setBuildingEfficiency(buildingId, efficiency)  // 设置建筑效率（0~2）
 setCompanyBuildingsEfficiency(companyId, eff)  // 批量设置公司所有建筑效率
 \`\`\`

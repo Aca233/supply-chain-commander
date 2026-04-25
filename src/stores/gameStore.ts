@@ -110,8 +110,7 @@ import {
   ControlRight,
 } from '@/core/finance/OwnershipControl';
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
-import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '@/data/buildings';
-import { RECIPES } from '@/data/recipes';
+import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding, getBuildingProduction } from '@/data/buildings';
 import { getBaseMaterials, getBuildTime } from '@/data/buildingMaterials';
 import {
   getCompanyConstructionQueue,
@@ -152,6 +151,18 @@ import {
   getMethodByIdNew,
   getBuildingSlotCount,
 } from '@/core/production/ProductionMethods';
+import {
+  PRODUCTION_CONTROL_MODE_AUTO,
+  PRODUCTION_CONTROL_MODE_MANUAL,
+  PRODUCTION_EFFICIENCY_MIN,
+  PRODUCTION_EFFICIENCY_MAX,
+  clampManualEfficiencyTarget,
+  canPlayerManageBuildingProduction,
+  getBuildingManualEfficiencyTarget,
+  getBuildingProductionControlMode,
+  setBuildingManualEfficiencyTarget as setBuildingManualEfficiencyTargetCore,
+  setBuildingProductionControlMode,
+} from '@/core/production/ProductionControl';
 import {
   getMonthlyPriceTracker,
   resetMonthlyPriceTracker,
@@ -212,6 +223,20 @@ interface HistoryDataPoint {
   laborCost: number;
 }
 
+export interface BuildingProductionControlView {
+  buildingId: number;
+  ownerCompanyId: number;
+  ownerCompanyName: string;
+  canManage: boolean;
+  mode: 'auto' | 'manual';
+  autoAdjustEnabled: boolean;
+  manualTarget: number;
+  manualTargetRange: {
+    min: number;
+    max: number;
+  };
+}
+
 /**
  * 游戏状态
  */
@@ -263,10 +288,13 @@ interface GameActions {
   cancelPlayerOrder: (orderIdx: number) => boolean;
   
   // 建筑
-  buildBuilding: (buildingTypeId: number, recipeId: number) => number | null;
+  buildBuilding: (buildingTypeId: number, outputModeId?: number) => number | null;
   upgradeBuilding: (buildingId: number) => boolean;
   toggleBuildingActive: (buildingId: number) => boolean;
-  setBuildingRecipe: (buildingId: number, recipeId: number) => boolean;
+  setOutputMode: (buildingId: number, outputModeId: number) => boolean;
+  getBuildingProductionControl: (buildingId: number) => BuildingProductionControlView | null;
+  setBuildingProductionControlAuto: (buildingId: number, autoAdjustEnabled: boolean) => boolean;
+  setBuildingManualProductionTarget: (buildingId: number, manualTarget: number) => boolean;
   demolishBuilding: (buildingId: number) => boolean;
   
   // 贷款
@@ -736,7 +764,7 @@ export const useGameStore = create<GameState & GameActions>()(
     },
     
     // ==================== 建筑 ====================
-    buildBuilding: (buildingTypeId, recipeId) => {
+    buildBuilding: (buildingTypeId, outputModeId = 0) => {
       if (!worldRef) return null;
       
       try {
@@ -790,7 +818,7 @@ export const useGameStore = create<GameState & GameActions>()(
         }
         
         // 添加到建造队列
-        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, recipeId);
+        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, outputModeId);
         
         if (!result.success) {
           // 退还建造费用
@@ -943,7 +971,7 @@ export const useGameStore = create<GameState & GameActions>()(
       return true;
     },
     
-    setBuildingRecipe: (buildingId, recipeId) => {
+    setOutputMode: (buildingId, outputModeId) => {
       if (!worldRef) return false;
       
       // 检查建筑所有权
@@ -960,16 +988,26 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
       
-      // 检查配方是否支持（使用 availableRecipes）
-      if (!building.availableRecipes.includes(recipeId)) {
-        get().addNotification('error', '该建筑不支持此配方');
+      // 检查outputMode是否支持
+      const production = building.production;
+      if (!production) {
+        get().addNotification('error', '该建筑没有生产配置');
         return false;
       }
       
-      // 切换配方
-      worldRef.buildings.recipeIds[buildingId] = recipeId;
+      // 验证outputModeId有效性
+      if (outputModeId !== 0 && production.outputModes) {
+        const validMode = production.outputModes.find(m => m.modeId === outputModeId);
+        if (!validMode) {
+          get().addNotification('error', '该建筑不支持此产品模式');
+          return false;
+        }
+      }
       
-      // 清空缓冲区（切换配方后需要重新生产）
+      // 切换产品模式
+      worldRef.buildings.outputModeIds[buildingId] = outputModeId;
+      
+      // 清空缓冲区（切换模式后需要重新生产）
       for (let i = 0; i < 8; i++) {
         worldRef.buildings.inputBuffers[buildingId * 8 + i] = 0;
         worldRef.buildings.outputBuffers[buildingId * 8 + i] = 0;
@@ -977,9 +1015,76 @@ export const useGameStore = create<GameState & GameActions>()(
       // 重置生产进度
       worldRef.buildings.progress[buildingId] = 0;
       
-      const recipe = RECIPES.find(r => r.id === recipeId);
-      get().addNotification('success', `已切换配方为「${recipe?.name || '未知配方'}」`);
+      // 获取模式名称
+      const modeName = outputModeId === 0
+        ? '默认模式'
+        : production.outputModes?.find(m => m.modeId === outputModeId)?.name || '未知模式';
+      get().addNotification('success', `已切换到「${modeName}」`);
       
+      return true;
+    },
+
+    getBuildingProductionControl: (buildingId: number) => {
+      if (!worldRef) return null;
+      if (buildingId < 0 || buildingId >= worldRef.buildings.count) return null;
+
+      const ownerCompanyId = worldRef.buildings.owners[buildingId];
+      const ownerCompanyName = ownerCompanyId === 0
+        ? '玩家公司'
+        : (worldRef.companies.names[ownerCompanyId] || `公司#${ownerCompanyId}`);
+      const canManage = canPlayerManageBuildingProduction(worldRef, 0, buildingId);
+      const modeId = getBuildingProductionControlMode(worldRef, buildingId);
+      const manualTarget = getBuildingManualEfficiencyTarget(worldRef, buildingId);
+
+      return {
+        buildingId,
+        ownerCompanyId,
+        ownerCompanyName,
+        canManage,
+        mode: modeId === PRODUCTION_CONTROL_MODE_MANUAL ? 'manual' : 'auto',
+        autoAdjustEnabled: modeId === PRODUCTION_CONTROL_MODE_AUTO,
+        manualTarget,
+        manualTargetRange: {
+          min: PRODUCTION_EFFICIENCY_MIN,
+          max: PRODUCTION_EFFICIENCY_MAX,
+        },
+      };
+    },
+
+    setBuildingProductionControlAuto: (buildingId: number, autoAdjustEnabled: boolean) => {
+      if (!worldRef) return false;
+      if (buildingId < 0 || buildingId >= worldRef.buildings.count) return false;
+
+      if (!canPlayerManageBuildingProduction(worldRef, 0, buildingId)) {
+        get().addNotification('error', '你没有权限管理该建筑产量（需要 influence_strategy）');
+        return false;
+      }
+
+      setBuildingProductionControlMode(
+        worldRef,
+        buildingId,
+        autoAdjustEnabled ? PRODUCTION_CONTROL_MODE_AUTO : PRODUCTION_CONTROL_MODE_MANUAL
+      );
+
+      set((state) => {
+        state.tick = state.tick + 0.001;
+      });
+      return true;
+    },
+
+    setBuildingManualProductionTarget: (buildingId: number, manualTarget: number) => {
+      if (!worldRef) return false;
+      if (buildingId < 0 || buildingId >= worldRef.buildings.count) return false;
+
+      if (!canPlayerManageBuildingProduction(worldRef, 0, buildingId)) {
+        get().addNotification('error', '你没有权限管理该建筑产量（需要 influence_strategy）');
+        return false;
+      }
+
+      setBuildingManualEfficiencyTargetCore(worldRef, buildingId, clampManualEfficiencyTarget(manualTarget));
+      set((state) => {
+        state.tick = state.tick + 0.001;
+      });
       return true;
     },
     

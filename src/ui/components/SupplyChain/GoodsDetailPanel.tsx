@@ -5,11 +5,10 @@
 
 import React, { useMemo } from 'react';
 import { GOODS_BY_ID, GoodsDefinition } from '@/data/goods';
-import { RECIPES_BY_ID, RecipeDefinition } from '@/data/recipes';
 import { BUILDINGS_BY_ID } from '@/data/buildings';
 import {
-  getRecipesProducingGoods,
-  getRecipesUsingGoods,
+  getProductionsProducingGoods,
+  getProductionsUsingGoods,
   getBuildingsForGoods,
   getUpstreamMaterials,
   getDownstreamProducts,
@@ -17,6 +16,7 @@ import {
   TIER_NAMES,
   INDUSTRY_INFO,
   getGoodsIndustry,
+  ProductionInfo,
 } from '@/ui/utils/supplyChainUtils';
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from '@/ui/design-system';
 import { cn } from '@/ui/design-system/utils/cn';
@@ -41,12 +41,12 @@ export const GoodsDetailPanel: React.FC<GoodsDetailPanelProps> = ({
 }) => {
   const goods = useMemo(() => GOODS_BY_ID.get(goodsId), [goodsId]);
   
-  const producingRecipes = useMemo(() => 
-    getRecipesProducingGoods(goodsId), [goodsId]
+  const producingProductions = useMemo(() =>
+    getProductionsProducingGoods(goodsId), [goodsId]
   );
   
-  const usingRecipes = useMemo(() => 
-    getRecipesUsingGoods(goodsId), [goodsId]
+  const usingProductions = useMemo(() =>
+    getProductionsUsingGoods(goodsId), [goodsId]
   );
   
   const buildings = useMemo(() => 
@@ -154,26 +154,26 @@ export const GoodsDetailPanel: React.FC<GoodsDetailPanelProps> = ({
         </Card>
 
         {/* 生产来源 */}
-        {producingRecipes.length > 0 && (
+        {producingProductions.length > 0 && (
           <Card variant="default">
             <CardHeader>
               <CardTitle>
-                📥 生产来源 ({producingRecipes.length}种配方)
+                📥 生产来源 ({producingProductions.length}种配方)
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {producingRecipes.slice(0, 3).map((recipe) => (
-                <RecipeCard
-                  key={recipe.id}
-                  recipe={recipe}
+              {producingProductions.slice(0, 3).map((production, index) => (
+                <ProductionCard
+                  key={`${production.buildingTypeId}-${production.outputModeId}-${index}`}
+                  production={production}
                   highlightOutputId={goodsId}
                   onGoodsClick={onGoodsClick}
                   onBuildBuilding={onBuildBuilding}
                 />
               ))}
-              {producingRecipes.length > 3 && (
+              {producingProductions.length > 3 && (
                 <div className="text-xs text-[var(--text-muted)] text-center">
-                  还有 {producingRecipes.length - 3} 种配方...
+                  还有 {producingProductions.length - 3} 种配方...
                 </div>
               )}
             </CardContent>
@@ -181,22 +181,22 @@ export const GoodsDetailPanel: React.FC<GoodsDetailPanelProps> = ({
         )}
 
         {/* 用途 */}
-        {usingRecipes.length > 0 && (
+        {usingProductions.length > 0 && (
           <Card variant="default">
             <CardHeader>
               <CardTitle>
-                📤 用途 ({usingRecipes.length}种配方)
+                📤 用途 ({usingProductions.length}种配方)
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-1.5">
-                {usingRecipes.slice(0, 10).map((recipe) => {
-                  const output = recipe.outputs[0];
+                {usingProductions.slice(0, 10).map((production, index) => {
+                  const output = production.outputs[0];
                   const outputGoods = output ? GOODS_BY_ID.get(output.goodsId) : null;
                   
                   return outputGoods ? (
                     <Badge
-                      key={recipe.id}
+                      key={`${production.buildingTypeId}-${production.outputModeId}-${index}`}
                       variant="outline"
                       size="sm"
                       className="cursor-pointer hover:border-[var(--accent)]"
@@ -206,9 +206,9 @@ export const GoodsDetailPanel: React.FC<GoodsDetailPanelProps> = ({
                     </Badge>
                   ) : null;
                 })}
-                {usingRecipes.length > 10 && (
+                {usingProductions.length > 10 && (
                   <Badge variant="outline" size="sm">
-                    +{usingRecipes.length - 10}
+                    +{usingProductions.length - 10}
                   </Badge>
                 )}
               </div>
@@ -298,27 +298,27 @@ export const GoodsDetailPanel: React.FC<GoodsDetailPanelProps> = ({
   );
 };
 
-// 配方卡片子组件
-interface RecipeCardProps {
-  recipe: RecipeDefinition;
+// 生产卡片子组件
+interface ProductionCardProps {
+  production: ProductionInfo;
   highlightOutputId?: number;
   onGoodsClick?: (goodsId: number) => void;
   onBuildBuilding?: (buildingTypeId: number) => void;
 }
 
-const RecipeCard: React.FC<RecipeCardProps> = ({
-  recipe,
+const ProductionCard: React.FC<ProductionCardProps> = ({
+  production,
   highlightOutputId,
   onGoodsClick,
   onBuildBuilding,
 }) => {
-  const building = BUILDINGS_BY_ID.get(recipe.buildingTypeId);
+  const building = BUILDINGS_BY_ID.get(production.buildingTypeId);
 
   return (
     <div className="p-3 rounded-lg border border-[var(--border-muted)] bg-[var(--bg-elevated)]">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-medium text-[var(--text-primary)]">
-          {recipe.name}
+          {production.outputModeName || production.buildingName}
         </span>
         {building && (
           <Badge variant="outline" size="sm">
@@ -331,7 +331,7 @@ const RecipeCard: React.FC<RecipeCardProps> = ({
       <div className="flex items-center gap-2 text-xs">
         {/* 输入 */}
         <div className="flex flex-wrap gap-1">
-          {recipe.inputs.map((input, idx) => {
+          {production.inputs.map((input, idx) => {
             const inputGoods = GOODS_BY_ID.get(input.goodsId);
             return inputGoods ? (
               <span
@@ -349,7 +349,7 @@ const RecipeCard: React.FC<RecipeCardProps> = ({
         
         {/* 输出 */}
         <div className="flex flex-wrap gap-1">
-          {recipe.outputs.map((output, idx) => {
+          {production.outputs.map((output, idx) => {
             const outputGoods = GOODS_BY_ID.get(output.goodsId);
             const isHighlighted = output.goodsId === highlightOutputId;
             return outputGoods ? (
@@ -357,8 +357,8 @@ const RecipeCard: React.FC<RecipeCardProps> = ({
                 key={idx}
                 className={cn(
                   'px-1.5 py-0.5 rounded cursor-pointer',
-                  isHighlighted 
-                    ? 'bg-[var(--accent-muted)] text-[var(--accent)]' 
+                  isHighlighted
+                    ? 'bg-[var(--accent-muted)] text-[var(--accent)]'
                     : 'bg-[var(--bg-muted)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 )}
                 onClick={() => onGoodsClick?.(output.goodsId)}
@@ -379,11 +379,6 @@ const RecipeCard: React.FC<RecipeCardProps> = ({
           onClick={() => onBuildBuilding(building.id)}
         >
           建造 {building.name}
-          {recipe.unlockLevel && recipe.unlockLevel > 1 && (
-            <span className="ml-1 text-[var(--text-muted)]">
-              (需要{recipe.unlockLevel}级)
-            </span>
-          )}
         </Button>
       )}
     </div>

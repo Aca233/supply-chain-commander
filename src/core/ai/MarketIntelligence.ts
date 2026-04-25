@@ -1,6 +1,8 @@
 /**
  * 市场情报与竞争策略系统
  * 分析市场状况、竞争对手动态，生成战略建议
+ *
+ * v4.0更新：使用outputModeIds替代recipeIds
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
@@ -203,22 +205,22 @@ export function analyzeCompetitor(
   
   // 统计建筑和主营业务
   let buildingCount = 0;
-  const goodsProduction: Map<number, number> = new Map();
+  const buildingTypeProduction: Map<number, number> = new Map();
   
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] === companyId) {
       buildingCount++;
-      const recipeId = world.buildings.recipeIds[i];
-      // 简化：记录建筑类型作为主营业务指标
-      goodsProduction.set(recipeId, (goodsProduction.get(recipeId) || 0) + 1);
+      const buildingTypeId = world.buildings.types[i];
+      // 记录建筑类型作为主营业务指标（替代原来的recipeId）
+      buildingTypeProduction.set(buildingTypeId, (buildingTypeProduction.get(buildingTypeId) || 0) + 1);
     }
   }
   
-  // 确定专注领域
+  // 确定专注领域（使用建筑类型ID）
   const focusAreas: number[] = [];
-  for (const [recipeId, count] of goodsProduction) {
+  for (const [buildingTypeId, count] of buildingTypeProduction) {
     if (count >= 2) {
-      focusAreas.push(recipeId);
+      focusAreas.push(buildingTypeId);
     }
   }
   

@@ -1,8 +1,10 @@
 /**
  * AI精确计算模块
- * 
+ *
  * 替换AIDecisionEngine中的硬编码值，实现真实的利润率和市场份额计算
- * 
+ *
+ * v4.0更新：使用getBuildingProduction替代RECIPES
+ *
  * 设计目标：
  * 1. 精确计算每种商品的真实利润率（成本、收入、边际利润）
  * 2. 精确计算公司在每种商品市场的份额
@@ -13,7 +15,7 @@
 import { GameWorld, getPriceHistory } from '@/core/world/GameWorld';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE } from '@/core/constants';
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
-import { RECIPES, RecipeDefinition, RECIPES_BY_ID } from '@/data/recipes';
+import { getBuildingProduction, BuildingProductionConfig, ProductionIO } from '@/data/buildings';
 
 // ==================== 类型定义 ====================
 
@@ -139,16 +141,26 @@ export interface PriceTrendIndicators {
 
 // ==================== 精确利润计算 ====================
 
+/** 生产配置类型（用于计算） */
+interface ProductionConfig {
+  inputs: ProductionIO[];
+  outputs: ProductionIO[];
+  ticksRequired: number;
+  laborRequired: number;
+  energyRequired: number;
+}
+
 /**
- * 计算配方的原材料成本
+ * 计算生产配置的原材料成本
+ * v4.0更新：使用ProductionConfig替代RecipeDefinition
  */
-export function calculateRecipeMaterialCost(
+export function calculateProductionMaterialCost(
   world: GameWorld,
-  recipe: RecipeDefinition
+  production: ProductionConfig
 ): number {
   let totalCost = 0;
   
-  for (const input of recipe.inputs) {
+  for (const input of production.inputs) {
     const inputPrice = world.goods.prices[input.goodsId];
     totalCost += inputPrice * input.amount;
   }
@@ -157,32 +169,38 @@ export function calculateRecipeMaterialCost(
 }
 
 /**
- * 计算配方的单位产出成本
+ * 计算生产配置的单位产出成本
+ * v4.0更新：使用ProductionConfig替代RecipeDefinition
  */
-export function calculateRecipeUnitCost(
+export function calculateProductionUnitCost(
   world: GameWorld,
-  recipe: RecipeDefinition
+  production: ProductionConfig
 ): number {
   // 原材料成本
-  const materialCost = calculateRecipeMaterialCost(world, recipe);
+  const materialCost = calculateProductionMaterialCost(world, production);
   
   // 人工成本（假设人工时薪50元）
-  const laborCost = recipe.laborRequired * 50 / recipe.ticksRequired;
+  const laborCost = production.laborRequired * 50 / production.ticksRequired;
   
   // 能源成本（假设电价0.5元/度）
-  const energyCost = recipe.energyRequired * 0.5 / recipe.ticksRequired;
+  const energyCost = production.energyRequired * 0.5 / production.ticksRequired;
   
   // 总成本
   const totalCost = materialCost + laborCost + energyCost;
   
   // 计算单位产出成本
-  const totalOutput = recipe.outputs.reduce((sum, o) => sum + o.amount, 0);
+  const totalOutput = production.outputs.reduce((sum, o) => sum + o.amount, 0);
   
   return totalOutput > 0 ? totalCost / totalOutput : totalCost;
 }
 
+// 保留旧函数名以兼容（委托到新函数）
+export const calculateRecipeMaterialCost = calculateProductionMaterialCost;
+export const calculateRecipeUnitCost = calculateProductionUnitCost;
+
 /**
  * 计算公司对某商品的日产量
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 export function calculateDailyOutput(
   world: GameWorld,
@@ -196,16 +214,17 @@ export function calculateDailyOutput(
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
     
-    const recipeId = b.recipeIds[i];
-    const recipe = RECIPES_BY_ID.get(recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[i];
+    const outputModeId = b.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
-    for (const output of recipe.outputs) {
+    for (const output of production.outputs) {
       if (output.goodsId === goodsId) {
         const efficiency = b.efficiencies[i] || 1;
         // 每tick产量 * 24tick/天 * 效率
         const outputPerCycle = output.amount;
-        const cyclesPerDay = 24 / recipe.ticksRequired;
+        const cyclesPerDay = 24 / production.ticksRequired;
         dailyOutput += outputPerCycle * cyclesPerDay * efficiency;
       }
     }
@@ -232,6 +251,7 @@ export function getCompanySalesData(
 
 /**
  * 计算公司对某商品的完整利润分析
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 export function analyzeGoodsProfit(
   world: GameWorld,
@@ -241,21 +261,21 @@ export function analyzeGoodsProfit(
   const goods = ALL_GOODS.find(g => g.id === goodsId);
   const goodsName = goods?.name ?? `商品${goodsId}`;
   
-  // 找到生产该商品的配方（如果有）
-  const producingRecipe = findProducingRecipe(world, companyId, goodsId);
+  // 找到生产该商品的生产配置（如果有）
+  const producingConfig = findProducingConfig(world, companyId, goodsId);
   
   // 成本计算
   let rawMaterialCost = 0;
   let laborCost = 0;
   let energyCost = 0;
   
-  if (producingRecipe) {
-    rawMaterialCost = calculateRecipeMaterialCost(world, producingRecipe);
-    laborCost = producingRecipe.laborRequired * 50 / producingRecipe.ticksRequired;
-    energyCost = producingRecipe.energyRequired * 0.5 / producingRecipe.ticksRequired;
+  if (producingConfig) {
+    rawMaterialCost = calculateProductionMaterialCost(world, producingConfig);
+    laborCost = producingConfig.laborRequired * 50 / producingConfig.ticksRequired;
+    energyCost = producingConfig.energyRequired * 0.5 / producingConfig.ticksRequired;
     
     // 转换为单位成本
-    const outputPerCycle = producingRecipe.outputs.find(o => o.goodsId === goodsId)?.amount || 1;
+    const outputPerCycle = producingConfig.outputs.find(o => o.goodsId === goodsId)?.amount || 1;
     rawMaterialCost /= outputPerCycle;
     laborCost /= outputPerCycle;
     energyCost /= outputPerCycle;
@@ -299,33 +319,39 @@ export function analyzeGoodsProfit(
 }
 
 /**
- * 查找公司生产某商品的配方
+ * 查找公司生产某商品的生产配置
+ * v4.0更新：返回ProductionConfig替代RecipeDefinition
  */
-function findProducingRecipe(
+function findProducingConfig(
   world: GameWorld,
   companyId: number,
   goodsId: number
-): RecipeDefinition | null {
+): ProductionConfig | null {
   const b = world.buildings;
   
   for (let i = 0; i < b.count; i++) {
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
     
-    const recipeId = b.recipeIds[i];
-    const recipe = RECIPES_BY_ID.get(recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[i];
+    const outputModeId = b.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
-    if (recipe.outputs.some(o => o.goodsId === goodsId)) {
-      return recipe;
+    if (production.outputs.some(o => o.goodsId === goodsId)) {
+      return production;
     }
   }
   
   return null;
 }
 
+// 保留旧函数名以兼容
+const findProducingRecipe = findProducingConfig;
+
 /**
  * 计算公司某商品生产的平均效率
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 function calculateAverageEfficiency(
   world: GameWorld,
@@ -340,11 +366,12 @@ function calculateAverageEfficiency(
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
     
-    const recipeId = b.recipeIds[i];
-    const recipe = RECIPES_BY_ID.get(recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[i];
+    const outputModeId = b.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
-    if (recipe.outputs.some(o => o.goodsId === goodsId)) {
+    if (production.outputs.some(o => o.goodsId === goodsId)) {
       totalEfficiency += b.efficiencies[i] || 1;
       count++;
     }

@@ -9,6 +9,7 @@ import { GOODS_COUNT, MAX_CONCURRENT_CONSTRUCTIONS, MAX_CONCURRENT_DEMOLITIONS }
 import { getBuildingConstructionConfig, MaterialRequirement, getBaseMaterials, getBuildTime } from '../../data/buildingMaterials';
 import { ALL_BUILDINGS, BUILDINGS_BY_ID, BuildingTypeDefinition, isRetailBuilding } from '../../data/buildings';
 import { registerRetailStore } from '../economy/RetailSystem';
+import { initializeBuildingProductionControl } from '../production/ProductionControl';
 
 /**
  * 建造/拆除系统tick结果
@@ -118,7 +119,8 @@ function processConstructionTick(world: GameWorld): {
           materials = config.baseMaterials;
         } else {
           // 升级：优先使用升级材料配置，如果没有则使用基础材料的50%
-          const upgradeMats = config.upgradeMaterials[targetLevel - 2];
+            // 索引 targetLevel - 1：升级到2级用 [1]，升级到3级用 [2]...
+            const upgradeMats = config.upgradeMaterials[targetLevel - 1];
           if (upgradeMats && upgradeMats.length > 0) {
             materials = upgradeMats;
           } else {
@@ -134,18 +136,22 @@ function processConstructionTick(world: GameWorld): {
         
         // 确保至少需要一些材料（防止空数组直接通过）
         if (materials.length === 0) {
-          allMaterialsReserved = false;
-          console.warn(`[建造系统] 建筑类型 ${buildingTypeId} 没有配置材料需求`);
-          continue;
-        }
-        
-        for (const mat of materials) {
-          const inventoryIdx = companyId * GOODS_COUNT + mat.goodsId;
-          const available = companies.inventories[inventoryIdx] - companies.inventoryReserved[inventoryIdx];
-          
-          if (available < mat.amount) {
-            allMaterialsReserved = false;
-            break;
+          // 没有材料需求，直接允许开始建造
+          console.log(`[建造系统] 建筑类型 ${buildingTypeId} 没有材料需求，直接开始建造`);
+          allMaterialsReserved = true;
+        } else {
+          for (const mat of materials) {
+            const inventoryIdx = companyId * GOODS_COUNT + mat.goodsId;
+            const available = companies.inventories[inventoryIdx] - companies.inventoryReserved[inventoryIdx];
+            
+            if (available < mat.amount) {
+              allMaterialsReserved = false;
+              // 调试日志：显示材料缺口
+              if (companyId === 0) { // 只为玩家输出日志
+                console.log(`[建造系统] 材料不足: 商品${mat.goodsId} 需要${mat.amount} 可用${available.toFixed(1)}`);
+              }
+              break;
+            }
           }
         }
         
@@ -217,6 +223,7 @@ function processConstructionTick(world: GameWorld): {
             if (targetLevel > currentLevel) {
               buildingsData.levels[existingBuildingId] = targetLevel;
               upgradedBuildings.push(existingBuildingId);
+              console.log(`[建造系统] 建筑#${existingBuildingId} 升级到等级${targetLevel}完成`);
             } else {
               // 目标等级不高于当前等级，跳过升级（可能建筑已被其他方式升级）
               console.log(`[建造系统] 跳过升级：建筑#${existingBuildingId}当前等级${currentLevel}已>=目标等级${targetLevel}`);
@@ -232,21 +239,25 @@ function processConstructionTick(world: GameWorld): {
               buildingsData.isActive[newBuildingId] = 1;
               buildingsData.progress[newBuildingId] = 0;
               
-              // 设置配方ID - 优先使用建造时指定的配方，否则使用默认配方
-              let recipeId = construction.recipeIds[queueIdx];
-              if (recipeId === 0) {
-                // 没有指定配方，使用建筑类型的默认配方
-                const buildingType = BUILDINGS_BY_ID.get(buildingTypeId);
-                if (buildingType) {
-                  recipeId = buildingType.defaultRecipeId;
-                }
+              // 设置产品模式ID - 优先使用建造时指定的模式，否则使用默认模式(0)
+              let outputModeId = construction.outputModeIds[queueIdx];
+              if (outputModeId < 0) {
+                // 没有指定模式，使用默认模式0
+                outputModeId = 0;
               }
-              buildingsData.recipeIds[newBuildingId] = recipeId;
+              buildingsData.outputModeIds[newBuildingId] = outputModeId;
+              initializeBuildingProductionControl(world, newBuildingId);
               
               // 【性能优化】更新公司建筑计数
               world.companies.buildingCounts[companyId]++;
               
               newBuildings.push(newBuildingId);
+              
+              // 关键日志：建筑创建成功
+              console.log(`[建造系统] ✓ 新建筑#${newBuildingId} 创建成功 (类型${buildingTypeId}, 公司${companyId})`);
+            } else {
+              // 建筑数量已满！
+              console.error(`[建造系统] ✗ 建筑数量已达上限 ${buildingsData.maxCount}！无法创建新建筑`);
             }
           }
           
@@ -701,7 +712,7 @@ export function startConstruction(
   world: GameWorld,
   companyId: number,
   buildingTypeId: number,
-  recipeId: number = 0
+  outputModeId: number = 0
 ): {
   success: boolean;
   queueIdx?: number;
@@ -732,11 +743,8 @@ export function startConstruction(
   const config = getBuildingConstructionConfig(buildingTypeId);
   const buildTime = config?.buildTime || getBuildTime(buildingTypeId);
   
-  // 获取默认配方ID（如果未指定）
-  let finalRecipeId = recipeId;
-  if (finalRecipeId === 0) {
-    finalRecipeId = buildingDef.defaultRecipeId;
-  }
+  // 使用指定的产品模式ID
+  const finalOutputModeId = outputModeId;
   
   // 添加到队列
   construction.isActive[freeSlot] = 1;
@@ -748,7 +756,7 @@ export function startConstruction(
   construction.progress[freeSlot] = 0;
   construction.startTicks[freeSlot] = world.tick;
   construction.estimatedEndTicks[freeSlot] = world.tick + buildTime;
-  construction.recipeIds[freeSlot] = finalRecipeId; // 存储配方ID
+  construction.outputModeIds[freeSlot] = finalOutputModeId; // 存储产品模式ID
   
   return { success: true, queueIdx: freeSlot };
 }

@@ -1,11 +1,12 @@
 /**
  * 产业链工具函数
  * 用于构建和分析商品之间的生产关系
+ *
+ * v4.0更新：使用建筑production配置替代RECIPES
  */
 
 import { ALL_GOODS, GoodsDefinition, GOODS_BY_ID, GOODS_BY_INDUSTRY } from '@/data/goods';
-import { RECIPES, RecipeDefinition, RECIPES_BY_ID } from '@/data/recipes';
-import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_ID } from '@/data/buildings';
+import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_ID, getBuildingProduction, BuildingProductionConfig } from '@/data/buildings';
 
 // ==================== 类型定义 ====================
 
@@ -24,7 +25,8 @@ export interface GraphNode {
 export interface GraphEdge {
   source: number;
   target: number;
-  recipeId: number;
+  buildingTypeId: number;  // v4.0: 替代 recipeId
+  outputModeId: number;    // v4.0: 产品模式ID
   inputAmount: number;
   outputAmount: number;
 }
@@ -43,7 +45,17 @@ export interface UpstreamMaterial {
   depth: number;
   path: number[];
   amount: number;
-  recipe?: RecipeDefinition;
+  production?: ProductionInfo;  // v4.0: 替代 recipe
+}
+
+// v4.0: 生产信息（替代 RecipeDefinition）
+export interface ProductionInfo {
+  buildingTypeId: number;
+  buildingName: string;
+  outputModeId: number;
+  outputModeName?: string;
+  inputs: Array<{ goodsId: number; amount: number }>;
+  outputs: Array<{ goodsId: number; amount: number }>;
 }
 
 export interface DownstreamProduct {
@@ -55,7 +67,7 @@ export interface DownstreamProduct {
 export interface ProductionPlanItem {
   goods: GoodsDefinition;
   amount: number;
-  recipe?: RecipeDefinition;
+  production?: ProductionInfo;  // v4.0: 替代 recipe
   building?: BuildingTypeDefinition;
 }
 
@@ -133,6 +145,7 @@ let cachedGoodsByTier: Map<number, GoodsDefinition[]> | null = null;
 
 /**
  * 构建商品依赖图
+ * v4.0: 使用建筑production配置替代RECIPES
  */
 export function buildDependencyGraph(): DependencyGraph {
   if (cachedDependencyGraph) {
@@ -159,15 +172,23 @@ export function buildDependencyGraph(): DependencyGraph {
     reverseAdjacencyList.set(goods.id, []);
   }
 
-  // 从配方中构建边
-  for (const recipe of RECIPES) {
-    for (const output of recipe.outputs) {
-      for (const input of recipe.inputs) {
+  // v4.0: 从建筑production配置中构建边
+  for (const building of ALL_BUILDINGS) {
+    if (!building.production) continue;
+    
+    const production = building.production;
+    const inputs = production.inputs || [];
+    const outputs = production.outputs || [];
+    
+    // 处理默认产出
+    for (const output of outputs) {
+      for (const input of inputs) {
         // 添加边：input -> output
         edges.push({
           source: input.goodsId,
           target: output.goodsId,
-          recipeId: recipe.id,
+          buildingTypeId: building.id,
+          outputModeId: 0,  // 默认模式
           inputAmount: input.amount,
           outputAmount: output.amount,
         });
@@ -187,6 +208,40 @@ export function buildDependencyGraph(): DependencyGraph {
         }
       }
     }
+    
+    // 处理可选产品模式
+    if (production.outputModes) {
+      for (const mode of production.outputModes) {
+        const modeOutputs = mode.outputs || [];
+        for (const output of modeOutputs) {
+          for (const input of inputs) {
+            // 添加边：input -> output
+            edges.push({
+              source: input.goodsId,
+              target: output.goodsId,
+              buildingTypeId: building.id,
+              outputModeId: mode.modeId,
+              inputAmount: input.amount,
+              outputAmount: output.amount,
+            });
+
+            // 更新邻接表
+            const adj = adjacencyList.get(output.goodsId) || [];
+            if (!adj.includes(input.goodsId)) {
+              adj.push(input.goodsId);
+              adjacencyList.set(output.goodsId, adj);
+            }
+
+            // 更新反向邻接表
+            const revAdj = reverseAdjacencyList.get(input.goodsId) || [];
+            if (!revAdj.includes(output.goodsId)) {
+              revAdj.push(output.goodsId);
+              reverseAdjacencyList.set(input.goodsId, revAdj);
+            }
+          }
+        }
+      }
+    }
   }
 
   cachedDependencyGraph = { nodes, edges, adjacencyList, reverseAdjacencyList };
@@ -195,6 +250,7 @@ export function buildDependencyGraph(): DependencyGraph {
 
 /**
  * 获取商品的所有上游原材料（递归）
+ * v4.0: 使用 production 配置替代 RECIPES
  */
 export function getUpstreamMaterials(
   goodsId: number,
@@ -211,10 +267,10 @@ export function getUpstreamMaterials(
     const goods = GOODS_BY_ID.get(currentId);
     if (!goods) return;
 
-    // 获取生产该商品的配方
-    const recipes = getRecipesProducingGoods(currentId);
+    // 获取生产该商品的生产配置
+    const productions = getProductionsProducingGoods(currentId);
     
-    if (recipes.length === 0 || goods.tier === 0) {
+    if (productions.length === 0 || goods.tier === 0) {
       // 这是原材料，没有上游
       result.push({
         goods,
@@ -225,12 +281,12 @@ export function getUpstreamMaterials(
       return;
     }
 
-    // 使用第一个配方（通常是最基础的）
-    const recipe = recipes[0];
-    const outputAmount = recipe.outputs.find(o => o.goodsId === currentId)?.amount || 1;
+    // 使用第一个生产配置（通常是最基础的）
+    const production = productions[0];
+    const outputAmount = production.outputs.find(o => o.goodsId === currentId)?.amount || 1;
     const multiplier = amountNeeded / outputAmount;
 
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const inputGoods = GOODS_BY_ID.get(input.goodsId);
       if (!inputGoods) continue;
 
@@ -242,7 +298,7 @@ export function getUpstreamMaterials(
         depth: depth + 1,
         path: newPath,
         amount: inputAmount,
-        recipe,
+        production,
       });
 
       // 继续递归
@@ -298,32 +354,106 @@ export function getDownstreamProducts(
 }
 
 /**
- * 获取生产某商品的所有配方
+ * 获取生产某商品的所有生产配置
+ * v4.0: 替代原来的 getRecipesProducingGoods
  */
-export function getRecipesProducingGoods(goodsId: number): RecipeDefinition[] {
-  return RECIPES.filter(recipe => 
-    recipe.outputs.some(output => output.goodsId === goodsId)
-  );
+export function getProductionsProducingGoods(goodsId: number): ProductionInfo[] {
+  const result: ProductionInfo[] = [];
+  
+  for (const building of ALL_BUILDINGS) {
+    if (!building.production) continue;
+    
+    const production = building.production;
+    
+    // 检查默认产出
+    if (production.outputs?.some(o => o.goodsId === goodsId)) {
+      result.push({
+        buildingTypeId: building.id,
+        buildingName: building.name,
+        outputModeId: 0,
+        inputs: production.inputs || [],
+        outputs: production.outputs || [],
+      });
+    }
+    
+    // 检查可选产品模式
+    if (production.outputModes) {
+      for (const mode of production.outputModes) {
+        if (mode.outputs?.some(o => o.goodsId === goodsId)) {
+          result.push({
+            buildingTypeId: building.id,
+            buildingName: building.name,
+            outputModeId: mode.modeId,
+            outputModeName: mode.name,
+            inputs: production.inputs || [],
+            outputs: mode.outputs || [],
+          });
+        }
+      }
+    }
+  }
+  
+  return result;
 }
 
 /**
- * 获取使用某商品作为原料的所有配方
+ * 获取使用某商品作为原料的所有生产配置
+ * v4.0: 替代原来的 getRecipesUsingGoods
  */
-export function getRecipesUsingGoods(goodsId: number): RecipeDefinition[] {
-  return RECIPES.filter(recipe => 
-    recipe.inputs.some(input => input.goodsId === goodsId)
-  );
+export function getProductionsUsingGoods(goodsId: number): ProductionInfo[] {
+  const result: ProductionInfo[] = [];
+  
+  for (const building of ALL_BUILDINGS) {
+    if (!building.production) continue;
+    
+    const production = building.production;
+    
+    // 检查是否使用该商品作为输入
+    if (production.inputs?.some(i => i.goodsId === goodsId)) {
+      // 添加默认产出
+      if (production.outputs && production.outputs.length > 0) {
+        result.push({
+          buildingTypeId: building.id,
+          buildingName: building.name,
+          outputModeId: 0,
+          inputs: production.inputs,
+          outputs: production.outputs,
+        });
+      }
+      
+      // 添加可选产品模式
+      if (production.outputModes) {
+        for (const mode of production.outputModes) {
+          result.push({
+            buildingTypeId: building.id,
+            buildingName: building.name,
+            outputModeId: mode.modeId,
+            outputModeName: mode.name,
+            inputs: production.inputs,
+            outputs: mode.outputs || [],
+          });
+        }
+      }
+    }
+  }
+  
+  return result;
 }
+
+// 保留旧函数名作为别名（兼容性）
+export const getRecipesProducingGoods = getProductionsProducingGoods;
+export const getRecipesUsingGoods = getProductionsUsingGoods;
 
 /**
  * 获取可以生产某商品的建筑
+ * v4.0: 使用 production 配置
  */
 export function getBuildingsForGoods(goodsId: number): BuildingTypeDefinition[] {
-  const recipes = getRecipesProducingGoods(goodsId);
+  const productions = getProductionsProducingGoods(goodsId);
   const buildingIds = new Set<number>();
 
-  for (const recipe of recipes) {
-    buildingIds.add(recipe.buildingTypeId);
+  for (const production of productions) {
+    buildingIds.add(production.buildingTypeId);
   }
 
   return Array.from(buildingIds)
@@ -333,6 +463,7 @@ export function getBuildingsForGoods(goodsId: number): BuildingTypeDefinition[] 
 
 /**
  * 计算生产计划
+ * v4.0: 使用 production 配置
  */
 export function calculateProductionPlan(
   targetGoodsId: number,
@@ -357,15 +488,15 @@ export function calculateProductionPlan(
 
   for (const [goodsId, amount] of processedGoods) {
     const goods = GOODS_BY_ID.get(goodsId)!;
-    const recipes = getRecipesProducingGoods(goodsId);
-    const recipe = recipes[0];
+    const productions = getProductionsProducingGoods(goodsId);
+    const production = productions[0];
     const buildings = getBuildingsForGoods(goodsId);
     const building = buildings[0];
 
     const planItem: ProductionPlanItem = {
       goods,
       amount,
-      recipe,
+      production,
       building,
     };
 
@@ -385,12 +516,12 @@ export function calculateProductionPlan(
   }> = [];
 
   // 添加目标产品的生产建筑
-  const targetRecipes = getRecipesProducingGoods(targetGoodsId);
-  if (targetRecipes.length > 0) {
-    const recipe = targetRecipes[0];
-    const building = BUILDINGS_BY_ID.get(recipe.buildingTypeId);
+  const targetProductions = getProductionsProducingGoods(targetGoodsId);
+  if (targetProductions.length > 0) {
+    const production = targetProductions[0];
+    const building = BUILDINGS_BY_ID.get(production.buildingTypeId);
     if (building) {
-      const outputPerTick = recipe.outputs.find(o => o.goodsId === targetGoodsId)?.amount || 1;
+      const outputPerTick = production.outputs.find(o => o.goodsId === targetGoodsId)?.amount || 1;
       const ticksNeeded = Math.ceil(targetAmount / outputPerTick);
       const buildingsNeeded = Math.ceil(ticksNeeded / 24); // 假设每天24 ticks
       buildingCounts.set(building.id, buildingsNeeded);
@@ -660,16 +791,17 @@ export function calculateTraceLayoutPositions(
 }
 
 /**
- * 获取两个商品之间的所有配方路径
+ * 获取两个商品之间的所有生产路径
+ * v4.0: 使用 ProductionInfo 替代 RecipeDefinition
  */
-export function getRecipePathBetween(
+export function getProductionPathBetween(
   sourceGoodsId: number,
   targetGoodsId: number
-): RecipeDefinition[][] {
-  const paths: RecipeDefinition[][] = [];
+): ProductionInfo[][] {
+  const paths: ProductionInfo[][] = [];
   const visited = new Set<number>();
 
-  function dfs(currentId: number, path: RecipeDefinition[]) {
+  function dfs(currentId: number, path: ProductionInfo[]) {
     if (currentId === targetGoodsId) {
       paths.push([...path]);
       return;
@@ -678,10 +810,10 @@ export function getRecipePathBetween(
     if (visited.has(currentId)) return;
     visited.add(currentId);
 
-    const recipes = getRecipesUsingGoods(currentId);
-    for (const recipe of recipes) {
-      for (const output of recipe.outputs) {
-        dfs(output.goodsId, [...path, recipe]);
+    const productions = getProductionsUsingGoods(currentId);
+    for (const production of productions) {
+      for (const output of production.outputs) {
+        dfs(output.goodsId, [...path, production]);
       }
     }
 
@@ -691,6 +823,9 @@ export function getRecipePathBetween(
   dfs(sourceGoodsId, []);
   return paths;
 }
+
+// 保留旧函数名作为别名（兼容性）
+export const getRecipePathBetween = getProductionPathBetween;
 
 /**
  * 清除缓存（如果数据更新需要重新计算）

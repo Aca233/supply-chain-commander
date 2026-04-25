@@ -232,6 +232,8 @@ class SoundManagerClass {
     if (!this.loadedSounds.has(soundId)) {
       this.loadSound(soundId).then(() => {
         this.playInternal(soundId, definition, options);
+      }).catch(() => {
+        // loadSound 已记录失败详情，这里只避免未处理的 Promise rejection 泄漏到全局。
       });
       return;
     }

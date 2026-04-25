@@ -5,9 +5,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { RECIPES } from '@/data/recipes';
 import { ALL_GOODS } from '@/data/goods';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
+import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -47,7 +46,7 @@ export const ProductionOverview: React.FC = () => {
       if (world.buildings.owners[i] === 0) {
         const isActive = world.buildings.isActive[i];
         const efficiency = world.buildings.efficiencies[i];
-        const recipeId = world.buildings.recipeIds[i];
+        const outputModeId = world.buildings.outputModeIds[i];
         const typeId = world.buildings.types[i];
         const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
         
@@ -55,12 +54,13 @@ export const ProductionOverview: React.FC = () => {
           activeCount++;
           totalEfficiency += efficiency;
           
-          const recipe = RECIPES.find(r => r.id === recipeId);
-          if (recipe) {
-            for (const output of recipe.outputs) {
+          const production = getBuildingProduction(typeId, outputModeId);
+          if (production && production.outputs) {
+            const ticksRequired = production.ticksRequired || 1;
+            for (const output of production.outputs) {
               const goods = ALL_GOODS.find(g => g.id === output.goodsId);
               if (goods) {
-                const dailyAmount = (output.amount / recipe.ticksRequired) * 24 * efficiency;
+                const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
                 const price = world.goods.prices[output.goodsId] || goods.basePrice;
                 dailyRevenue += dailyAmount * price;
                 totalOutput += dailyAmount * price;
@@ -68,9 +68,10 @@ export const ProductionOverview: React.FC = () => {
             }
             
             let hasBottleneck = false;
-            for (let j = 0; j < recipe.inputs.length; j++) {
+            const inputs = production.inputs || [];
+            for (let j = 0; j < inputs.length; j++) {
               const inputBuffer = world.buildings.inputBuffers[i * 8 + j];
-              if (inputBuffer < recipe.inputs[j].amount) {
+              if (inputBuffer < inputs[j].amount) {
                 hasBottleneck = true;
                 break;
               }

@@ -13,6 +13,7 @@ import { GOODS_COUNT } from '@/core/constants';
 import { LoanType } from '@/core/finance/BankingSystem';
 import { formatGameDate, tickToDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { shouldUseCompactFinanceLayout } from './responsivePageLayout';
 
 // 设计系统组件
 import {
@@ -51,7 +52,8 @@ const LOAN_TYPE_NAMES: Record<LoanType, string> = {
 };
 
 export const Finance: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactFinanceLayout({ isTablet, isNarrowDesktop });
   const {
     getWorld,
     lastTickResult,
@@ -442,11 +444,13 @@ export const Finance: React.FC = () => {
   }
 
   return (
-    <div className={`space-y-6 ${isTablet ? 'p-4' : 'p-6'}`}>
-      <h1 className={`font-bold ${isTablet ? 'text-xl' : 'text-2xl'}`}>💼 财务报表</h1>
+    <div className={`space-y-6 ${useCompactDesktop ? 'p-4' : 'p-6'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className={`font-bold ${useCompactDesktop ? 'text-xl' : 'text-2xl'}`}>💼 财务报表</h1>
+      </div>
 
       {/* 关键指标卡片 */}
-      <div className={`grid gap-4 ${isTablet ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
+      <div className={`grid gap-4 ${useCompactDesktop ? 'grid-cols-2 xl:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
         {metrics.map((metric, index) => (
           <StatWidget
             key={metric.label}
@@ -464,7 +468,7 @@ export const Finance: React.FC = () => {
         {/* 现金余额趋势 */}
         <Card variant="elevated">
           <CardHeader>
-            <div className="flex items-center justify-between w-full">
+            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
               <CardTitle>📈 现金余额趋势</CardTitle>
               <Badge variant={dailyIncomeChange >= 0 ? 'success' : 'error'}>
                 {dailyIncomeChange >= 0 ? '+' : ''}{dailyIncomeChange.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -514,7 +518,8 @@ export const Finance: React.FC = () => {
         <CardHeader>
           <CardTitle>📋 损益表</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="overflow-x-auto p-0">
+          <div className="min-w-[720px]">
           <table className="w-full">
             <thead className="bg-[var(--bg-muted)]">
               <tr>
@@ -561,6 +566,7 @@ export const Finance: React.FC = () => {
           </table>
           <div className="p-2 text-xs text-[var(--text-muted)] text-center tabular-nums border-t border-[var(--border-muted)]">
             {formatGameDate(tick)} | 历史记录: {financialHistory.length} 条
+          </div>
           </div>
         </CardContent>
       </Card>
@@ -617,7 +623,7 @@ export const Finance: React.FC = () => {
             <CardTitle>⭐ 信用评级</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className={`grid gap-6 ${useCompactDesktop ? 'grid-cols-2 xl:grid-cols-4' : 'grid-cols-2 md:grid-cols-4'}`}>
               <div className="text-center">
                 <Badge
                   variant={
@@ -656,7 +662,7 @@ export const Finance: React.FC = () => {
       {/* 贷款信息 */}
       <Card variant="elevated">
         <CardHeader>
-          <div className="flex justify-between items-center w-full">
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
             <CardTitle>🏦 贷款与债务</CardTitle>
             <Dialog open={showLoanModal} onOpenChange={setShowLoanModal}>
               <DialogTrigger asChild>
@@ -670,7 +676,7 @@ export const Finance: React.FC = () => {
                   {/* 贷款类型选择 */}
                   <div>
                     <label className="text-sm text-[var(--text-muted)] mb-2 block">贷款类型</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {loanOptions.map((option) => (
                         <Card
                           key={option.type}
@@ -744,7 +750,7 @@ export const Finance: React.FC = () => {
                         const totalInterest = totalPayment - amount;
 
                         return (
-                          <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">借款金额：</span>
                               <span className="text-[var(--text-primary)] font-medium">¥{amount.toLocaleString()}</span>
@@ -795,16 +801,18 @@ export const Finance: React.FC = () => {
             </Dialog>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <DataTable
-            data={activeLoans}
-            columns={loanColumns}
-            rowKey="id"
-            variant="game"
-            hoverable
-            emptyText="暂无贷款记录"
-            emptyIcon="🎉"
-          />
+        <CardContent className="overflow-x-auto">
+          <div className="min-w-[680px]">
+            <DataTable
+              data={activeLoans}
+              columns={loanColumns}
+              rowKey="id"
+              variant="game"
+              hoverable
+              emptyText="暂无贷款记录"
+              emptyIcon="🎉"
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

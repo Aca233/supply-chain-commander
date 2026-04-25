@@ -183,11 +183,11 @@ export const POPS_SCALE_FACTOR = 100;
 /** 最大零售店数量 */
 export const MAX_RETAIL_STORES = 500;
 
-/** 零售建筑类型起始ID */
-export const RETAIL_BUILDING_START_ID = 49;
+/** 零售建筑类型起始ID（当前零售目录从便利店开始） */
+export const RETAIL_BUILDING_START_ID = 40;
 
-/** 零售建筑类型数量（精简版保留核心零售店） */
-export const RETAIL_BUILDING_COUNT = 10;
+/** 零售建筑类型数量（当前仅有便利店） */
+export const RETAIL_BUILDING_COUNT = 1;
 
 /** 零售进货触发阈值（库存低于此比例时触发进货） */
 export const RETAIL_RESTOCK_THRESHOLD = 0.3;

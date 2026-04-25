@@ -14,6 +14,8 @@ import { ControlledCompanies } from '@/ui/components/Company/ControlledCompanies
 import { QuickTradeModal } from '@/ui/components/Company/TradePanel';
 import { ShareholderChart } from '@/ui/components/Company/ShareholderChart';
 import { StockMarketPanel } from '@/ui/components/Finance';
+import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
+import { shouldUseOverlayCompanyDetail } from './responsivePageLayout';
 import {
   CompanyProfile,
   getCompanyProfile,
@@ -59,7 +61,12 @@ function formatMoney(value: number): string {
 }
 
 export const CompetitorsAndInvestment: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useOverlayCompanyDetail = shouldUseOverlayCompanyDetail({
+    isMobile,
+    isTablet,
+    isNarrowDesktop,
+  });
   const {
     getWorld,
     tick,
@@ -244,13 +251,13 @@ export const CompetitorsAndInvestment: React.FC = () => {
   };
   
   return (
-    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : useOverlayCompanyDetail ? 'p-4' : 'p-6'}`}>
       {/* 页面标题和主标签页切换 */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>📊 竞争与投资</h1>
-        <div className="flex items-center gap-3">
+        <h1 className={`font-bold ${isMobile ? 'text-lg' : useOverlayCompanyDetail ? 'text-xl' : 'text-2xl'}`}>📊 竞争与投资</h1>
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as MainTabType)}>
-            <TabsList variant="game">
+            <TabsList variant="game" className="flex flex-wrap h-auto">
               <TabsTrigger value="competitors" variant="game">
                 🏢 竞争对手
               </TabsTrigger>
@@ -341,7 +348,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
             )}
           </div>
           
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
             <StatWidget title="现金" value={formatMoney(playerProfile.cash)} icon="💵" compact />
             <StatWidget title="总资产" value={formatMoney(playerProfile.totalAssets)} icon="🏦" compact />
             <StatWidget title="建筑数量" value={playerProfile.buildingCount.toString()} icon="🏭" compact />
@@ -397,8 +404,9 @@ export const CompetitorsAndInvestment: React.FC = () => {
       {/* 标签页和搜索 */}
       <Card variant="elevated" padding="sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as CompanyTabType)}>
-            <TabsList variant="game">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as CompanyTabType)}>
+              <TabsList variant="game" className="flex flex-wrap h-auto">
               <TabsTrigger value="all" variant="game">
                 🏢 全部 <Badge variant="outline" size="sm" className="ml-1">{allProfiles.length}</Badge>
               </TabsTrigger>
@@ -410,8 +418,9 @@ export const CompetitorsAndInvestment: React.FC = () => {
               </TabsTrigger>
               <TabsTrigger value="gainers" variant="game">🔺 涨幅榜</TabsTrigger>
               <TabsTrigger value="losers" variant="game">🔻 跌幅榜</TabsTrigger>
-            </TabsList>
-          </Tabs>
+              </TabsList>
+            </Tabs>
+          </div>
           
           <Input
             placeholder="搜索公司..."
@@ -419,7 +428,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             leftIcon="🔍"
             size="sm"
-            className="w-48"
+            className={useOverlayCompanyDetail ? 'w-full' : 'w-48'}
           />
         </div>
       </Card>
@@ -468,12 +477,28 @@ export const CompetitorsAndInvestment: React.FC = () => {
       </Card>
       
       {/* 选中公司详情面板 */}
-      {selectedProfile && (
+      {selectedProfile && !useOverlayCompanyDetail && (
         <CompanyDetail
           profile={selectedProfile}
           onClose={() => setSelectedCompanyId(null)}
           onAcquire={() => handleAcquire(selectedProfile.id)}
         />
+      )}
+
+      {selectedProfile && useOverlayCompanyDetail && (
+        <ResponsiveOverlayPanel
+          open={selectedProfile !== null}
+          title={selectedProfile.name}
+          position="right"
+          widthClassName="max-w-2xl"
+          onClose={() => setSelectedCompanyId(null)}
+        >
+          <CompanyDetail
+            profile={selectedProfile}
+            onClose={() => setSelectedCompanyId(null)}
+            onAcquire={() => handleAcquire(selectedProfile.id)}
+          />
+        </ResponsiveOverlayPanel>
       )}
       
       {/* 竞争分析提示 */}

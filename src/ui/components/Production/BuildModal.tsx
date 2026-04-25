@@ -4,8 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
-import { RECIPES_BY_BUILDING } from '@/data/recipes';
+import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, hasMultipleOutputModes } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { useGameStore } from '@/stores/gameStore';
@@ -28,7 +27,7 @@ import {
 interface BuildModalProps {
   buildingTypeId: number;
   onClose: () => void;
-  onConfirm: (buildingTypeId: number, recipeId: number) => void;
+  onConfirm: (buildingTypeId: number, outputModeId: number) => void;
 }
 
 export const BuildModal: React.FC<BuildModalProps> = ({
@@ -44,8 +43,28 @@ export const BuildModal: React.FC<BuildModalProps> = ({
     [buildingTypeId]
   );
 
-  const recipes = useMemo(() => {
-    return RECIPES_BY_BUILDING.get(buildingTypeId) || [];
+  // 获取建筑的可用生产模式
+  const outputModes = useMemo(() => {
+    const buildingDef = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
+    if (!buildingDef || !buildingDef.production) return [];
+    
+    // 如果有多个产出模式
+    if (buildingDef.production.outputModes && buildingDef.production.outputModes.length > 0) {
+      return buildingDef.production.outputModes;
+    }
+    
+    // 如果只有默认产出，创建一个虚拟的产出模式
+    if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
+      return [{
+        modeId: 0,
+        name: buildingDef.name,
+        inputs: buildingDef.production.inputs || [],
+        outputs: buildingDef.production.outputs,
+        ticksRequired: buildingDef.production.ticksRequired || 1,
+      }];
+    }
+    
+    return [];
   }, [buildingTypeId]);
 
   const requiredMaterials = useMemo(() => getBaseMaterials(buildingTypeId), [buildingTypeId]);
@@ -101,9 +120,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({
 
   const isRetail = isRetailBuilding(buildingTypeId);
   
-  const [selectedRecipeId, setSelectedRecipeId] = useState<number>(() => {
-    if (isRetail) return -1;
-    return recipes.length > 0 ? recipes[0].id : -1;
+  const [selectedOutputModeId, setSelectedOutputModeId] = useState<number>(() => {
+    if (isRetail) return 0;
+    return outputModes.length > 0 ? outputModes[0].modeId : 0;
   });
 
   const [showMaterials, setShowMaterials] = useState(true);
@@ -115,10 +134,10 @@ export const BuildModal: React.FC<BuildModalProps> = ({
   const canAffordMaterials = materialCheck.sufficient;
   const totalCostWithPurchase = building.buildCost + materialCheck.totalPurchaseCost;
   const canAffordWithPurchase = playerCash >= totalCostWithPurchase;
-  const canBuild = canAffordCash && (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || selectedRecipeId !== -1);
+  const canBuild = canAffordCash && (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || outputModes.length > 0);
 
   const handleConfirm = () => {
-    if (canBuild) onConfirm(buildingTypeId, isRetail ? -1 : selectedRecipeId);
+    if (canBuild) onConfirm(buildingTypeId, selectedOutputModeId);
   };
 
   const formatMoney = (value: number) => {
@@ -127,18 +146,33 @@ export const BuildModal: React.FC<BuildModalProps> = ({
     return `¥${value.toFixed(0)}`;
   };
 
-  const getCategoryBadge = (category: string) => {
-    const configs: Record<string, { variant: 'warning' | 'info' | 'success' | 'primary' | 'outline'; text: string }> = {
-      extraction: { variant: 'warning', text: '采掘' },
-      processing: { variant: 'info', text: '加工' },
-      manufacturing: { variant: 'success', text: '制造' },
-      service: { variant: 'primary', text: '服务' },
-      retail: { variant: 'outline', text: '零售' },
+  // 获取建筑所属产业链
+  const getBuildingIndustry = (buildingId: number): { name: string; variant: 'warning' | 'info' | 'success' | 'primary' | 'outline' | 'error' } => {
+    const industries: Record<string, { ids: number[]; name: string; variant: 'warning' | 'info' | 'success' | 'primary' | 'outline' | 'error' }> = {
+      mining: { ids: [0, 1, 2, 3, 6, 7, 8], name: '矿业', variant: 'warning' },
+      energy: { ids: [4, 5, 17, 39], name: '能源', variant: 'error' },
+      agriculture: { ids: [9, 10, 11, 12, 13, 14], name: '农林牧渔', variant: 'success' },
+      food: { ids: [23, 24, 25], name: '食品', variant: 'warning' },
+      chemical: { ids: [18, 19, 20, 21], name: '化工建材', variant: 'info' },
+      metallurgy: { ids: [15, 16, 26], name: '冶金', variant: 'outline' },
+      textile: { ids: [22, 33], name: '纺织家具', variant: 'primary' },
+      electronics: { ids: [27, 28, 29, 30], name: '电子科技', variant: 'info' },
+      automotive: { ids: [31], name: '汽车', variant: 'primary' },
+      appliance: { ids: [32], name: '家电', variant: 'info' },
+      newEnergy: { ids: [34], name: '新能源', variant: 'success' },
+      pharma: { ids: [35, 36], name: '医药', variant: 'primary' },
+      luxury: { ids: [37, 38], name: '奢侈品', variant: 'warning' },
     };
-    return configs[category] || { variant: 'outline', text: category };
+    
+    for (const industry of Object.values(industries)) {
+      if (industry.ids.includes(buildingId)) {
+        return { name: industry.name, variant: industry.variant };
+      }
+    }
+    return { name: '其他', variant: 'outline' };
   };
 
-  const categoryConfig = getCategoryBadge(building.category);
+  const industryConfig = getBuildingIndustry(building.id);
 
   return (
     <Dialog open={true} onOpenChange={() => onClose()}>
@@ -152,7 +186,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
               <DialogTitle>{building.name}</DialogTitle>
               <p className="text-sm text-[var(--text-muted)] mb-2">{building.description}</p>
               <div className="flex gap-2">
-                <Badge variant={categoryConfig.variant}>{categoryConfig.text}</Badge>
+                <Badge variant={industryConfig.variant}>{industryConfig.name}</Badge>
                 <Badge variant="outline">最高 Lv.{building.maxLevel}</Badge>
               </div>
             </div>
@@ -327,82 +361,128 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                 </div>
               )}
             </Card>
-          ) : (
+          ) : outputModes.length > 1 ? (
             <div>
               <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                📋 选择生产配方
+                📋 选择生产模式
               </h4>
-              {recipes.length > 0 ? (
-                <div className="space-y-2 max-h-[240px] overflow-y-auto scrollbar-thin pr-1">
-                  {recipes.map((recipe) => {
-                    const isSelected = selectedRecipeId === recipe.id;
-                    return (
-                      <Card
-                        key={recipe.id}
-                        variant={isSelected ? 'game' : 'elevated'}
-                        padding="md"
-                        interactive
-                        selected={isSelected}
-                        onClick={() => setSelectedRecipeId(recipe.id)}
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            {isSelected && <Badge variant="success" size="sm">✓</Badge>}
-                            <span className={`font-medium ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-                              {recipe.name}
-                            </span>
-                          </div>
-                          <span className="text-xs text-[var(--text-muted)]">{recipe.ticksRequired}h/周期</span>
+              <div className="space-y-2 max-h-[240px] overflow-y-auto scrollbar-thin pr-1">
+                {outputModes.map((mode) => {
+                  const isSelected = selectedOutputModeId === mode.modeId;
+                  return (
+                    <Card
+                      key={mode.modeId}
+                      variant={isSelected ? 'game' : 'elevated'}
+                      padding="md"
+                      interactive
+                      selected={isSelected}
+                      onClick={() => setSelectedOutputModeId(mode.modeId)}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          {isSelected && <Badge variant="success" size="sm">✓</Badge>}
+                          <span className={`font-medium ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+                            {mode.name}
+                          </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-[10px] text-[var(--text-muted)] mb-2">输入:</p>
-                            {recipe.inputs.length === 0 ? (
-                              <span className="text-xs text-[var(--success)]">无需原料</span>
-                            ) : (
-                              <div className="space-y-1">
-                                {recipe.inputs.map((input) => {
-                                  const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
-                                  return (
-                                    <div key={input.goodsId} className="flex items-center gap-1.5">
-                                      <GoodsIcon goodsId={input.goodsId} size={14} />
-                                      <span className="text-xs text-[var(--error)]">
-                                        -{input.amount} {goods?.name || `#${input.goodsId}`}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-[var(--text-muted)] mb-2">输出:</p>
+                        <span className="text-xs text-[var(--text-muted)]">{mode.ticksRequired || building?.production?.ticksRequired || 1}h/周期</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[10px] text-[var(--text-muted)] mb-2">输入:</p>
+                          {(!mode.inputs || mode.inputs.length === 0) ? (
+                            <span className="text-xs text-[var(--success)]">无需原料</span>
+                          ) : (
                             <div className="space-y-1">
-                              {recipe.outputs.map((output) => {
-                                const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
+                              {mode.inputs.map((input) => {
+                                const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
                                 return (
-                                  <div key={output.goodsId} className="flex items-center gap-1.5">
-                                    <GoodsIcon goodsId={output.goodsId} size={14} />
-                                    <span className="text-xs text-[var(--success)]">
-                                      +{output.amount} {goods?.name || `#${output.goodsId}`}
+                                  <div key={input.goodsId} className="flex items-center gap-1.5">
+                                    <GoodsIcon goodsId={input.goodsId} size={14} />
+                                    <span className="text-xs text-[var(--error)]">
+                                      -{input.amount} {goods?.name || `#${input.goodsId}`}
                                     </span>
                                   </div>
                                 );
                               })}
                             </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-[var(--text-muted)] mb-2">输出:</p>
+                          <div className="space-y-1">
+                            {mode.outputs.map((output) => {
+                              const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
+                              return (
+                                <div key={output.goodsId} className="flex items-center gap-1.5">
+                                  <GoodsIcon goodsId={output.goodsId} size={14} />
+                                  <span className="text-xs text-[var(--success)]">
+                                    +{output.amount} {goods?.name || `#${output.goodsId}`}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Card variant="elevated" padding="lg" className="text-center">
-                  <span className="text-2xl mb-2 block">📭</span>
-                  <p className="text-sm text-[var(--text-muted)]">此建筑类型没有可用配方</p>
-                </Card>
-              )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
+          ) : outputModes.length === 1 ? (
+            <Card variant="default" status="info" padding="md">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">⚙️</span>
+                <span className="text-sm font-medium text-[var(--info)]">生产模式</span>
+              </div>
+              <p className="text-sm text-[var(--text-secondary)] mb-3">
+                {outputModes[0].name}
+              </p>
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[var(--border-muted)]">
+                <div>
+                  <p className="text-[10px] text-[var(--text-muted)] mb-2">输入:</p>
+                  {(!outputModes[0].inputs || outputModes[0].inputs.length === 0) ? (
+                    <span className="text-xs text-[var(--success)]">无需原料</span>
+                  ) : (
+                    <div className="space-y-1">
+                      {outputModes[0].inputs.map((input) => {
+                        const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
+                        return (
+                          <div key={input.goodsId} className="flex items-center gap-1.5">
+                            <GoodsIcon goodsId={input.goodsId} size={14} />
+                            <span className="text-xs text-[var(--error)]">
+                              -{input.amount} {goods?.name || `#${input.goodsId}`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] text-[var(--text-muted)] mb-2">输出:</p>
+                  <div className="space-y-1">
+                    {outputModes[0].outputs.map((output) => {
+                      const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
+                      return (
+                        <div key={output.goodsId} className="flex items-center gap-1.5">
+                          <GoodsIcon goodsId={output.goodsId} size={14} />
+                          <span className="text-xs text-[var(--success)]">
+                            +{output.amount} {goods?.name || `#${output.goodsId}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <Card variant="elevated" padding="lg" className="text-center">
+              <span className="text-2xl mb-2 block">📭</span>
+              <p className="text-sm text-[var(--text-muted)]">此建筑类型没有可用生产模式</p>
+            </Card>
           )}
         </DialogBody>
 

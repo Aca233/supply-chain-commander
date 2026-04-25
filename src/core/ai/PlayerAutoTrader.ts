@@ -9,7 +9,7 @@
 
 import { GameWorld } from '../world/GameWorld';
 import { ALL_GOODS } from '@/data/goods';
-import { RECIPES } from '@/data/recipes';
+import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
 import { GOODS_COUNT } from '../constants';
 import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder, getActiveOrderIndices } from '../market/OrderBook';
 import { getBaseMaterials, getUpgradeMaterials, getBuildingConstructionConfig } from '@/data/buildingMaterials';
@@ -233,19 +233,20 @@ function executeAutoSell(
     }
   }
   
-  // 收集生产配方需要的原材料及其每日需求量
+  // 收集生产配置需要的原材料及其每日需求量
   // 【修复】不再完全跳过原材料，而是计算需求量，只保留足够用的
   const productionInputNeeds = new Map<number, number>(); // goodsId -> 每日需求量
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
     
-    const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
     // 计算每种输入材料的每日需求（每tick消耗 × 24tick/天）
     const efficiency = b.efficiencies[buildingId] || 1;
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const current = productionInputNeeds.get(input.goodsId) || 0;
       productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
     }
@@ -256,11 +257,12 @@ function executeAutoSell(
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
     
-    const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
-    for (const output of recipe.outputs) {
+    for (const output of production.outputs) {
       outputGoods.add(output.goodsId);
     }
   }
@@ -442,11 +444,12 @@ function executeTakeBuyOrders(
   const b = world.buildings;
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
-    const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     const efficiency = b.efficiencies[buildingId] || 1;
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const current = productionInputNeeds.get(input.goodsId) || 0;
       productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
     }
@@ -546,16 +549,17 @@ function executeAutoBuy(
   // 计算每种原材料的需求量（包括生产和建造）
   const materialNeeds = new Map<number, number>();
   
-  // 1. 收集生产配方需要的原材料
+  // 1. 收集生产配置需要的原材料
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
     
-    const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
     // 计算每周期需要的原材料
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const current = materialNeeds.get(input.goodsId) || 0;
       materialNeeds.set(input.goodsId, current + input.amount);
     }
@@ -955,10 +959,11 @@ function cancelUnnecessaryBuyOrders(
   const materialNeeds = new Map<number, number>();
   for (let buildingId = 0; buildingId < b.count; buildingId++) {
     if (b.owners[buildingId] !== playerId || !b.isActive[buildingId]) continue;
-    const recipeId = b.recipeIds[buildingId];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
-    for (const input of recipe.inputs) {
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
+    for (const input of production.inputs) {
       const current = materialNeeds.get(input.goodsId) || 0;
       materialNeeds.set(input.goodsId, current + input.amount);
     }

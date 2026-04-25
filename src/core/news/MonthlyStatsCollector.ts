@@ -8,6 +8,7 @@ import { ALL_GOODS } from '@/data/goods';
 import { MonthlyStats, MonthSnapshot, GameEvent } from './types';
 import { getMonthEvents } from './EventTracker';
 import { GOODS_COUNT } from '@/core/constants';
+import { forEachRetainedTradeOldestFirst } from '@/core/market/TradeLedger';
 
 // 月初快照存储
 let monthStartSnapshot: MonthSnapshot | null = null;
@@ -237,12 +238,11 @@ function calculatePlayerStats(world: GameWorld, events: GameEvent[]): MonthlySta
   let largestTradeGoodsId = -1;
   
   // 遍历交易记录，找到玩家参与的交易
-  for (let i = 0; i < trades.count; i++) {
-    const idx = i % trades.maxTrades;
+  forEachRetainedTradeOldestFirst(world, idx => {
     const tradeTick = trades.ticks[idx];
     
     // 只统计快照之后的交易
-    if (tradeTick < startTick) continue;
+    if (tradeTick < startTick) return;
     
     const buyCompanyId = trades.buyCompanyIds[idx];
     const sellCompanyId = trades.sellCompanyIds[idx];
@@ -260,7 +260,7 @@ function calculatePlayerStats(world: GameWorld, events: GameEvent[]): MonthlySta
         largestTradeGoodsId = trades.goodsIds[idx];
       }
     }
-  }
+  });
   
   // 计算建筑变化
   const buildingsBuilt = Math.max(0, currentBuildings - startBuildings);

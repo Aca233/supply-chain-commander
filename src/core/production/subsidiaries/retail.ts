@@ -4,10 +4,11 @@
  */
 
 import { SubsidiaryBuildingDef } from '../SubsidiaryBuildings';
+import { BuildingId } from '@/data/buildings';
 
 // ==================== 便利店附属建筑 (ID 1400-1404) ====================
 
-const CONVENIENCE_TYPES = [49]; // convenience-store
+const CONVENIENCE_TYPES = [BuildingId.CONVENIENCE_STORE];
 
 export const CONVENIENCE_SUBSIDIARIES: SubsidiaryBuildingDef[] = [
   {

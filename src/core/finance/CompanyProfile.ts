@@ -231,7 +231,6 @@ function getCategoryDescription(category: AICompanyConfig['category']): string {
     case 'pharma': return '医药健康';
     case 'luxury': return '奢侈品';
     case 'energy': return '能源电力';
-    case 'retail': return '零售服务';
     case 'diversified': return '多元化经营';
     default: return '综合业务';
   }

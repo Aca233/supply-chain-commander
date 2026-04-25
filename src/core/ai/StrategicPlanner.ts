@@ -29,8 +29,7 @@ import {
 } from './PricePredictor';
 import { BEHAVIOR_PATTERNS } from './PersonalityBehaviors';
 import { ALL_GOODS } from '@/data/goods';
-import { ALL_BUILDINGS } from '@/data/buildings';
-import { RECIPES, RECIPES_BY_BUILDING } from '@/data/recipes';
+import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
 
 // ==================== 类型定义 ====================
 
@@ -865,11 +864,22 @@ function findBestBuildingInvestments(
   for (const building of ALL_BUILDINGS) {
     let score = 0;
     
-    // 检查该建筑的配方
-    const recipes = RECIPES_BY_BUILDING.get(building.id) || [];
+    // 检查该建筑的生产配置（默认模式和所有输出模式）
+    const defaultProduction = getBuildingProduction(building.id, undefined);
+    const allProductions = defaultProduction ? [defaultProduction] : [];
     
-    for (const recipe of recipes) {
-      for (const output of recipe.outputs) {
+    // 如果有多种输出模式，也考虑进去
+    if (building.production?.outputModes) {
+      for (const mode of building.production.outputModes) {
+        const modeProduction = getBuildingProduction(building.id, mode.modeId);
+        if (modeProduction) {
+          allProductions.push(modeProduction);
+        }
+      }
+    }
+    
+    for (const production of allProductions) {
+      for (const output of production.outputs) {
         const goods = ALL_GOODS.find(g => g.id === output.goodsId);
         if (!goods) continue;
         
@@ -1016,16 +1026,28 @@ function countCompetitors(world: GameWorld, goodsId: number): number {
  * 计算进入壁垒
  */
 function calculateEntryBarrier(goodsId: number): number {
-  // 找能生产该商品的配方
-  for (const recipe of RECIPES) {
-    if (recipe.outputs.some(o => o.goodsId === goodsId)) {
-      const building = ALL_BUILDINGS.find(b => b.id === recipe.buildingTypeId);
-      if (building) {
-        // 根据建筑成本计算壁垒
-        if (building.buildCost < 500000) return 0.2;
-        if (building.buildCost < 1000000) return 0.4;
-        if (building.buildCost < 5000000) return 0.6;
-        return 0.8;
+  // 找能生产该商品的建筑
+  for (const building of ALL_BUILDINGS) {
+    // 检查默认生产模式
+    const defaultProduction = getBuildingProduction(building.id, undefined);
+    if (defaultProduction?.outputs.some(o => o.goodsId === goodsId)) {
+      // 根据建筑成本计算壁垒
+      if (building.buildCost < 500000) return 0.2;
+      if (building.buildCost < 1000000) return 0.4;
+      if (building.buildCost < 5000000) return 0.6;
+      return 0.8;
+    }
+    
+    // 检查输出模式
+    if (building.production?.outputModes) {
+      for (const mode of building.production.outputModes) {
+        const modeProduction = getBuildingProduction(building.id, mode.modeId);
+        if (modeProduction?.outputs.some(o => o.goodsId === goodsId)) {
+          if (building.buildCost < 500000) return 0.2;
+          if (building.buildCost < 1000000) return 0.4;
+          if (building.buildCost < 5000000) return 0.6;
+          return 0.8;
+        }
       }
     }
   }
@@ -1037,11 +1059,20 @@ function calculateEntryBarrier(goodsId: number): number {
  * 估算所需投资
  */
 function estimateRequiredInvestment(goodsId: number): number {
-  for (const recipe of RECIPES) {
-    if (recipe.outputs.some(o => o.goodsId === goodsId)) {
-      const building = ALL_BUILDINGS.find(b => b.id === recipe.buildingTypeId);
-      if (building) {
-        return building.buildCost * 2; // 建筑成本 + 运营资金
+  for (const building of ALL_BUILDINGS) {
+    // 检查默认生产模式
+    const defaultProduction = getBuildingProduction(building.id, undefined);
+    if (defaultProduction?.outputs.some(o => o.goodsId === goodsId)) {
+      return building.buildCost * 2; // 建筑成本 + 运营资金
+    }
+    
+    // 检查输出模式
+    if (building.production?.outputModes) {
+      for (const mode of building.production.outputModes) {
+        const modeProduction = getBuildingProduction(building.id, mode.modeId);
+        if (modeProduction?.outputs.some(o => o.goodsId === goodsId)) {
+          return building.buildCost * 2;
+        }
       }
     }
   }

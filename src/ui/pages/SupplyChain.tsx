@@ -4,9 +4,8 @@
  * 支持移动端响应式布局
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { 
-  GoodsNode,
   ViewModeSelector,
   TierLegend,
   SearchAndFilter,
@@ -16,19 +15,20 @@ import {
   SupplyChainGraph,
   ViewMode,
 } from '@/ui/components/SupplyChain';
-import { Card, CardHeader, CardTitle, CardContent, Button, Badge, Input } from '@/ui/design-system';
+import { Card, Button, Badge, Input } from '@/ui/design-system';
 import { cn } from '@/ui/design-system/utils/cn';
 import { ALL_GOODS, GOODS_BY_ID } from '@/data/goods';
-import { INDUSTRY_INFO, FilterState } from '@/ui/utils/supplyChainUtils';
+import { FilterState } from '@/ui/utils/supplyChainUtils';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
 
 export const SupplyChainPage: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useOverlayDesktopPanels = isNarrowDesktop;
   
   // 视图状态
   const [viewMode, setViewMode] = useState<ViewMode>('tier');
   const [selectedGoodsId, setSelectedGoodsId] = useState<number | null>(null);
-  const [hoveredGoodsId, setHoveredGoodsId] = useState<number | null>(null);
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,24 +40,30 @@ export const SupplyChainPage: React.FC = () => {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [mobileTab, setMobileTab] = useState<'list' | 'graph'>('list');
 
+  useEffect(() => {
+    if (useOverlayDesktopPanels) {
+      setLeftPanelCollapsed(true);
+    }
+  }, [useOverlayDesktopPanels]);
+
   // 选中的层级（从filters中提取）
   const selectedTiers = useMemo(() => filters.tiers || [], [filters.tiers]);
 
   // 商品点击处理
   const handleGoodsClick = useCallback((goodsId: number) => {
     setSelectedGoodsId(goodsId);
-    setShowDetailPanel(true);
+    if (!useOverlayDesktopPanels) {
+      setShowDetailPanel(true);
+    }
     if (isMobile) {
       // 移动端直接显示详情弹窗
     } else if (viewMode !== 'trace') {
       setViewMode('trace');
     }
-  }, [viewMode, isMobile]);
+  }, [viewMode, isMobile, useOverlayDesktopPanels]);
 
   // 商品悬停处理
-  const handleGoodsHover = useCallback((goodsId: number | null) => {
-    setHoveredGoodsId(goodsId);
-  }, []);
+  const handleGoodsHover = useCallback(() => {}, []);
 
   // 层级筛选切换
   const handleTierToggle = useCallback((tier: number) => {
@@ -84,7 +90,7 @@ export const SupplyChainPage: React.FC = () => {
     setShowPlanner(true);
   }, []);
 
-  const selectedGoods = selectedGoodsId ? GOODS_BY_ID.get(selectedGoodsId) : null;
+  const selectedGoods = selectedGoodsId !== null ? GOODS_BY_ID.get(selectedGoodsId) : null;
 
   // ==================== 移动端布局 ====================
   if (isMobile) {
@@ -204,6 +210,7 @@ export const SupplyChainPage: React.FC = () => {
                   onClose={() => setShowDetailPanel(false)}
                   onGoodsClick={handleGoodsClick}
                   onTraceProduct={() => {
+                    setViewMode('trace');
                     setShowDetailPanel(false);
                     setMobileTab('graph');
                   }}
@@ -335,38 +342,74 @@ export const SupplyChainPage: React.FC = () => {
     <div className="h-full flex flex-col bg-background">
       {/* 顶部工具栏 */}
       <div className="flex-shrink-0 border-b border-border bg-background-surface">
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="px-4 py-3 space-y-3">
           {/* 标题 */}
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔗</span>
-            <div>
-              <h1 className="text-lg font-semibold">产业链</h1>
-              <p className="text-xs text-foreground-muted">
-                探索 {ALL_GOODS.length} 种商品的生产关系
-              </p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔗</span>
+              <div>
+                <h1 className="text-lg font-semibold">产业链</h1>
+                <p className="text-xs text-foreground-muted">
+                  探索 {ALL_GOODS.length} 种商品的生产关系
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* 视图模式切换 */}
-          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+            {/* 视图模式切换 */}
+            <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          </div>
 
           {/* 快捷操作 */}
-          <div className="flex items-center gap-2">
-            <Button 
-              variant="secondary" 
-              size="sm"
-              onClick={() => openPlanner()}
-            >
-              🎯 生产规划
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={clearFilters}
-            >
-              🔄 重置
-            </Button>
-          </div>
+          {useOverlayDesktopPanels ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setLeftPanelCollapsed(false)}
+              >
+                📋 商品列表
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowDetailPanel(true)}
+                disabled={!selectedGoods}
+              >
+                📄 商品详情
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => openPlanner(selectedGoodsId ?? undefined)}
+              >
+                🎯 生产规划
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+              >
+                🔄 重置
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => openPlanner()}
+              >
+                🎯 生产规划
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+              >
+                🔄 重置
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* 层级图例 */}
@@ -381,56 +424,58 @@ export const SupplyChainPage: React.FC = () => {
       {/* 主内容区 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧面板 - 商品列表 */}
-        <div
-          className={cn(
-            'flex-shrink-0 border-r border-border bg-background-surface',
-            'transition-all duration-300 overflow-hidden',
-            leftPanelCollapsed ? 'w-12' : 'w-80'
-          )}
-        >
-          {leftPanelCollapsed ? (
-            <div className="p-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full"
-                onClick={() => setLeftPanelCollapsed(false)}
-              >
-                ➡️
-              </Button>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col">
-              {/* 搜索和折叠按钮 */}
-              <div className="p-3 border-b border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setLeftPanelCollapsed(true)}
-                  >
-                    ⬅️
-                  </Button>
+        {!useOverlayDesktopPanels && (
+          <div
+            className={cn(
+              'flex-shrink-0 border-r border-border bg-background-surface',
+              'transition-all duration-300 overflow-hidden',
+              leftPanelCollapsed ? 'w-12' : 'w-80'
+            )}
+          >
+            {leftPanelCollapsed ? (
+              <div className="p-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setLeftPanelCollapsed(false)}
+                >
+                  ➡️
+                </Button>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col">
+                {/* 搜索和折叠按钮 */}
+                <div className="p-3 border-b border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setLeftPanelCollapsed(true)}
+                    >
+                      ⬅️
+                    </Button>
+                  </div>
+                  <SearchAndFilter
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                  />
                 </div>
-                <SearchAndFilter
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                />
-              </div>
 
-              {/* 商品列表 */}
-              <div className="flex-1 overflow-y-auto">
-                <IndustryList
-                  selectedGoodsId={selectedGoodsId}
-                  onGoodsClick={handleGoodsClick}
-                  searchQuery={searchQuery}
-                />
+                {/* 商品列表 */}
+                <div className="flex-1 overflow-y-auto">
+                  <IndustryList
+                    selectedGoodsId={selectedGoodsId}
+                    onGoodsClick={handleGoodsClick}
+                    searchQuery={searchQuery}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* 中间区域 - 图形视图 */}
         <div className="flex-1 relative">
@@ -489,7 +534,7 @@ export const SupplyChainPage: React.FC = () => {
         </div>
 
         {/* 右侧面板 - 商品详情 */}
-        {showDetailPanel && selectedGoods && (
+        {!useOverlayDesktopPanels && showDetailPanel && selectedGoods && (
           <div className="w-96 flex-shrink-0 border-l border-border bg-background-surface overflow-hidden">
             <GoodsDetailPanel
               goodsId={selectedGoodsId!}
@@ -503,10 +548,55 @@ export const SupplyChainPage: React.FC = () => {
         )}
       </div>
 
+      <ResponsiveOverlayPanel
+        open={useOverlayDesktopPanels && !leftPanelCollapsed}
+        title="商品列表"
+        position="left"
+        widthClassName="max-w-sm"
+        onClose={() => setLeftPanelCollapsed(true)}
+      >
+        <div className="h-full flex flex-col">
+          <div className="p-3 border-b border-border">
+            <SearchAndFilter
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <IndustryList
+              selectedGoodsId={selectedGoodsId}
+              onGoodsClick={handleGoodsClick}
+              searchQuery={searchQuery}
+            />
+          </div>
+        </div>
+      </ResponsiveOverlayPanel>
+
+      <ResponsiveOverlayPanel
+        open={useOverlayDesktopPanels && showDetailPanel && !!selectedGoods}
+        title={selectedGoods?.name || '商品详情'}
+        position="right"
+        widthClassName="max-w-lg"
+        onClose={() => setShowDetailPanel(false)}
+      >
+        {selectedGoodsId !== null && (
+          <GoodsDetailPanel
+            goodsId={selectedGoodsId}
+            onClose={() => setShowDetailPanel(false)}
+            onGoodsClick={handleGoodsClick}
+            onTraceProduct={() => {
+              setViewMode('trace');
+            }}
+          />
+        )}
+      </ResponsiveOverlayPanel>
+
       {/* 生产规划器弹窗 */}
       {showPlanner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-[650px] max-h-[90vh] bg-background-surface rounded-xl shadow-2xl overflow-hidden flex flex-col">
+          <div className="w-full max-w-3xl max-h-[90vh] bg-background-surface rounded-xl shadow-2xl overflow-hidden flex flex-col">
             <ProductionPlanner
               initialGoodsId={selectedGoodsId ?? undefined}
               onGoodsClick={handleGoodsClick}

@@ -250,7 +250,7 @@ export function getBuildingIcon(buildingTypeId: number): IconType {
 /**
  * 根据建筑类别获取颜色类名
  */
-export function getBuildingCategoryColor(category: 'extraction' | 'processing' | 'manufacturing' | 'service' | 'retail'): string {
+export function getBuildingCategoryColor(category: 'extraction' | 'processing' | 'manufacturing' | 'luxury' | 'service' | 'retail'): string {
   switch (category) {
     case 'extraction':
       return 'text-amber-500';
@@ -258,6 +258,8 @@ export function getBuildingCategoryColor(category: 'extraction' | 'processing' |
       return 'text-blue-500';
     case 'manufacturing':
       return 'text-green-500';
+    case 'luxury':
+      return 'text-yellow-500';
     case 'service':
       return 'text-purple-500';
     case 'retail':

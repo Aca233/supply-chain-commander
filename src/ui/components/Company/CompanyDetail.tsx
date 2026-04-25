@@ -89,14 +89,14 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
       {/* 头部 */}
-      <div className="p-4 border-b border-slate-700 flex justify-between items-center">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-700 p-4">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-slate-600 flex items-center justify-center text-white font-bold text-xl">
             {profile.name.charAt(0)}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-bold text-white">{profile.name}</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-xl font-bold text-white">{profile.name}</span>
               <span className="font-mono text-slate-400">{stock?.ticker || ''}</span>
               {profile.controlStatus.isPlayerControlled && (
                 <span className="px-2 py-0.5 text-xs bg-purple-500/20 text-purple-400 rounded">
@@ -123,7 +123,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
       </div>
       
       {/* 标签页 */}
-      <div className="flex border-b border-slate-700">
+      <div className="flex flex-wrap border-b border-slate-700">
         <button
           onClick={() => setActiveTab('trade')}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
@@ -157,9 +157,9 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
       </div>
       
       {/* 内容区域 */}
-      <div className="p-4">
+      <div className="p-4 space-y-4">
         {activeTab === 'trade' && (
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* 左侧：股票信息 */}
             <div className="space-y-4">
               {/* 股价信息 */}
@@ -186,7 +186,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-3 text-sm">
+                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
                     <div>
                       <div className="text-slate-400">今开</div>
                       <div className="text-white tabular-nums">{formatPrice(stock.openPrice)}</div>
@@ -235,7 +235,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
               {playerHolding && (
                 <div className="bg-slate-700/50 rounded-lg p-4">
                   <h4 className="text-sm font-medium text-slate-300 mb-3">我的持股</h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
                     <div>
                       <div className="text-slate-400">持有数量</div>
                       <div className="text-white tabular-nums">
@@ -301,7 +301,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
         )}
         
         {activeTab === 'analysis' && (
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* 公司概况 */}
             <div className="space-y-4">
               <div className="bg-slate-700/50 rounded-lg p-4">
@@ -428,7 +428,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
                 {!acquisitionAnalysis.feasible && acquisitionAnalysis.reason && (
                   <p className="text-sm text-red-300 mb-3">{acquisitionAnalysis.reason}</p>
                 )}
-                <div className="grid grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 text-sm">
                   <div>
                     <span className="text-slate-400">建议溢价:</span>
                     <span className="text-white ml-2">
@@ -485,7 +485,7 @@ export const CompanyDetail: React.FC<CompanyDetailProps> = ({
             </div>
             
             {/* 收购按钮 */}
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <button
                 onClick={onAcquire}
                 className="flex-1 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"

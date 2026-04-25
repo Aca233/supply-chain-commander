@@ -76,11 +76,13 @@ const App: React.FC = () => {
   const pendingNews = ui.pendingNews;
   
   // 移动端检测
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
   const showMobileLayout = isMobile || isTablet;
+  const showOverlaySidebar = isNarrowDesktop;
   
   // 移动端抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
   
   // 应用屏幕状态
   const [screen, setScreen] = useState<AppScreen>('mainmenu');
@@ -135,6 +137,18 @@ const App: React.FC = () => {
     }
   }, [screen]);
 
+  useEffect(() => {
+    if (!showOverlaySidebar) {
+      setDesktopSidebarOpen(false);
+    }
+  }, [showOverlaySidebar]);
+
+  useEffect(() => {
+    if (!showMobileLayout) {
+      setDrawerOpen(false);
+    }
+  }, [showMobileLayout]);
+
   // 键盘快捷键控制（仅在游戏中生效，移动端禁用）
   useEffect(() => {
     if (screen !== 'game' || showMobileLayout) return;
@@ -164,6 +178,17 @@ const App: React.FC = () => {
       }
       // 空格键控制暂停/继续
       else if (e.key === ' ' || e.code === 'Space') {
+        const interactiveSelector = [
+          'button',
+          'a',
+          'select',
+          '[role="button"]',
+          '[role="tab"]',
+          '[role="link"]',
+        ].join(', ');
+        const isInteractiveControl = target.matches(interactiveSelector) || target.closest(interactiveSelector) !== null;
+        if (isInteractiveControl) return;
+
         e.preventDefault(); // 防止页面滚动
         if (paused) {
           resumeGame();
@@ -445,15 +470,26 @@ const App: React.FC = () => {
           <ToastProvider>
             <div className="flex h-screen bg-background text-text-primary">
           {/* 侧边栏 */}
-          <Sidebar />
+          <Sidebar
+            mode={showOverlaySidebar ? 'overlay' : 'fixed'}
+            isOpen={showOverlaySidebar ? desktopSidebarOpen : true}
+            onClose={() => setDesktopSidebarOpen(false)}
+          />
 
           {/* 主内容区 - 根据侧边栏状态动态调整左边距 */}
-          <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-60'}`}>
+          <div
+            className={`flex-1 flex flex-col transition-all duration-300 ${
+              showOverlaySidebar ? 'ml-0' : sidebarCollapsed ? 'ml-16' : 'ml-60'
+            }`}
+          >
             {/* 顶部栏 */}
-            <Header />
+            <Header
+              showNavigationToggle={showOverlaySidebar}
+              onNavigationToggle={() => setDesktopSidebarOpen((open) => !open)}
+            />
 
             {/* 页面内容 */}
-            <main className="flex-1 overflow-y-auto p-6 mt-14">
+            <main className={`flex-1 overflow-y-auto mt-14 ${showOverlaySidebar ? 'p-4' : 'p-6'}`}>
               {renderPage()}
             </main>
           </div>

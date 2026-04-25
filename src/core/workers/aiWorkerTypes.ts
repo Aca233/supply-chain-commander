@@ -1,6 +1,8 @@
 /**
  * AI Worker 类型定义
- * 
+ *
+ * v4.0更新：recipeId字段改为outputModeId（但保持字段名以兼容Worker接口）
+ *
  * 定义Worker与主线程之间传递的数据类型
  */
 
@@ -24,7 +26,7 @@ export interface CompanyStateDTO {
   buildings: {
     id: number;
     typeId: number;
-    recipeId: number;
+    recipeId: number;  // v4.0: 实际存储outputModeId，保持字段名以兼容
     isActive: boolean;
     efficiency: number;
     level: number;
@@ -96,7 +98,7 @@ export interface AIDecisionDTO {
   
   // 建造决策
   buildingTypeId?: number;
-  recipeId?: number;
+  recipeId?: number;  // v4.0: 实际存储outputModeId，保持字段名以兼容
   
   // 订单调整
   orderId?: number;
@@ -203,7 +205,7 @@ export interface FinancialAnalysis {
 export interface InvestmentOpportunity {
   type: 'build' | 'expand' | 'diversify';
   buildingTypeId: number;
-  recipeId: number;
+  recipeId: number;  // v4.0: 实际存储outputModeId，保持字段名以兼容
   expectedROI: number;
   paybackPeriod: number;
   riskScore: number;

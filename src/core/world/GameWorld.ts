@@ -48,6 +48,8 @@ export interface BuildingsSystem {
   owners: Uint16Array;            // 所属公司ID
   levels: Uint8Array;             // 等级1-5
   efficiencies: Float32Array;     // 效率0-1.5
+  productionControlModes: Uint8Array;     // 生产控制模式：0=自动 1=手动
+  manualEfficiencyTargets: Float32Array;  // 手动效率目标（0.3-1.5）
   
   // 生产状态
   slotMethods: Uint32Array;       // [N × MAX_SLOTS] 每槽位当前方法(新系统ID 10000+)
@@ -57,8 +59,8 @@ export interface BuildingsSystem {
   inputBuffers: Float32Array;     // [N × MAX_INPUTS]
   outputBuffers: Float32Array;    // [N × MAX_OUTPUTS]
   
-  // 配方索引
-  recipeIds: Uint8Array;          // 当前使用的配方ID
+  // 产品模式索引（替代原来的recipeIds）
+  outputModeIds: Uint8Array;      // 当前使用的产品模式ID (对应 BuildingProductionConfig.outputModes 中的 modeId)
   
   // 状态标记
   isActive: Uint8Array;           // 是否激活运营
@@ -124,10 +126,10 @@ export interface TradesSystem {
   maxTrades: number;
   count: number;
   
-  buyOrderIds: Uint32Array;
-  sellOrderIds: Uint32Array;
-  buyCompanyIds: Uint16Array;
-  sellCompanyIds: Uint16Array;
+  buyOrderIds: Int32Array;
+  sellOrderIds: Int32Array;
+  buyCompanyIds: Int16Array;
+  sellCompanyIds: Int16Array;
   goodsIds: Uint8Array;
   quantities: Float32Array;
   prices: Float32Array;
@@ -192,7 +194,7 @@ export interface ConstructionQueueSystem {
   startTicks: Uint32Array;              // 开始时间
   estimatedEndTicks: Uint32Array;       // 预计完成时间
   materialReserveIds: Uint32Array;      // 预留材料池的起始索引
-  recipeIds: Uint8Array;                // 新建建筑使用的配方ID
+  outputModeIds: Uint8Array;            // 新建建筑使用的产品模式ID（替代原来的recipeIds）
   
   // 已有建筑升级专用 (新建时为-1)
   existingBuildingIds: Int16Array;      // 正在升级的建筑ID，-1表示新建
@@ -313,6 +315,9 @@ export function createGoodsSystem(): GoodsSystem {
  * 创建空的建筑系统
  */
 export function createBuildingsSystem(): BuildingsSystem {
+  const manualEfficiencyTargets = new Float32Array(MAX_BUILDINGS);
+  manualEfficiencyTargets.fill(1.0);
+
   return {
     count: 0,
     maxCount: MAX_BUILDINGS,
@@ -320,11 +325,13 @@ export function createBuildingsSystem(): BuildingsSystem {
     owners: new Uint16Array(MAX_BUILDINGS),
     levels: new Uint8Array(MAX_BUILDINGS),
     efficiencies: new Float32Array(MAX_BUILDINGS),
+    productionControlModes: new Uint8Array(MAX_BUILDINGS),
+    manualEfficiencyTargets,
     slotMethods: new Uint32Array(MAX_BUILDINGS * MAX_SLOTS),  // 升级到Uint32支持10000+的方式ID
     progress: new Float32Array(MAX_BUILDINGS),
     inputBuffers: new Float32Array(MAX_BUILDINGS * MAX_INPUTS),
     outputBuffers: new Float32Array(MAX_BUILDINGS * MAX_OUTPUTS),
-    recipeIds: new Uint8Array(MAX_BUILDINGS),
+    outputModeIds: new Uint8Array(MAX_BUILDINGS),  // 替代原来的recipeIds
     isActive: new Uint8Array(MAX_BUILDINGS),
     // 附属建筑系统
     subsidiaryIds: new Uint16Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
@@ -387,10 +394,10 @@ export function createTradesSystem(): TradesSystem {
   return {
     maxTrades: MAX_TRADES,
     count: 0,
-    buyOrderIds: new Uint32Array(MAX_TRADES),
-    sellOrderIds: new Uint32Array(MAX_TRADES),
-    buyCompanyIds: new Uint16Array(MAX_TRADES),
-    sellCompanyIds: new Uint16Array(MAX_TRADES),
+    buyOrderIds: new Int32Array(MAX_TRADES),
+    sellOrderIds: new Int32Array(MAX_TRADES),
+    buyCompanyIds: new Int16Array(MAX_TRADES),
+    sellCompanyIds: new Int16Array(MAX_TRADES),
     goodsIds: new Uint8Array(MAX_TRADES),
     quantities: new Float32Array(MAX_TRADES),
     prices: new Float32Array(MAX_TRADES),
@@ -447,7 +454,7 @@ export function createConstructionQueueSystem(): ConstructionQueueSystem {
     startTicks: new Uint32Array(size),
     estimatedEndTicks: new Uint32Array(size),
     materialReserveIds: new Uint32Array(size),
-    recipeIds: new Uint8Array(size),
+    outputModeIds: new Uint8Array(size),  // 替代原来的recipeIds
     existingBuildingIds: new Int16Array(size).fill(-1),
     isActive: new Uint8Array(size),
     nextQueueId: 1,

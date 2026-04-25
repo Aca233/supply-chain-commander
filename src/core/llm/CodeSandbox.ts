@@ -2,6 +2,8 @@
  * 代码沙盒执行器
  * 安全地执行LLM生成的代码来操作游戏世界
  *
+ * v4.0更新：recipeIds改为outputModeIds
+ *
  * 扩展版本：支持所有游戏操作
  */
 
@@ -379,7 +381,9 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
       world.buildings.levels[buildingId] = 1;
       world.buildings.isActive[buildingId] = 1;
       world.buildings.efficiencies[buildingId] = 1.0;
-      world.buildings.recipeIds[buildingId] = buildingDef.availableRecipes?.[0] || buildingDef.defaultRecipeId || 0;
+      // v4.0: 使用outputModeIds而非recipeIds
+      const defaultOutputMode = buildingDef.production?.outputModes?.[0]?.modeId || 0;
+      world.buildings.outputModeIds[buildingId] = defaultOutputMode;
       world.buildings.progress[buildingId] = 0;
       
       // 更新公司的建筑计数
@@ -1679,10 +1683,10 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
       return true;
     },
     
-    // ========== 建筑配方相关 ==========
+    // ========== 建筑生产模式相关 ==========
     
     /**
-     * 设置建筑的生产配方
+     * 设置建筑的生产模式（v4.0: 替代原来的配方系统）
      */
     setBuildingRecipe: (buildingId: number, recipeId: number): boolean => {
       if (buildingId < 0 || buildingId >= world.buildings.count) {
@@ -1694,26 +1698,29 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
       const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
       if (!buildingDef) return false;
       
-      // 检查配方是否可用
-      if (buildingDef.availableRecipes && !buildingDef.availableRecipes.includes(recipeId)) {
-        logs.push(`❌ 该建筑不支持配方 ${recipeId}`);
+      // v4.0: 检查产品模式是否可用
+      const outputModes = buildingDef.production?.outputModes || [];
+      const validModeIds = outputModes.map(m => m.modeId);
+      if (validModeIds.length > 0 && !validModeIds.includes(recipeId)) {
+        logs.push(`❌ 该建筑不支持产品模式 ${recipeId}`);
         return false;
       }
       
-      world.buildings.recipeIds[buildingId] = recipeId;
-      logs.push(`🔧 设置建筑 #${buildingId} 的配方为 ${recipeId}`);
+      world.buildings.outputModeIds[buildingId] = recipeId;
+      logs.push(`🔧 设置建筑 #${buildingId} 的产品模式为 ${recipeId}`);
       return true;
     },
     
     /**
-     * 获取建筑的可用配方
+     * 获取建筑的可用产品模式（v4.0: 替代原来的配方列表）
      */
     getBuildingAvailableRecipes: (buildingId: number): number[] => {
       if (buildingId < 0 || buildingId >= world.buildings.count) return [];
       
       const typeId = world.buildings.types[buildingId];
       const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-      return buildingDef?.availableRecipes || [];
+      const outputModes = buildingDef?.production?.outputModes || [];
+      return outputModes.map(m => m.modeId);
     },
     
     /**

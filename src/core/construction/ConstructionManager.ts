@@ -67,7 +67,7 @@ export interface ConstructionTask {
   cashCost: number;
   
   existingBuildingId: number;  // -1 表示新建
-  recipeId: number;            // 新建建筑使用的配方
+  outputModeId: number;        // 新建建筑使用的产品模式ID
 }
 
 /** 材料检查结果 */
@@ -122,7 +122,7 @@ export interface ConstructionQueueSystem {
   
   // 建筑引用
   existingBuildingIds: Int16Array;
-  recipeIds: Int16Array;
+  outputModeIds: Int16Array;
   
   nextTaskId: number;
 }
@@ -164,7 +164,7 @@ export function createConstructionQueueSystem(maxTasks: number = 1000): Construc
     cashCosts: new Float32Array(maxTasks),
     
     existingBuildingIds: new Int16Array(maxTasks).fill(-1),
-    recipeIds: new Int16Array(maxTasks).fill(-1),
+    outputModeIds: new Int16Array(maxTasks).fill(-1),
     
     nextTaskId: 1,
   };
@@ -384,7 +384,7 @@ export class ConstructionManager {
     companyId: number,
     buildingTypeId: number,
     currentTick: number,
-    recipeId: number = -1,
+    outputModeId: number = -1,
   ): { success: boolean; taskId?: number; error?: string } {
     // 检查队列容量
     if (queue.activeCount >= queue.maxTasks) {
@@ -431,7 +431,7 @@ export class ConstructionManager {
     queue.cashCosts[taskIndex] = buildingType.buildCost;
     
     queue.existingBuildingIds[taskIndex] = -1;
-    queue.recipeIds[taskIndex] = recipeId;
+    queue.outputModeIds[taskIndex] = outputModeId;
     
     queue.activeCount++;
     
@@ -510,7 +510,7 @@ export class ConstructionManager {
     queue.cashCosts[taskIndex] = upgradeCost;
     
     queue.existingBuildingIds[taskIndex] = buildingId;
-    queue.recipeIds[taskIndex] = -1;
+    queue.outputModeIds[taskIndex] = -1;
     
     queue.activeCount++;
     
@@ -728,7 +728,7 @@ export class ConstructionManager {
         cashCost: queue.cashCosts[i],
         
         existingBuildingId: queue.existingBuildingIds[i],
-        recipeId: queue.recipeIds[i],
+        outputModeId: queue.outputModeIds[i],
       });
     }
     
@@ -805,7 +805,7 @@ export class ConstructionManager {
         queue.reservedMaterialsCount[writeIndex] = queue.reservedMaterialsCount[i];
         queue.cashCosts[writeIndex] = queue.cashCosts[i];
         queue.existingBuildingIds[writeIndex] = queue.existingBuildingIds[i];
-        queue.recipeIds[writeIndex] = queue.recipeIds[i];
+        queue.outputModeIds[writeIndex] = queue.outputModeIds[i];
       }
       
       writeIndex++;

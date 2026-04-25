@@ -16,8 +16,14 @@
 import { GameWorld } from '../world/GameWorld';
 import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
 import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition } from '@/data/goods';
-import { BUILDINGS_BY_ID, isRetailBuilding, getRetailConfig, RetailConfig } from '@/data/buildings';
-import { createBuyOrder, getOrderBookView, getActiveOrderIndices } from '../market/OrderBook';
+import {
+  BUILDINGS_BY_ID,
+  isRetailBuilding,
+  getRetailConfig,
+  getRetailTypeIndex,
+  RetailConfig,
+} from '@/data/buildings';
+import { createBuyOrder, finalizeFilledOrder, getOrderBookView, getActiveOrderIndices } from '../market/OrderBook';
 import { getOrderBookIndex } from '../market/OrderBookIndex';
 import {
   GOODS_COUNT,
@@ -29,6 +35,7 @@ import {
   RETAIL_PRICE_ADJUST_INTERVAL,
   RETAIL_MAX_TURNOVER_DAYS,
 } from '../constants';
+import { recordTrade, TradeOrderRef } from '../market/TradeLedger';
 
 // ==================== 性能优化缓存 ====================
 
@@ -47,6 +54,10 @@ const retailGoodsCache: RetailGoodsCache = {
   lastUpdate: -1000,
   updateInterval: 50,  // 每50tick更新一次
 };
+
+function invalidateRetailGoodsCache(): void {
+  retailGoodsCache.lastUpdate = -1000;
+}
 
 /** 店铺吸引力缓存 */
 interface StoreAttractivenessCache {
@@ -259,8 +270,15 @@ export function registerRetailStore(world: GameWorld, buildingId: number, isNewl
   const retailId = retail.count++;
   const ownerId = b.owners[buildingId];
   
+  const retailTypeIndex = getRetailTypeIndex(buildingType);
+  if (retailTypeIndex < 0) {
+    console.warn(`[RetailSystem] 建筑类型 ${buildingType} 没有有效的零售类型索引`);
+    retail.count--;
+    return -1;
+  }
+
   retail.buildingIds[retailId] = buildingId;
-  retail.types[retailId] = buildingType - 49;  // 映射到0-9的类型索引
+  retail.types[retailId] = retailTypeIndex;
   retail.owners[retailId] = ownerId;
   retail.reputation[retailId] = 50;  // 初始声誉50
   retail.brandValue[retailId] = 0;
@@ -383,7 +401,6 @@ function purchaseFromSellOrders(
 ): { purchased: number; spent: number } {
   const o = world.orders;
   const c = world.companies;
-  const t = world.trades;
   const orderIndex = getOrderBookIndex();
   
   let totalPurchased = 0;
@@ -443,30 +460,20 @@ function purchaseFromSellOrders(
     // 4. 更新卖单剩余量
     o.remainings[sellOrder.idx] -= buyQty;
     if (o.remainings[sellOrder.idx] <= 0) {
-      // 卖单已完全成交，标记为非激活
-      o.isActive[sellOrder.idx] = 0;
-      o.activeCount--;
-      // 从订单簿索引移除
-      orderIndex.removeOrder(sellOrder.idx);
+      finalizeFilledOrder(world, sellOrder.idx);
     }
     
     // 5. 创建交易记录
-    const tradeIdx = t.count % t.maxTrades;
-    t.buyOrderIds[tradeIdx] = -2;  // -2 表示零售直购
-    t.sellOrderIds[tradeIdx] = sellOrder.idx;
-    t.buyCompanyIds[tradeIdx] = ownerId;
-    t.sellCompanyIds[tradeIdx] = sellerId;
-    t.goodsIds[tradeIdx] = goodsId;
-    t.quantities[tradeIdx] = buyQty;
-    t.prices[tradeIdx] = sellOrder.price;
-    t.ticks[tradeIdx] = world.tick;
-    t.count++;
-    t.nextTradeId++;
-    
-    // 更新累计销售统计（卖方的销售记录）
-    const sellStatsIdx = sellerId * GOODS_COUNT + goodsId;
-    t.cumulativeSalesQuantity[sellStatsIdx] += buyQty;
-    t.cumulativeSalesRevenue[sellStatsIdx] += actualCost;
+    recordTrade(world, {
+      buyOrderId: TradeOrderRef.RETAIL_DIRECT,
+      sellOrderId: sellOrder.idx,
+      buyCompanyId: ownerId,
+      sellCompanyId: sellerId,
+      goodsId,
+      quantity: buyQty,
+      price: sellOrder.price,
+      tick: world.tick,
+    });
     
     totalPurchased += buyQty;
     totalSpent += actualCost;
@@ -959,7 +966,6 @@ function executeWholesaleDeal(
 ): { success: boolean; quantity: number; revenue: number } {
   const retail = world.retail;
   const c = world.companies;
-  const t = world.trades;
   
   const retailOwnerId = retail.owners[retailId];
   const producerInvIdx = producerId * GOODS_COUNT + goodsId;
@@ -1021,23 +1027,16 @@ function executeWholesaleDeal(
   c.cash[retailOwnerId] -= actualCost;
   c.cash[producerId] += actualCost;
   
-  // 5. 创建交易记录
-  const tradeIdx = t.count % t.maxTrades;
-  t.buyOrderIds[tradeIdx] = -3;  // -3 表示批发直销
-  t.sellOrderIds[tradeIdx] = -3;
-  t.buyCompanyIds[tradeIdx] = retailOwnerId;
-  t.sellCompanyIds[tradeIdx] = producerId;
-  t.goodsIds[tradeIdx] = goodsId;
-  t.quantities[tradeIdx] = quantity;
-  t.prices[tradeIdx] = price;
-  t.ticks[tradeIdx] = world.tick;
-  t.count++;
-  t.nextTradeId++;
-  
-  // 6. 更新累计销售统计（生产商的销售记录）
-  const sellStatsIdx = producerId * GOODS_COUNT + goodsId;
-  t.cumulativeSalesQuantity[sellStatsIdx] += quantity;
-  t.cumulativeSalesRevenue[sellStatsIdx] += actualCost;
+  recordTrade(world, {
+    buyOrderId: TradeOrderRef.WHOLESALE_DIRECT,
+    sellOrderId: TradeOrderRef.WHOLESALE_DIRECT,
+    buyCompanyId: retailOwnerId,
+    sellCompanyId: producerId,
+    goodsId,
+    quantity,
+    price,
+    tick: world.tick,
+  });
   
   return {
     success: true,
@@ -1117,6 +1116,7 @@ export function processRetailDelivery(world: GameWorld): number {
   const retail = world.retail;
   const c = world.companies;
   let deliveredCount = 0;
+  let inventoryChanged = false;
   
   // 遍历所有零售店
   for (let retailId = 0; retailId < retail.count; retailId++) {
@@ -1135,19 +1135,22 @@ export function processRetailDelivery(world: GameWorld): number {
       // 检查公司库存中有多少该商品
       const companyInvIdx = ownerId * GOODS_COUNT + goodsId;
       const companyInventory = c.inventories[companyInvIdx];
+      const reservedInventory = c.inventoryReserved[companyInvIdx] || 0;
+      const availableCompanyInventory = Math.max(0, companyInventory - reservedInventory);
       
       // 如果公司有库存，转移到零售店
-      if (companyInventory > 0) {
+      if (availableCompanyInventory > 0) {
         const capacity = retail.inventoryCapacities[idx];
         const currentStock = retail.inventories[idx];
         const spaceAvailable = capacity - currentStock;
         
         if (spaceAvailable > 0) {
-          const transferAmount = Math.min(companyInventory, spaceAvailable);
+          const transferAmount = Math.min(availableCompanyInventory, spaceAvailable);
           
           // 从公司库存转移到零售店库存
           c.inventories[companyInvIdx] -= transferAmount;
           retail.inventories[idx] += transferAmount;
+          inventoryChanged = true;
           
           // 更新进货成本
           const goods = ALL_GOODS.find(g => g.id === goodsId);
@@ -1158,6 +1161,10 @@ export function processRetailDelivery(world: GameWorld): number {
         }
       }
     }
+  }
+
+  if (inventoryChanged) {
+    invalidateRetailGoodsCache();
   }
   
   return deliveredCount;

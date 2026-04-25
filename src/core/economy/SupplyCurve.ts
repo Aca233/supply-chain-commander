@@ -1,10 +1,12 @@
 /**
  * 供给曲线与边际成本系统
  * 实现企业的成本结构和利润最大化产量决策
+ *
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { RECIPES, RecipeDefinition } from '@/data/recipes';
+import { getBuildingProduction, BUILDINGS_BY_ID } from '@/data/buildings';
 import { GOODS_COUNT } from '@/core/constants';
 
 /**
@@ -47,17 +49,19 @@ export interface MarginalCostParams {
 
 /**
  * 计算建筑的成本结构
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 export function calculateCostStructure(
   world: GameWorld,
   buildingId: number,
   quantity: number
 ): CostStructure {
-  const buildingDefId = world.buildings.types[buildingId];
-  const recipeId = world.buildings.recipeIds[buildingId];
-  const recipe = RECIPES.find(r => r.id === recipeId);
+  const buildingTypeId = world.buildings.types[buildingId];
+  const outputModeId = world.buildings.outputModeIds[buildingId];
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
+  const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
   
-  if (!recipe) {
+  if (!production || !buildingDef) {
     return {
       fixedCost: 0,
       variableCost: 0,
@@ -74,18 +78,21 @@ export function calculateCostStructure(
   const fixedCost = 100; // 基础固定成本
   
   // 劳动力成本（半固定，随产量有一定变化）
-  const laborCost = recipe.laborRequired * 0.1 * Math.sqrt(quantity);
+  const laborRequired = production.laborRequired || 10;
+  const laborCost = laborRequired * 0.1 * Math.sqrt(quantity);
   
   // 原材料成本（完全可变）
   let materialCost = 0;
-  for (const input of recipe.inputs) {
+  const inputs = production.inputs || [];
+  for (const input of inputs) {
     const price = world.goods.prices[input.goodsId];
     materialCost += price * input.amount * quantity;
   }
   
   // 能源成本（可变）
   const energyPrice = world.goods.prices[57] || 0.5; // 电力价格
-  const energyCost = recipe.energyRequired * energyPrice * 0.001 * quantity;
+  const energyRequired = buildingDef.powerConsumption || 10;
+  const energyCost = energyRequired * energyPrice * 0.001 * quantity;
   
   // 可变成本 = 原材料 + 能源 + 劳动力可变部分
   const variableCost = materialCost + energyCost + laborCost;
@@ -100,13 +107,13 @@ export function calculateCostStructure(
   // 使用简化的边际成本模型：MC = 材料单位成本 * (1 + 0.1 * Q / capacity)
   // 这模拟了产能接近上限时边际成本上升
   const capacity = 100; // 标准产能
-  const baseMaterialCostPerUnit = recipe.inputs.reduce((sum, input) => {
+  const baseMaterialCostPerUnit = inputs.reduce((sum, input) => {
     return sum + world.goods.prices[input.goodsId] * input.amount;
   }, 0);
   
-  const marginalCost = baseMaterialCostPerUnit * (1 + 0.1 * quantity / capacity) 
-    + recipe.energyRequired * energyPrice * 0.001
-    + recipe.laborRequired * 0.05 / Math.max(1, Math.sqrt(quantity));
+  const marginalCost = baseMaterialCostPerUnit * (1 + 0.1 * quantity / capacity)
+    + energyRequired * energyPrice * 0.001
+    + laborRequired * 0.05 / Math.max(1, Math.sqrt(quantity));
   
   return {
     fixedCost,
@@ -123,25 +130,29 @@ export function calculateCostStructure(
 /**
  * 获取边际成本曲线参数
  *
+ * v4.0更新：使用getBuildingProduction替代RECIPES
+ *
  * 修复说明：
  * 1. 提高最大产能（从50提升到200）
  * 2. 调整边际成本曲线使其更加平缓
- * 3. 根据建筑类型和配方调整参数
+ * 3. 根据建筑类型和生产配置调整参数
  * 4. 添加规模经济效应
  */
 export function getMarginalCostParams(
   world: GameWorld,
   buildingId: number
 ): MarginalCostParams {
-  const recipeId = world.buildings.recipeIds[buildingId];
-  const recipe = RECIPES.find(r => r.id === recipeId);
+  const buildingTypeId = world.buildings.types[buildingId];
+  const outputModeId = world.buildings.outputModeIds[buildingId];
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
   
-  if (!recipe) {
+  if (!production) {
     return { a: 10, b: -0.05, c: 0.0005, minQuantity: 0, maxQuantity: 200 };
   }
   
   // 计算基础材料成本
-  const baseMaterialCost = recipe.inputs.reduce((sum, input) => {
+  const inputs = production.inputs || [];
+  const baseMaterialCost = inputs.reduce((sum, input) => {
     return sum + world.goods.prices[input.goodsId] * input.amount;
   }, 0);
   
@@ -265,6 +276,7 @@ export function calculateOptimalQuantity(
 /**
  * 计算市场总供给曲线
  * 返回给定价格下的市场总供给量
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 export function calculateMarketSupply(
   world: GameWorld,
@@ -275,13 +287,15 @@ export function calculateMarketSupply(
   
   // 遍历所有生产该商品的建筑
   for (let i = 0; i < world.buildings.count; i++) {
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
     
-    if (!recipe) continue;
+    if (!production) continue;
     
     // 检查是否生产目标商品
-    const producesGoods = recipe.outputs.some(o => o.goodsId === goodsId);
+    const outputs = production.outputs || [];
+    const producesGoods = outputs.some(o => o.goodsId === goodsId);
     if (!producesGoods) continue;
     
     // 临时设置价格来计算供给

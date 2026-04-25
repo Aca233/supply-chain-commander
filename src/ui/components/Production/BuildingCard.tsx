@@ -5,12 +5,12 @@
 
 import React, { useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
-import { RECIPES } from '@/data/recipes';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { CompactResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
+import { BuildingProductionControlInline } from './BuildingProductionControlInline';
 
 // 设计系统组件
 import { Card, Badge, Button, ProgressBar } from '@/ui/design-system';
@@ -64,15 +64,16 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
   compact = false,
 }) => {
   const { getWorld, playerCash, upgradeBuilding, tick } = useGameStore();
-  const world = getWorld();
 
+  // 每次渲染时获取最新的world引用（tick变化会触发重新渲染）
   const buildingData = useMemo(() => {
+    const world = getWorld();
     if (!world) return null;
 
     const typeId = world.buildings.types[buildingIndex];
     const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-    const recipeId = world.buildings.recipeIds[buildingIndex];
-    const recipe = RECIPES.find(r => r.id === recipeId);
+    const outputModeId = world.buildings.outputModeIds[buildingIndex];
+    const production = getBuildingProduction(typeId, outputModeId);
     const level = world.buildings.levels[buildingIndex];
     const efficiency = world.buildings.efficiencies[buildingIndex];
     const isActive = world.buildings.isActive[buildingIndex];
@@ -88,9 +89,9 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     }> = [];
     
     let hasBottleneck = false;
-    if (recipe && !isRetail) {
-      for (let j = 0; j < recipe.inputs.length; j++) {
-        const input = recipe.inputs[j];
+    if (production && production.inputs && !isRetail) {
+      for (let j = 0; j < production.inputs.length; j++) {
+        const input = production.inputs[j];
         const current = world.buildings.inputBuffers[buildingIndex * 8 + j];
         const required = input.amount;
         const percentage = Math.min(1, current / required);
@@ -117,10 +118,11 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     }> = [];
     
     let dailyRevenue = 0;
-    if (recipe) {
-      for (const output of recipe.outputs) {
+    const ticksRequired = production?.ticksRequired || 1;
+    if (production && production.outputs) {
+      for (const output of production.outputs) {
         const goods = ALL_GOODS.find(g => g.id === output.goodsId);
-        const dailyAmount = (output.amount / recipe.ticksRequired) * 24 * efficiency;
+        const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
         dailyRevenue += dailyAmount * price;
         
@@ -134,7 +136,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     }
 
     // 计算日成本
-    const dailyCost = buildingDef 
+    const dailyCost = buildingDef
       ? buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost
       : 0;
 
@@ -153,6 +155,24 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     const upgradeCost = buildingDef?.upgradeCosts[level] || 0;
     const canUpgrade = level < maxLevel && playerCash >= upgradeCost;
 
+    // 获取生产配置名称
+    let productionName = isRetail ? '零售' : '无配方';
+    if (production) {
+      // 检查是否有outputMode名称
+      if (buildingDef?.production?.outputModes) {
+        const mode = buildingDef.production.outputModes.find(m => m.modeId === outputModeId);
+        if (mode) {
+          productionName = mode.name;
+        } else if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
+          const outputGoods = ALL_GOODS.find(g => g.id === buildingDef.production!.outputs![0].goodsId);
+          productionName = outputGoods?.name || buildingDef.name;
+        }
+      } else if (production.outputs && production.outputs.length > 0) {
+        const outputGoods = ALL_GOODS.find(g => g.id === production.outputs![0].goodsId);
+        productionName = `生产${outputGoods?.name || '商品'}`;
+      }
+    }
+
     return {
       typeId,
       name: buildingDef?.name || `建筑#${typeId}`,
@@ -162,8 +182,8 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       efficiency,
       isActive,
       isRetail,
-      recipeId,
-      recipeName: recipe?.name || (isRetail ? '零售' : '无配方'),
+      outputModeId,
+      productionName,
       inputs,
       outputs,
       dailyRevenue,
@@ -173,7 +193,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       upgradeCost,
       canUpgrade,
     };
-  }, [world, buildingIndex, playerCash, tick]);
+  }, [getWorld, buildingIndex, playerCash, tick]);
 
   if (!buildingData) return null;
 
@@ -200,32 +220,35 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
         interactive
         selected={isSelected}
         onClick={onClick}
-        className="flex items-center gap-3"
+        className="flex flex-col gap-3"
       >
-        {/* 图标容器 - 毛玻璃效果 */}
-        <div className="w-10 h-10 rounded-xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] flex items-center justify-center flex-shrink-0">
-          <BuildingIcon buildingId={buildingData.typeId} size={24} autoColor />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm truncate text-white">{buildingData.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 border border-white/10">
-              Lv.{buildingData.level}
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${config.badgeClass}`}>
-              {config.text}
-            </span>
+        <div className="flex items-center gap-3">
+          {/* 图标容器 - 毛玻璃效果 */}
+          <div className="w-10 h-10 rounded-xl bg-white/[0.08] backdrop-blur-sm border border-white/[0.1] flex items-center justify-center flex-shrink-0">
+            <BuildingIcon buildingId={buildingData.typeId} size={24} autoColor />
           </div>
-          <div className="text-xs text-white/50 truncate">{buildingData.recipeName}</div>
-        </div>
-        <div className="text-right">
-          <div className={`text-sm font-medium tabular-nums ${buildingData.dailyProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {formatMoney(buildingData.dailyProfit)}/日
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm truncate text-white">{buildingData.name}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 border border-white/10">
+                Lv.{buildingData.level}
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${config.badgeClass}`}>
+                {config.text}
+              </span>
+            </div>
+            <div className="text-xs text-white/50 truncate">{buildingData.productionName}</div>
           </div>
-          <div className="text-xs text-white/40 tabular-nums">
-            效率 {(buildingData.efficiency * 100).toFixed(0)}%
+          <div className="text-right">
+            <div className={`text-sm font-medium tabular-nums ${buildingData.dailyProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {formatMoney(buildingData.dailyProfit)}/日
+            </div>
+            <div className="text-xs text-white/40 tabular-nums">
+              效率 {(buildingData.efficiency * 100).toFixed(0)}%
+            </div>
           </div>
         </div>
+        <BuildingProductionControlInline buildingId={buildingIndex} compact />
       </Card>
     );
   }
@@ -259,7 +282,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
               <span className={`text-[10px] px-2 py-0.5 rounded-md ${config.badgeClass} font-medium`}>
                 {config.text}
               </span>
-              <span className="text-xs text-white/50 truncate">{buildingData.recipeName}</span>
+              <span className="text-xs text-white/50 truncate">{buildingData.productionName}</span>
             </div>
           </div>
         </div>
@@ -322,6 +345,10 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
           </div>
         </div>
       )}
+
+      <div className="px-4 py-3 border-t border-white/[0.06] bg-black/10">
+        <BuildingProductionControlInline buildingId={buildingIndex} />
+      </div>
       
       {/* 生产方式槽位 */}
       <div className="px-4 py-2 border-t border-white/[0.06]">

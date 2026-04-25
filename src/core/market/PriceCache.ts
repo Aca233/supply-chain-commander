@@ -5,6 +5,7 @@
 
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '../constants';
 import { GameWorld } from '../world/GameWorld';
+import { forEachRetainedTradeNewestFirst } from './TradeLedger';
 
 /**
  * 价格统计数据
@@ -104,15 +105,14 @@ export class PriceCache {
     
     // 单次遍历计算所有商品的统计数据
     // 从最新到最旧遍历
-    for (let i = t.count - 1; i >= 0; i--) {
-      const idx = i % t.maxTrades;
+    forEachRetainedTradeNewestFirst(world, idx => {
       const tradeTick = t.ticks[idx];
       
       // 超出24小时范围，停止
-      if (tradeTick < startTick24h) break;
+      if (tradeTick < startTick24h) return false;
       
       const goodsId = t.goodsIds[idx];
-      if (goodsId >= this.goodsCount) continue;
+      if (goodsId >= this.goodsCount) return;
       
       const quantity = t.quantities[idx];
       const price = t.prices[idx];
@@ -148,7 +148,7 @@ export class PriceCache {
         // 1小时的value单独累加
         this.value24h[goodsId] += value;  // 复用，后面会覆盖
       }
-    }
+    });
     
     // 计算VWAP和整理数据
     for (let i = 0; i < this.goodsCount; i++) {
@@ -170,17 +170,16 @@ export class PriceCache {
     
     // 计算1小时VWAP（需要重新遍历，但只看1小时范围）
     this.tempValue.fill(0);
-    for (let i = t.count - 1; i >= 0; i--) {
-      const idx = i % t.maxTrades;
+    forEachRetainedTradeNewestFirst(world, idx => {
       const tradeTick = t.ticks[idx];
       
-      if (tradeTick < startTick1h) break;
+      if (tradeTick < startTick1h) return false;
       
       const goodsId = t.goodsIds[idx];
-      if (goodsId >= this.goodsCount) continue;
+      if (goodsId >= this.goodsCount) return;
       
       this.tempValue[goodsId] += t.quantities[idx] * t.prices[idx];
-    }
+    });
     
     for (let i = 0; i < this.goodsCount; i++) {
       if (this.volume1h[i] > 0) {

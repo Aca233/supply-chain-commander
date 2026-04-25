@@ -1,48 +1,55 @@
 /**
  * 游戏世界初始化器
- * 精简版本：只包含核心产业链（88种商品、44种建筑、60种配方）
+ * 【v4.0更新】移除配方系统，使用建筑内嵌生产配置
  *
- * 【v3.0更新】使用统一的AI_COMPANIES配置
- * - 所有公司配置统一在AIPersonality.ts中定义
- * - 确保公司名称、产业和建筑配置的一致性
+ * 核心变更：
+ * - 移除所有RECIPES依赖
+ * - 使用outputModeId替代recipeId
+ * - 生产参数从buildings.ts的production属性获取
  */
 
 import { GameWorld, createGameWorld, setInventory } from './GameWorld';
 import { ALL_GOODS } from '@/data/goods';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
-import { RECIPES, RecipeDefinition } from '@/data/recipes';
+import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, BuildingId } from '@/data/buildings';
 import { PLAYER_INITIAL_CASH, GOODS_COUNT, MAX_SLOTS } from '../constants';
 import { getDefaultSlotMethods, getBuildingSlotCount, initializeBuildingProductionMethods } from '../production/ProductionMethods';
+import { initializeBuildingProductionControl } from '../production/ProductionControl';
 import { createBuyOrder, createSellOrder, initOrderPool } from '../market/OrderBook';
 import { initRetailSystem, registerRetailStore } from '../economy/RetailSystem';
 import { buildingIndex, inventoryIndex, resetAllIndices } from '../performance/DataStructures';
 import { initializeSubsidiaries } from '../production/subsidiaries';
-import { AI_COMPANIES, AICompanyConfig } from '../ai/AIPersonality';
+import { AI_COMPANIES, AICompanyConfig, OutputModeId } from '../ai/AIPersonality';
+import {
+  getBootstrapBuyerCompanyIds,
+  seedBootstrapBuyOrders,
+  seedInventoryBackedSellOrders,
+} from './MarketBootstrap';
 
-// ==================== 智能配方分配系统 ====================
+// ==================== 生产模式追踪系统 ====================
 
-interface RecipeSupplyTracker {
+interface ProductionTracker {
   goodsProducerCount: Map<number, number>;
-  recipeAssignmentCount: Map<number, number>;
+  modeAssignmentCount: Map<string, number>; // key = "buildingTypeId:outputModeId"
 }
 
-function createRecipeSupplyTracker(): RecipeSupplyTracker {
+function createProductionTracker(): ProductionTracker {
   return {
     goodsProducerCount: new Map(),
-    recipeAssignmentCount: new Map(),
+    modeAssignmentCount: new Map(),
   };
 }
 
-function recordRecipeAssignment(tracker: RecipeSupplyTracker, recipeId: number): void {
-  const recipe = RECIPES.find(r => r.id === recipeId);
-  if (!recipe) return;
+function recordModeAssignment(tracker: ProductionTracker, buildingTypeId: number, outputModeId: number): void {
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
+  if (!production) return;
   
-  tracker.recipeAssignmentCount.set(
-    recipeId,
-    (tracker.recipeAssignmentCount.get(recipeId) || 0) + 1
+  const key = `${buildingTypeId}:${outputModeId}`;
+  tracker.modeAssignmentCount.set(
+    key,
+    (tracker.modeAssignmentCount.get(key) || 0) + 1
   );
   
-  for (const output of recipe.outputs) {
+  for (const output of production.outputs) {
     tracker.goodsProducerCount.set(
       output.goodsId,
       (tracker.goodsProducerCount.get(output.goodsId) || 0) + 1
@@ -50,17 +57,17 @@ function recordRecipeAssignment(tracker: RecipeSupplyTracker, recipeId: number):
   }
 }
 
-let globalRecipeTracker: RecipeSupplyTracker | null = null;
+let globalProductionTracker: ProductionTracker | null = null;
 
-function getGlobalRecipeTracker(): RecipeSupplyTracker {
-  if (!globalRecipeTracker) {
-    globalRecipeTracker = createRecipeSupplyTracker();
+function getGlobalProductionTracker(): ProductionTracker {
+  if (!globalProductionTracker) {
+    globalProductionTracker = createProductionTracker();
   }
-  return globalRecipeTracker;
+  return globalProductionTracker;
 }
 
-function resetGlobalRecipeTracker(): void {
-  globalRecipeTracker = createRecipeSupplyTracker();
+function resetGlobalProductionTracker(): void {
+  globalProductionTracker = createProductionTracker();
 }
 
 /**
@@ -72,7 +79,7 @@ export function initializeWorld(): GameWorld {
   resetAllIndices();
   initializeBuildingProductionMethods();
   initializeSubsidiaries();
-  resetGlobalRecipeTracker();
+  resetGlobalProductionTracker();
   
   initializeGoods(world);
   initializePlayerCompany(world);
@@ -148,19 +155,21 @@ function initializePlayerCompany(world: GameWorld): void {
 function initializePlayerBuildings(world: GameWorld): void {
   const playerId = 0;
   
+  // 使用outputModeId替代recipeId
+  // 单产品建筑使用 modeId=0
   const starterBuildings = [
-    { buildingTypeId: 0, recipeId: 0 },  // 铁矿场-铁矿开采
-    { buildingTypeId: 8, recipeId: 10 }, // 钢铁厂-钢铁冶炼
-    { buildingTypeId: 6, recipeId: 6 },  // 农场-粮食种植
+    { buildingTypeId: BuildingId.IRON_MINE, outputModeId: 0 },         // 铁矿场-铁矿开采
+    { buildingTypeId: BuildingId.STEEL_MILL, outputModeId: 0 },        // 钢铁厂-钢铁冶炼
+    { buildingTypeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_GRAIN },  // 农场-粮食种植
   ];
   
   for (const config of starterBuildings) {
     const building = ALL_BUILDINGS.find(b => b.id === config.buildingTypeId);
-    const recipe = RECIPES.find(r => r.id === config.recipeId);
+    const production = getBuildingProduction(config.buildingTypeId, config.outputModeId);
     
-    if (building && recipe) {
+    if (building && production) {
       try {
-        addBuilding(world, playerId, config.buildingTypeId, config.recipeId);
+        addBuilding(world, playerId, config.buildingTypeId, config.outputModeId);
       } catch (e) {
         console.warn('Failed to add starter building:', e);
       }
@@ -178,8 +187,8 @@ function initializePlayerBuildings(world: GameWorld): void {
 function initializeAICompanies(world: GameWorld): void {
   const c = world.companies;
   
-  // 过滤出非零售类公司（零售类公司在initializeRetailStores中单独处理）
-  const productionCompanies = AI_COMPANIES.filter(co => co.category !== 'retail');
+  // 使用所有AI公司配置
+  const productionCompanies = AI_COMPANIES;
   
   // 创建所有生产类AI公司
   for (let i = 0; i < productionCompanies.length; i++) {
@@ -246,18 +255,18 @@ function initializeAICompanies(world: GameWorld): void {
       }
     }
     
-    // 创建建筑（从统一配置中读取）
-    const tracker = getGlobalRecipeTracker();
+    // 创建建筑（从统一配置中读取，使用outputModeId）
+    const tracker = getGlobalProductionTracker();
     
     for (const buildingConfig of ai.initialBuildings) {
       for (let count = 0; count < buildingConfig.count; count++) {
-        const recipeId = buildingConfig.recipeId;
+        const outputModeId = buildingConfig.outputModeId;
         
-        if (recipeId !== undefined) {
+        if (outputModeId !== undefined) {
           try {
-            addBuilding(world, companyId, buildingConfig.typeId, recipeId);
-            if (recipeId >= 0) {
-              recordRecipeAssignment(tracker, recipeId);
+            addBuilding(world, companyId, buildingConfig.typeId, outputModeId);
+            if (outputModeId >= 0) {
+              recordModeAssignment(tracker, buildingConfig.typeId, outputModeId);
             }
           } catch (e) {
             console.warn(`[初始化] 无法为 ${ai.name} 添加建筑类型 ${buildingConfig.typeId}:`, e);
@@ -323,15 +332,16 @@ function generateInitialMarketOrders(world: GameWorld): void {
       }
     }
     
-    // 为AI需要的原材料挂买单
+    // 为AI需要的原材料挂买单（使用建筑内嵌的生产配置）
     for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
       if (world.buildings.owners[buildingId] !== companyId) continue;
       
-      const recipeId = world.buildings.recipeIds[buildingId];
-      const recipe = RECIPES.find(r => r.id === recipeId);
-      if (!recipe) continue;
+      const buildingTypeId = world.buildings.types[buildingId];
+      const outputModeId = world.buildings.outputModeIds[buildingId];
+      const production = getBuildingProduction(buildingTypeId, outputModeId);
+      if (!production) continue;
       
-      for (const input of recipe.inputs) {
+      for (const input of production.inputs) {
         const currentPrice = world.goods.prices[input.goodsId];
         const goods = ALL_GOODS.find(g => g.id === input.goodsId);
         if (!goods) continue;
@@ -348,40 +358,13 @@ function generateInitialMarketOrders(world: GameWorld): void {
   }
   
   // 为所有商品生成市场订单
+  const aiCompanyIds = Array.from({ length: c.count - 1 }, (_, offset) => offset + 1)
+    .filter(companyId => c.isAI[companyId]);
+
   for (let goodsId = 0; goodsId < world.goods.count; goodsId++) {
-    const goods = ALL_GOODS.find(g => g.id === goodsId);
-    if (!goods) continue;
-    
-    const basePrice = goods.basePrice;
-    
-    // 生成买单
-    for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
-      const companyId = 1 + Math.floor(Math.random() * (c.count - 1));
-      if (companyId >= c.count || !c.isAI[companyId]) continue;
-      
-      const buyPrice = basePrice * (0.90 + Math.random() * 0.18);
-      const buyQuantity = Math.floor(30 + Math.random() * 150);
-      
-      if (c.cash[companyId] >= buyQuantity * buyPrice * 1.2) {
-        createBuyOrder(world, companyId, goodsId, buyQuantity, buyPrice);
-      }
-    }
-    
-    // 生成卖单
-    for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
-      const companyId = 1 + Math.floor(Math.random() * (c.count - 1));
-      if (companyId >= c.count || !c.isAI[companyId]) continue;
-      
-      const inventory = world.companies.inventories[companyId * GOODS_COUNT + goodsId];
-      if (inventory < 50) {
-        setInventory(world, companyId, goodsId, 200 + Math.random() * 400);
-      }
-      
-      const sellPrice = basePrice * (0.88 + Math.random() * 0.15);
-      const sellQuantity = Math.floor(30 + Math.random() * 150);
-      
-      createSellOrder(world, companyId, goodsId, sellQuantity, sellPrice);
-    }
+    const bootstrapBuyerIds = getBootstrapBuyerCompanyIds(world, goodsId);
+    seedBootstrapBuyOrders(world, goodsId, bootstrapBuyerIds);
+    seedInventoryBackedSellOrders(world, goodsId, aiCompanyIds);
   }
   
   console.log(`[初始化] 生成了 ${world.orders.activeCount} 个初始市场订单`);
@@ -389,12 +372,13 @@ function generateInitialMarketOrders(world: GameWorld): void {
 
 /**
  * 为公司添加建筑
+ * 【v4.0更新】使用outputModeId替代recipeId
  */
 export function addBuilding(
   world: GameWorld,
   companyId: number,
   buildingTypeId: number,
-  recipeId: number
+  outputModeId: number
 ): number {
   const b = world.buildings;
   
@@ -410,8 +394,9 @@ export function addBuilding(
   b.levels[buildingId] = 1;
   b.efficiencies[buildingId] = 1.0;
   b.progress[buildingId] = 0;
-  b.recipeIds[buildingId] = recipeId;
+  b.outputModeIds[buildingId] = outputModeId;
   b.isActive[buildingId] = 1;
+  initializeBuildingProductionControl(world, buildingId);
   
   const defaultMethods = getDefaultSlotMethods(buildingTypeId);
   const slotOffset = buildingId * MAX_SLOTS;
@@ -430,7 +415,7 @@ export function addBuilding(
     b.outputBuffers[buildingId * 4 + i] = 0;
   }
   
-  buildingIndex.add(buildingId, companyId, buildingTypeId, recipeId);
+  buildingIndex.add(buildingId, companyId, buildingTypeId, outputModeId);
   
   // 【性能优化】更新公司建筑计数
   world.companies.buildingCounts[companyId]++;
@@ -526,50 +511,20 @@ export function collectBuildingOutput(
 // ==================== 零售系统初始化 ====================
 
 /**
- * 初始化零售店 - 使用统一的AI_COMPANIES配置
+ * 初始化零售店
  *
- * 【v3.0更新】从AIPersonality.ts导入零售公司配置
+ * 【v3.0更新】不再创建独立零售公司，只为玩家创建初始零售店
  */
 function initializeRetailStores(world: GameWorld): void {
   initRetailSystem(world);
   
-  const c = world.companies;
-  
-  // 从统一配置中获取零售类公司
-  const retailCompanies = AI_COMPANIES.filter(co => co.category === 'retail');
-  
-  for (const retailCo of retailCompanies) {
-    const companyId = c.count;
-    
-    c.count++;
-    c.cash[companyId] = retailCo.initialCash;
-    c.totalAssets[companyId] = retailCo.initialCash;
-    c.totalLiabilities[companyId] = 0;
-    c.names.push(retailCo.name);
-    c.isPlayer.push(false);
-    c.isAI.push(true);
-    
-    for (let j = 0; j < ALL_GOODS.length; j++) {
-      setInventory(world, companyId, j, 0);
-    }
-    
-    // 从统一配置创建零售建筑
-    for (const buildingConfig of retailCo.initialBuildings) {
-      for (let count = 0; count < buildingConfig.count; count++) {
-        const buildingId = addRetailBuilding(world, companyId, buildingConfig.typeId);
-        if (buildingId >= 0) {
-          registerRetailStore(world, buildingId);
-        }
-      }
-    }
-  }
-  
-  const playerRetailBuildingId = addRetailBuilding(world, 0, 49);
+  // 只为玩家创建初始便利店
+  const playerRetailBuildingId = addRetailBuilding(world, 0, BuildingId.CONVENIENCE_STORE);
   if (playerRetailBuildingId >= 0) {
-    registerRetailStore(world, playerRetailBuildingId);
+    registerRetailStore(world, playerRetailBuildingId, true);
   }
   
-  console.log(`[初始化] 创建了 ${retailCompanies.length} 家零售公司，共 ${world.retail.count} 家零售店`);
+  console.log(`[初始化] 创建了 ${world.retail.count} 家零售店`);
 }
 
 /**
@@ -600,7 +555,7 @@ function addRetailBuilding(
   b.levels[buildingId] = 1;
   b.efficiencies[buildingId] = 1.0;
   b.progress[buildingId] = 0;
-  b.recipeIds[buildingId] = -1;
+  b.outputModeIds[buildingId] = -1; // 零售建筑不需要生产模式
   b.isActive[buildingId] = 1;
   
   const slotOffset = buildingId * MAX_SLOTS;

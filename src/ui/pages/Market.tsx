@@ -4,45 +4,34 @@
  * 支持响应式布局
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS, GoodsDefinition, GOODS_BY_CATEGORY, GOODS_BY_INDUSTRY } from '@/data/goods';
 import { ALL_BUILDINGS } from '@/data/buildings';
-import { RECIPES } from '@/data/recipes';
-import { GOODS_COUNT, HISTORY_SIZE } from '@/core/constants';
+import { getProductionsProducingGoods, getProductionsUsingGoods } from '@/ui/utils/supplyChainUtils';
+import { GOODS_COUNT } from '@/core/constants';
 import { PriceChart, PriceDataPoint } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { SupplyDemandChart, SupplyDemandData } from '@/ui/components/Charts/SupplyDemandChart';
 import { CandlestickChart, OHLCData } from '@/ui/components/Charts/CandlestickChart';
-import { findBestSubstitutes, findBestComplements } from '@/core/economy/SubstitutionSystem';
-import { tickToDate, formatGameDate, GameWorld } from '@/core/world/GameWorld';
+import { tickToDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
 
 // 设计系统组件
 import {
   Button,
   Card,
-  CardHeader,
   CardTitle,
-  CardContent,
   Badge,
   Input,
   StatWidget,
   Tabs,
   TabsList,
   TabsTrigger,
-  TabsContent,
   TooltipProvider,
-  Tooltip,
 } from '@/ui/design-system';
-
-// 玩家拥有的建筑信息
-interface PlayerBuildingInfo {
-  buildingIndex: number;
-  typeId: number;
-  level: number;
-}
 
 // 商品分类配置
 const CATEGORY_CONFIG = {
@@ -52,24 +41,20 @@ const CATEGORY_CONFIG = {
   final: { name: '最终产品', color: 'bg-green-500' },
 };
 
-const INDUSTRY_CONFIG = {
-  core: { name: '核心产业', color: 'bg-slate-500' },
-  agriculture: { name: '农业', color: 'bg-green-600' },
-  pharma: { name: '医药', color: 'bg-red-500' },
-  military: { name: '军工', color: 'bg-gray-700' },
-  luxury: { name: '奢侈品', color: 'bg-yellow-500' },
-  tech: { name: '高科技', color: 'bg-cyan-500' },
-  dailyChemical: { name: '日化', color: 'bg-pink-500' },
-  transport: { name: '交通运输', color: 'bg-indigo-500' },
-  miningExtended: { name: '矿业扩展', color: 'bg-orange-600' },
-  textileExtended: { name: '纺织扩展', color: 'bg-rose-400' },
-  buildingExtended: { name: '建材扩展', color: 'bg-stone-500' },
-  agriDeepProcess: { name: '农产品深加工', color: 'bg-lime-600' },
-  energyExtended: { name: '能源扩展', color: 'bg-yellow-600' },
-  telecom: { name: '通信', color: 'bg-blue-600' },
-  service: { name: '服务业', color: 'bg-teal-500' },
-  cultural: { name: '文化传媒', color: 'bg-violet-500' },
-  misc: { name: '其他', color: 'bg-neutral-500' },
+const INDUSTRY_CONFIG: Record<string, { name: string; color: string }> = {
+  mining: { name: '矿业', color: 'bg-stone-500' },
+  energy: { name: '能源', color: 'bg-yellow-500' },
+  agriculture: { name: '农林牧渔', color: 'bg-green-500' },
+  food: { name: '食品', color: 'bg-orange-500' },
+  chemical: { name: '化工建材', color: 'bg-emerald-500' },
+  metallurgy: { name: '冶金', color: 'bg-slate-500' },
+  textile: { name: '纺织家具', color: 'bg-rose-500' },
+  electronics: { name: '电子科技', color: 'bg-cyan-500' },
+  automotive: { name: '汽车', color: 'bg-blue-500' },
+  appliance: { name: '家电', color: 'bg-indigo-500' },
+  newEnergy: { name: '新能源', color: 'bg-lime-500' },
+  pharma: { name: '医药', color: 'bg-pink-500' },
+  luxury: { name: '奢侈品', color: 'bg-purple-500' },
 };
 
 type ClassifyMode = 'category' | 'industry';
@@ -80,7 +65,6 @@ interface MemoizedPriceChartProps {
   selectedGoodsId: number;
   selectedGoods: GoodsDefinition;
   tick: number;
-  historyIndex: number;
   tradesCount: number;
   height?: number;
 }
@@ -90,7 +74,6 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
   selectedGoodsId,
   selectedGoods,
   tick,
-  historyIndex,
   tradesCount,
   height = 280,
 }) => {
@@ -455,22 +438,17 @@ const TradePanel = React.memo<TradePanelProps>(({
 TradePanel.displayName = 'TradePanel';
 
 export const Market: React.FC = () => {
-  const storeTick = useGameStore((state) => state.tick);
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
   
   const {
     getWorld,
     playerCash,
-    getPlayerInventory,
     placeBuyOrder,
     placeSellOrder,
     cancelPlayerOrder,
     ui,
     setSelectedGoods: setStoreSelectedGoods,
-    setCurrentPage,
-    setSelectedBuilding,
     navigateToBuildBuilding,
-    addNotification,
   } = useGameStore();
   
   const world = getWorld();
@@ -483,7 +461,7 @@ export const Market: React.FC = () => {
     if (ui.selectedGoodsId !== null && ui.selectedGoodsId !== selectedGoodsId) {
       setSelectedGoodsIdLocal(ui.selectedGoodsId);
     }
-  }, [ui.selectedGoodsId]);
+  }, [ui.selectedGoodsId, selectedGoodsId]);
   
   const setSelectedGoodsId = (goodsId: number) => {
     setSelectedGoodsIdLocal(goodsId);
@@ -494,18 +472,17 @@ export const Market: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [classifyMode, setClassifyMode] = useState<ClassifyMode>('category');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    // 按类别
     raw: true, basic: true, intermediate: false, final: false,
-    core: true, agriculture: false, pharma: false, military: false,
-    luxury: false, tech: false, dailyChemical: false, transport: false,
-    miningExtended: false, textileExtended: false, buildingExtended: false,
-    agriDeepProcess: false, energyExtended: false, telecom: false,
-    service: false, cultural: false, misc: false,
+    // 按产业链
+    mining: true, energy: false, agriculture: false, food: false,
+    chemical: false, metallurgy: false, textile: false, electronics: false,
+    automotive: false, appliance: false, newEnergy: false, pharma: false, luxury: false,
   });
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [tradeQuantity, setTradeQuantity] = useState<string>('10');
   const [tradePrice, setTradePrice] = useState<string>('');
 
-  const inventory = getPlayerInventory();
   const selectedGoods = ALL_GOODS.find(g => g.id === selectedGoodsId);
 
   // 过滤商品
@@ -619,10 +596,9 @@ export const Market: React.FC = () => {
   };
 
   // Memoized values
-  const currentWorld = getWorld();
-  const tick = currentWorld?.tick ?? 0;
-  const tradesCount = currentWorld?.trades.count ?? 0;
-  const ordersActiveCount = currentWorld?.orders.activeCount ?? 0;
+  const tick = world?.tick ?? 0;
+  const tradesCount = world?.trades.count ?? 0;
+  const ordersActiveCount = world?.orders.activeCount ?? 0;
   
   const currentPrice = useMemo(() => getCurrentPrice(selectedGoodsId), [selectedGoodsId, tick]);
   const lastTradePrice = useMemo(() => getLastTradePrice(selectedGoodsId), [selectedGoodsId, tradesCount]);
@@ -685,7 +661,7 @@ export const Market: React.FC = () => {
       equilibriumPrice: currentPrice,
       priceHistory: priceHistory.slice(0, 20).reverse(),
     };
-  }, [world, selectedGoodsId, selectedGoods, currentPrice, ordersActiveCount]);
+  }, [world, selectedGoodsId, selectedGoods, currentPrice, ordersActiveCount, tradesCount]);
 
   // K线数据计算
   const candlestickData = useMemo((): OHLCData[] => {
@@ -789,6 +765,458 @@ export const Market: React.FC = () => {
     return set;
   }, [ordersActiveCount]);
 
+  const renderSelectedGoodsAnalysisContent = () => {
+    if (!selectedGoods) return null;
+    return (
+      <>
+      {/* 商品头部 */}
+      <div className="flex flex-wrap items-center gap-5 rounded-2xl border border-border-muted bg-gradient-to-r from-background-elevated via-background-surface to-transparent p-4 shadow-card">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/20 to-accent/5 shadow-lg shadow-accent/10">
+          <GoodsIcon goodsId={selectedGoodsId} size={40} autoColor />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-2xl font-bold tracking-tight">{selectedGoods.name}</h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge className={`${CATEGORY_CONFIG[selectedGoods.category].color} shadow-sm`} size="md">
+              {CATEGORY_CONFIG[selectedGoods.category].name}
+            </Badge>
+            <Badge variant="outline" className="border-border-strong">{selectedGoods.unit}</Badge>
+          </div>
+        </div>
+      </div>
+
+      {/* 上下游产业链 */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {/* 上一级（原料） */}
+        <Card variant="game" padding="md" className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <h3 className="text-sm font-semibold mb-3 text-amber-400 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-xs">⬆</span>
+            上一级（原料）
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              const inputGoods = new Set<number>();
+              const productions = getProductionsProducingGoods(selectedGoodsId);
+              productions.forEach(p => p.inputs.forEach(i => inputGoods.add(i.goodsId)));
+              const inputs = Array.from(inputGoods).slice(0, 6);
+              if (inputs.length === 0) return (
+                <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                  <span className="text-lg">🌱</span>
+                  <span>原始资源，无需原料</span>
+                </div>
+              );
+              return inputs.map(gid => {
+                const g = ALL_GOODS.find(x => x.id === gid);
+                return g ? (
+                  <button
+                    key={gid}
+                    className="w-14 h-12 rounded-xl bg-gradient-to-br from-background-muted to-background-surface hover:from-green-500/20 hover:to-green-500/10 border border-transparent hover:border-green-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-green-500/10 hover:scale-105"
+                    onClick={() => setSelectedGoodsId(gid)}
+                  >
+                    <GoodsIcon goodsId={gid} size={20} autoColor />
+                    <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{g.name}</span>
+                  </button>
+                ) : null;
+              });
+            })()}
+          </div>
+        </Card>
+
+        {/* 下一级（产品） */}
+        <Card variant="game" padding="md" className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <h3 className="text-sm font-semibold mb-3 text-green-400 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">⬇</span>
+            下一级（产品）
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              const outputGoods = new Set<number>();
+              const usingProductions = getProductionsUsingGoods(selectedGoodsId);
+              usingProductions.forEach(p => p.outputs.forEach(o => outputGoods.add(o.goodsId)));
+              const outputs = Array.from(outputGoods).slice(0, 8);
+              if (outputs.length === 0) return (
+                <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                  <span className="text-lg">🎯</span>
+                  <span>最终产品，无下游</span>
+                </div>
+              );
+              return outputs.map(gid => {
+                const g = ALL_GOODS.find(x => x.id === gid);
+                return g ? (
+                  <button
+                    key={gid}
+                    className="w-14 h-12 rounded-xl bg-gradient-to-br from-background-muted to-background-surface hover:from-green-500/20 hover:to-green-500/10 border border-transparent hover:border-green-500/40 transition-all duration-300 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:shadow-green-500/10 hover:scale-105"
+                    onClick={() => setSelectedGoodsId(gid)}
+                  >
+                    <GoodsIcon goodsId={gid} size={20} autoColor />
+                    <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{g.name}</span>
+                  </button>
+                ) : null;
+              });
+            })()}
+          </div>
+        </Card>
+      </div>
+
+      {/* 价格信息 */}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <StatWidget
+          title="最新成交价"
+          value={lastTradePrice !== null ? `¥${lastTradePrice.toFixed(2)}` : '暂无成交'}
+          change={lastTradePrice && selectedGoods ? (lastTradePrice / selectedGoods.basePrice - 1) : undefined}
+          icon="💰"
+          variant="game"
+          glow={lastTradePrice !== null}
+          compact
+        />
+        <StatWidget
+          title="市场均衡价"
+          value={`¥${currentPrice.toFixed(2)}`}
+          change={selectedGoods ? (currentPrice / selectedGoods.basePrice - 1) : undefined}
+          icon="📊"
+          variant="elevated"
+          compact
+        />
+        <StatWidget
+          title="参考价格"
+          value={`¥${selectedGoods.basePrice.toFixed(2)}`}
+          icon="📌"
+          variant="default"
+          compact
+        />
+        <StatWidget
+          title="我的库存"
+          value={playerStock.toFixed(0)}
+          icon="📦"
+          variant="elevated"
+          status={playerStock > 0 ? 'success' : 'none'}
+          suffix={selectedGoods.unit}
+          compact
+        />
+      </div>
+
+      {/* 销售排行榜 */}
+      <Card variant="game" padding="md">
+        {(() => {
+          // 饼图颜色配置（与 MarketShareChart 一致）
+          const CHART_COLORS = [
+            '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
+            '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+          ];
+          
+          // 格式化数字（使用万、亿单位）
+          const formatNumber = (num: number) => {
+            if (num >= 100000000) {
+              return (num / 100000000).toFixed(1) + '亿';
+            } else if (num >= 10000) {
+              return (num / 10000).toFixed(1) + '万';
+            }
+            return Math.round(num).toLocaleString('zh-CN');
+          };
+          
+          // 【修复】使用累计销售统计数据，而不是遍历交易记录
+          // 这样可以获取真正的历史累计销售量，不会因为环形缓冲区覆盖而消失
+          if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
+          const companyVolumes = new Map<number, number>();
+          const t = world.trades;
+          let totalVolume = 0;
+          
+          // 遍历所有公司，从累计销售统计中获取该商品的销售量
+          for (let companyId = 0; companyId < world.companies.count; companyId++) {
+            const statsIdx = companyId * GOODS_COUNT + selectedGoodsId;
+            const cumulativeQty = t.cumulativeSalesQuantity[statsIdx];
+            if (cumulativeQty > 0) {
+              companyVolumes.set(companyId, cumulativeQty);
+              totalVolume += cumulativeQty;
+            }
+          }
+          
+          // 排序所有公司
+          const allSortedCompanies = Array.from(companyVolumes.entries())
+            .sort((a, b) => b[1] - a[1]);
+          
+          // 取前5名
+          const top5Companies = allSortedCompanies.slice(0, 5);
+          
+          // 计算其他公司的销量
+          const othersVolume = allSortedCompanies.slice(5).reduce((sum, [, v]) => sum + v, 0);
+          
+          if (top5Companies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
+          
+          // 构建饼图数据（包含颜色）
+          const chartData = top5Companies.map(([companyId, volume], index) => ({
+            name: companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`),
+            value: volume,
+            color: CHART_COLORS[index % CHART_COLORS.length],
+          }));
+          
+          // 添加"其他公司"到饼图（如果有的话）
+          if (othersVolume > 0) {
+            chartData.push({
+              name: '其他公司',
+              value: othersVolume,
+              color: '#64748b',
+            });
+          }
+          
+          return (
+            <>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span>📊</span> 销售排行榜
+                </CardTitle>
+                <span className="text-xs text-accent">
+                  总销量 {formatNumber(totalVolume)}
+                </span>
+              </div>
+              
+              <div className="flex flex-col gap-6 xl:flex-row">
+                {/* 左侧饼图 */}
+                <div className="w-48 flex-shrink-0">
+                  <MarketShareChart data={chartData} height={200} showLegend={false} />
+                </div>
+                {/* 右侧公司列表 */}
+                <div className="flex-1 space-y-3 min-w-0">
+                  {top5Companies.map(([companyId, volume], index) => {
+                    const companyName = companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`);
+                    const percentage = totalVolume > 0 ? (volume / totalVolume * 100) : 0;
+                    const isPlayer = companyId === 0;
+                    const color = CHART_COLORS[index % CHART_COLORS.length];
+                    return (
+                      <div key={companyId} className="flex items-center gap-3">
+                        {/* 排名/图标 - 使用饼图颜色 */}
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white"
+                          style={{ backgroundColor: isPlayer ? undefined : color }}
+                        >
+                          {isPlayer ? '🏠' : index + 1}
+                        </div>
+                        {/* 公司信息 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1 gap-2">
+                            <span
+                              className="text-sm font-medium truncate"
+                              style={{ color: isPlayer ? undefined : color }}
+                            >
+                              {companyName}
+                            </span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-sm font-bold tabular-nums">{formatNumber(volume)}</span>
+                              <span className="text-xs text-foreground-muted w-12 text-right">{percentage.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                          {/* 进度条 - 使用饼图颜色 */}
+                          <div className="h-1.5 bg-background-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${percentage}%`, backgroundColor: color }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* 其他公司 */}
+                  {othersVolume > 0 && (
+                    <div className="flex items-center gap-3 opacity-70">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold text-white"
+                        style={{ backgroundColor: '#64748b' }}
+                      >
+                        +
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1 gap-2">
+                          <span className="text-sm font-medium truncate text-slate-400">
+                            其他公司
+                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-sm font-bold tabular-nums">{formatNumber(othersVolume)}</span>
+                            <span className="text-xs text-foreground-muted w-12 text-right">
+                              {totalVolume > 0 ? (othersVolume / totalVolume * 100).toFixed(1) : 0}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-background-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${totalVolume > 0 ? (othersVolume / totalVolume * 100) : 0}%`, backgroundColor: '#64748b' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+      </Card>
+
+      {/* 图表区域 - 支持多种视图 */}
+      <Card variant="game" padding="md">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span>📊</span> 市场分析
+          </CardTitle>
+          <Tabs value={chartViewMode} onValueChange={(v) => setChartViewMode(v as 'price' | 'candlestick' | 'supplyDemand')}>
+            <TabsList variant="game" size="sm">
+              <TabsTrigger value="price" variant="game" className="text-xs">价格走势</TabsTrigger>
+              <TabsTrigger value="candlestick" variant="game" className="text-xs">K线图</TabsTrigger>
+              <TabsTrigger value="supplyDemand" variant="game" className="text-xs">供需分析</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+        
+        {/* 价格走势视图 */}
+        {chartViewMode === 'price' && (
+          <MemoizedPriceChart
+            world={world}
+            selectedGoodsId={selectedGoodsId}
+            selectedGoods={selectedGoods}
+            tick={tick}
+            tradesCount={tradesCount}
+          />
+        )}
+        
+        {/* K线图视图 */}
+        {chartViewMode === 'candlestick' && (
+          candlestickData.length > 0 ? (
+            <CandlestickChart
+              data={candlestickData}
+              title={`${selectedGoods.name} K线图`}
+              height={280}
+              showMA={true}
+              showVolume={true}
+              showBollinger={false}
+              showRSI={false}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-[280px] text-foreground-muted">
+              暂无足够的交易数据生成K线图
+            </div>
+          )
+        )}
+        
+        {/* 供需分析视图 */}
+        {chartViewMode === 'supplyDemand' && supplyDemandData && (
+          <SupplyDemandChart
+            data={supplyDemandData}
+            height={280}
+            showCurves={true}
+            showHistory={true}
+          />
+        )}
+      </Card>
+
+      {/* 生产建筑与消耗建筑 */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {/* 生产建筑 */}
+        <Card variant="game" padding="md" className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-green-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <h3 className="text-sm font-semibold mb-3 text-success flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center text-xs">🏭</span>
+            生产建筑
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // 找出可以生产此商品的建筑及玩家拥有数量
+              const productions = getProductionsProducingGoods(selectedGoodsId);
+              const producerBuildingIds = new Set(productions.map(p => p.buildingTypeId));
+              const producerBuildings = ALL_BUILDINGS.filter(b => producerBuildingIds.has(b.id)).slice(0, 6);
+              if (producerBuildings.length === 0) return (
+                <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                  <span className="text-lg">🚫</span>
+                  <span>暂无生产建筑</span>
+                </div>
+              );
+              return producerBuildings.map(b => {
+                // 计算玩家拥有的此类型建筑数量
+                const playerBuildingCount = world ?
+                  Array.from({ length: world.buildings.maxCount }, (_, i) => i)
+                    .filter(i => world.buildings.isActive[i] &&
+                                world.buildings.owners[i] === 0 &&
+                                world.buildings.types[i] === b.id).length : 0;
+                return (
+                  <div
+                    key={b.id}
+                    className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
+                      playerBuildingCount > 0
+                        ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10'
+                        : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
+                    } hover:scale-110 hover:shadow-lg`}
+                    onClick={() => navigateToBuildBuilding(b.id)}
+                  >
+                    <BuildingIcon buildingId={b.id} size={20} autoColor />
+                    <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{b.name}</span>
+                    {playerBuildingCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-green-400 to-green-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-green-500/30 ring-2 ring-background-surface">
+                        {playerBuildingCount}
+                      </span>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </Card>
+
+        {/* 消耗建筑 */}
+        <Card variant="game" padding="md" className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-orange-500/10 to-transparent rounded-bl-full pointer-events-none" />
+          <h3 className="text-sm font-semibold mb-3 text-warning flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-orange-500/20 flex items-center justify-center text-xs">⚡</span>
+            消耗建筑
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // 找出消耗此商品的建筑及玩家拥有数量
+              const usingProductions = getProductionsUsingGoods(selectedGoodsId);
+              const consumerBuildingIds = new Set(usingProductions.map(p => p.buildingTypeId));
+              const consumerBuildings = ALL_BUILDINGS.filter(b => consumerBuildingIds.has(b.id)).slice(0, 6);
+              if (consumerBuildings.length === 0) return (
+                <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
+                  <span className="text-lg">🎯</span>
+                  <span>最终产品，无消耗建筑</span>
+                </div>
+              );
+              return consumerBuildings.map(b => {
+                // 计算玩家拥有的此类型建筑数量
+                const playerBuildingCount = world ?
+                  Array.from({ length: world.buildings.maxCount }, (_, i) => i)
+                    .filter(i => world.buildings.isActive[i] &&
+                                world.buildings.owners[i] === 0 &&
+                                world.buildings.types[i] === b.id).length : 0;
+                return (
+                  <div
+                    key={b.id}
+                    className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
+                      playerBuildingCount > 0
+                        ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10'
+                        : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
+                    } hover:scale-110 hover:shadow-lg`}
+                    onClick={() => navigateToBuildBuilding(b.id)}
+                  >
+                    <BuildingIcon buildingId={b.id} size={20} autoColor />
+                    <span className="text-[10px] truncate w-full text-center px-1 mt-0.5 font-medium">{b.name}</span>
+                    {playerBuildingCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-[10px] text-white flex items-center justify-center font-bold shadow-md shadow-orange-500/30 ring-2 ring-background-surface">
+                        {playerBuildingCount}
+                      </span>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </Card>
+      </div>
+      </>
+    );
+  };
+
   // ==================== 移动端布局 ====================
   if (isMobile) {
     return (
@@ -840,7 +1268,6 @@ export const Market: React.FC = () => {
                   selectedGoodsId={selectedGoodsId}
                   selectedGoods={selectedGoods}
                   tick={tick}
-                  historyIndex={world?.goods.historyIndex ?? 0}
                   tradesCount={tradesCount}
                   height={200}
                 />
@@ -1082,7 +1509,6 @@ export const Market: React.FC = () => {
                     selectedGoodsId={selectedGoodsId}
                     selectedGoods={selectedGoods}
                     tick={tick}
-                    historyIndex={world?.goods.historyIndex ?? 0}
                     tradesCount={tradesCount}
                     height={250}
                   />
@@ -1145,6 +1571,211 @@ export const Market: React.FC = () => {
             </Card>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (isNarrowDesktop) {
+    return (
+      <div className="min-h-[calc(100vh-80px)] flex flex-col gap-4 p-1">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border-muted bg-background-surface p-3 shadow-card">
+          <Button
+            variant="ghost"
+            className="min-w-0 flex-1 justify-start gap-2 rounded-xl bg-background-muted"
+            onClick={() => setShowGoodsSelector(true)}
+          >
+            <GoodsIcon goodsId={selectedGoodsId} size={20} autoColor />
+            <span className="truncate font-medium">{selectedGoods?.name || '选择商品'}</span>
+            <span className="ml-auto text-foreground-muted">▼</span>
+          </Button>
+          <Button
+            variant="primary"
+            className="whitespace-nowrap"
+            onClick={() => setShowTradePanel(true)}
+          >
+            挂单与交易
+          </Button>
+          <div className="min-w-[220px] flex-1">
+            <Input
+              placeholder="搜索商品..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              leftIcon="🔍"
+              size="sm"
+              variant="filled"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <div className="min-w-0 space-y-5">
+            {renderSelectedGoodsAnalysisContent()}
+          </div>
+        </div>
+
+        <ResponsiveOverlayPanel
+          open={showGoodsSelector}
+          title="商品选择"
+          onClose={() => setShowGoodsSelector(false)}
+          position="left"
+          widthClassName="max-w-sm"
+        >
+          <div className="flex h-full flex-col bg-gradient-to-b from-background-surface to-background-elevated">
+            <div className="border-b border-border-muted bg-background-surface/50 p-3">
+              <Tabs value={classifyMode} onValueChange={(v) => setClassifyMode(v as ClassifyMode)}>
+                <TabsList variant="game" size="sm" className="w-full">
+                  <TabsTrigger value="category" variant="game" className="flex-1 text-xs">按类别</TabsTrigger>
+                  <TabsTrigger value="industry" variant="game" className="flex-1 text-xs">按产业链</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <div className="border-b border-border-muted p-3">
+              <Input
+                placeholder="搜索商品..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                leftIcon="🔍"
+                size="sm"
+                variant="filled"
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
+              <GoodsCategoryTree
+                filteredGoods={filteredGoods}
+                expandedCategories={expandedCategories}
+                selectedGoodsId={selectedGoodsId}
+                playerStockMap={playerStockMap}
+                goodsWithOrdersSet={goodsWithOrdersSet}
+                onToggleCategory={toggleCategory}
+                onSelectGoods={(goodsId) => {
+                  setSelectedGoodsId(goodsId);
+                  setShowGoodsSelector(false);
+                }}
+                classifyMode={classifyMode}
+              />
+            </div>
+          </div>
+        </ResponsiveOverlayPanel>
+
+        <ResponsiveOverlayPanel
+          open={showTradePanel}
+          title="挂单与交易"
+          onClose={() => setShowTradePanel(false)}
+          position="right"
+          widthClassName="max-w-md"
+        >
+          <div className="space-y-3 p-4">
+            <Card variant="game" padding="md" className="min-h-0 flex flex-col">
+              <CardTitle className="text-sm mb-4 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">📋</span>
+                市场挂单
+              </CardTitle>
+
+              <div className="min-h-0 space-y-3">
+                {playerOrders.length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-accent/5 border border-accent/30">
+                    <p className="text-xs text-accent mb-2 font-semibold">我的挂单</p>
+                    <div className="space-y-1.5">
+                      {playerOrders.map((order) => (
+                        <div
+                          key={order.index}
+                          className={`flex items-center justify-between text-xs p-2 rounded-lg ${
+                            order.type === 'buy' ? 'bg-success/10' : 'bg-error/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
+                              {order.type === 'buy' ? '买' : '卖'}
+                            </Badge>
+                            <span className="font-semibold">¥{order.price.toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span>{order.quantity.toFixed(0)}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-5 h-5 hover:bg-error/20 hover:text-error"
+                              onClick={() => cancelPlayerOrder(order.index)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-2.5 rounded-xl bg-error/5 border border-error/20">
+                  <p className="text-xs text-error mb-2 font-semibold">卖方报价</p>
+                  {orderBook.sellOrders.length > 0 ? (
+                    <div className="space-y-1">
+                      {orderBook.sellOrders.map((order, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-error/10 cursor-pointer"
+                          onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className="text-error font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                            <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
+                          </div>
+                          <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-foreground-muted text-center py-2">暂无卖单</p>
+                  )}
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-success/5 border border-success/20">
+                  <p className="text-xs text-success mb-2 font-semibold">买方报价</p>
+                  {orderBook.buyOrders.length > 0 ? (
+                    <div className="space-y-1">
+                      {orderBook.buyOrders.map((order, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between text-xs p-1.5 rounded-lg hover:bg-success/10 cursor-pointer"
+                          onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className="text-success font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                            <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
+                          </div>
+                          <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-foreground-muted text-center py-2">暂无买单</p>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            <Card variant="glow" padding="md" className="border-accent/30">
+              <CardTitle className="text-sm mb-4 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">🛒</span>
+                自定义下单
+              </CardTitle>
+              <TradePanel
+                selectedGoodsId={selectedGoodsId}
+                selectedGoods={selectedGoods}
+                currentPrice={currentPrice}
+                playerCash={playerCash}
+                playerStock={playerStock}
+                tradeType={tradeType}
+                tradeQuantity={tradeQuantity}
+                tradePrice={tradePrice}
+                onTradeTypeChange={setTradeType}
+                onQuantityChange={setTradeQuantity}
+                onPriceChange={setTradePrice}
+                onSubmit={handleSubmitOrder}
+              />
+            </Card>
+          </div>
+        </ResponsiveOverlayPanel>
       </div>
     );
   }
@@ -1223,8 +1854,8 @@ export const Market: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   {(() => {
                     const inputGoods = new Set<number>();
-                    RECIPES.filter(r => r.outputs.some(o => o.goodsId === selectedGoodsId))
-                      .forEach(r => r.inputs.forEach(i => inputGoods.add(i.goodsId)));
+                    const productions = getProductionsProducingGoods(selectedGoodsId);
+                    productions.forEach(p => p.inputs.forEach(i => inputGoods.add(i.goodsId)));
                     const inputs = Array.from(inputGoods).slice(0, 6);
                     if (inputs.length === 0) return (
                       <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
@@ -1259,8 +1890,8 @@ export const Market: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   {(() => {
                     const outputGoods = new Set<number>();
-                    RECIPES.filter(r => r.inputs.some(i => i.goodsId === selectedGoodsId))
-                      .forEach(r => r.outputs.forEach(o => outputGoods.add(o.goodsId)));
+                    const usingProductions = getProductionsUsingGoods(selectedGoodsId);
+                    usingProductions.forEach(p => p.outputs.forEach(o => outputGoods.add(o.goodsId)));
                     const outputs = Array.from(outputGoods).slice(0, 8);
                     if (outputs.length === 0) return (
                       <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
@@ -1342,20 +1973,20 @@ export const Market: React.FC = () => {
                   return Math.round(num).toLocaleString('zh-CN');
                 };
                 
-                // 统一计算所有公司销售份额
+                // 【修复】使用累计销售统计数据，而不是遍历交易记录
+                // 这样可以获取真正的历史累计销售量，不会因为环形缓冲区覆盖而消失
                 if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
                 const companyVolumes = new Map<number, number>();
                 const t = world.trades;
-                const searchLimit = 10000;
                 let totalVolume = 0;
                 
-                for (let i = Math.max(0, t.count - searchLimit); i < t.count; i++) {
-                  const idx = i % t.maxTrades;
-                  if (t.goodsIds[idx] === selectedGoodsId) {
-                    const sellerId = t.sellCompanyIds[idx];
-                    const qty = t.quantities[idx];
-                    companyVolumes.set(sellerId, (companyVolumes.get(sellerId) || 0) + qty);
-                    totalVolume += qty;
+                // 遍历所有公司，从累计销售统计中获取该商品的销售量
+                for (let companyId = 0; companyId < world.companies.count; companyId++) {
+                  const statsIdx = companyId * GOODS_COUNT + selectedGoodsId;
+                  const cumulativeQty = t.cumulativeSalesQuantity[statsIdx];
+                  if (cumulativeQty > 0) {
+                    companyVolumes.set(companyId, cumulativeQty);
+                    totalVolume += cumulativeQty;
                   }
                 }
                 
@@ -1503,7 +2134,6 @@ export const Market: React.FC = () => {
                   selectedGoodsId={selectedGoodsId}
                   selectedGoods={selectedGoods}
                   tick={tick}
-                  historyIndex={world?.goods.historyIndex ?? 0}
                   tradesCount={tradesCount}
                 />
               )}
@@ -1550,12 +2180,9 @@ export const Market: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   {(() => {
                     // 找出可以生产此商品的建筑及玩家拥有数量
-                    const producerBuildings = ALL_BUILDINGS.filter(b => 
-                      RECIPES.some(r => 
-                        r.buildingTypeId === b.id && 
-                        r.outputs.some(o => o.goodsId === selectedGoodsId)
-                      )
-                    ).slice(0, 6);
+                    const productions = getProductionsProducingGoods(selectedGoodsId);
+                    const producerBuildingIds = new Set(productions.map(p => p.buildingTypeId));
+                    const producerBuildings = ALL_BUILDINGS.filter(b => producerBuildingIds.has(b.id)).slice(0, 6);
                     if (producerBuildings.length === 0) return (
                       <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
                         <span className="text-lg">🚫</span>
@@ -1564,17 +2191,17 @@ export const Market: React.FC = () => {
                     );
                     return producerBuildings.map(b => {
                       // 计算玩家拥有的此类型建筑数量
-                      const playerBuildingCount = world ? 
+                      const playerBuildingCount = world ?
                         Array.from({ length: world.buildings.maxCount }, (_, i) => i)
-                          .filter(i => world.buildings.isActive[i] && 
-                                      world.buildings.owners[i] === 0 && 
+                          .filter(i => world.buildings.isActive[i] &&
+                                      world.buildings.owners[i] === 0 &&
                                       world.buildings.types[i] === b.id).length : 0;
                       return (
                         <div
                           key={b.id}
                           className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
-                            playerBuildingCount > 0 
-                              ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10' 
+                            playerBuildingCount > 0
+                              ? 'bg-gradient-to-br from-green-500/20 to-green-500/5 border-2 border-green-500/40 shadow-md shadow-green-500/10'
                               : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
                           } hover:scale-110 hover:shadow-lg`}
                           onClick={() => navigateToBuildBuilding(b.id)}
@@ -1603,12 +2230,9 @@ export const Market: React.FC = () => {
                 <div className="flex flex-wrap gap-2">
                   {(() => {
                     // 找出消耗此商品的建筑及玩家拥有数量
-                    const consumerBuildings = ALL_BUILDINGS.filter(b => 
-                      RECIPES.some(r => 
-                        r.buildingTypeId === b.id && 
-                        r.inputs.some(i => i.goodsId === selectedGoodsId)
-                      )
-                    ).slice(0, 6);
+                    const usingProductions = getProductionsUsingGoods(selectedGoodsId);
+                    const consumerBuildingIds = new Set(usingProductions.map(p => p.buildingTypeId));
+                    const consumerBuildings = ALL_BUILDINGS.filter(b => consumerBuildingIds.has(b.id)).slice(0, 6);
                     if (consumerBuildings.length === 0) return (
                       <div className="flex items-center gap-2 text-sm text-foreground-muted py-2">
                         <span className="text-lg">🎯</span>
@@ -1617,17 +2241,17 @@ export const Market: React.FC = () => {
                     );
                     return consumerBuildings.map(b => {
                       // 计算玩家拥有的此类型建筑数量
-                      const playerBuildingCount = world ? 
+                      const playerBuildingCount = world ?
                         Array.from({ length: world.buildings.maxCount }, (_, i) => i)
-                          .filter(i => world.buildings.isActive[i] && 
-                                      world.buildings.owners[i] === 0 && 
+                          .filter(i => world.buildings.isActive[i] &&
+                                      world.buildings.owners[i] === 0 &&
                                       world.buildings.types[i] === b.id).length : 0;
                       return (
                         <div
                           key={b.id}
                           className={`relative w-14 h-12 rounded-xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center ${
-                            playerBuildingCount > 0 
-                              ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10' 
+                            playerBuildingCount > 0
+                              ? 'bg-gradient-to-br from-orange-500/20 to-orange-500/5 border-2 border-orange-500/40 shadow-md shadow-orange-500/10'
                               : 'bg-gradient-to-br from-background-muted to-background-surface border border-border-muted'
                           } hover:scale-110 hover:shadow-lg`}
                           onClick={() => navigateToBuildBuilding(b.id)}

@@ -21,13 +21,15 @@ export interface MobileState {
   isMobile: boolean;      // < 768px
   isTablet: boolean;      // 768px - 1024px
   isDesktop: boolean;     // > 1024px
+  isNarrowDesktop: boolean; // 1024px - 1279px
+  isWideDesktop: boolean; // >= 1280px
   
   // 具体断点
   isSm: boolean;          // < 640px
   isMd: boolean;          // >= 640px && < 768px
   isLg: boolean;          // >= 768px && < 1024px
-  isXl: boolean;          // >= 1024px && < 1280px
-  is2xl: boolean;         // >= 1280px
+  isXl: boolean;          // >= 1280px && < 1536px
+  is2xl: boolean;         // >= 1536px
   
   // 屏幕尺寸
   width: number;
@@ -55,54 +57,49 @@ const detectTouchDevice = (): boolean => {
 };
 
 /**
+ * 纯函数：根据宽高计算响应式状态
+ */
+export function getResponsiveState(
+  width: number,
+  height: number,
+  isTouchDevice = false
+): MobileState {
+  const isMobile = width < BREAKPOINTS.md;
+  const isTablet = width >= BREAKPOINTS.md && width < BREAKPOINTS.lg;
+  const isDesktop = width >= BREAKPOINTS.lg;
+  const isNarrowDesktop = width >= BREAKPOINTS.lg && width < BREAKPOINTS.xl;
+  const isWideDesktop = width >= BREAKPOINTS.xl;
+
+  return {
+    isMobile,
+    isTablet,
+    isDesktop,
+    isNarrowDesktop,
+    isWideDesktop,
+    isSm: width < BREAKPOINTS.sm,
+    isMd: width >= BREAKPOINTS.sm && width < BREAKPOINTS.md,
+    isLg: width >= BREAKPOINTS.md && width < BREAKPOINTS.lg,
+    isXl: width >= BREAKPOINTS.xl && width < BREAKPOINTS['2xl'],
+    is2xl: width >= BREAKPOINTS['2xl'],
+    width,
+    height,
+    isLandscape: width > height,
+    isPortrait: width <= height,
+    isTouchDevice,
+  };
+}
+
+/**
  * 获取当前屏幕状态
  */
 const getScreenState = (): MobileState => {
   if (typeof window === 'undefined') {
-    return {
-      isMobile: false,
-      isTablet: false,
-      isDesktop: true,
-      isSm: false,
-      isMd: false,
-      isLg: false,
-      isXl: true,
-      is2xl: false,
-      width: 1280,
-      height: 720,
-      isLandscape: true,
-      isPortrait: false,
-      isTouchDevice: false,
-    };
+    return getResponsiveState(1280, 720, false);
   }
 
   const width = window.innerWidth;
   const height = window.innerHeight;
-
-  return {
-    // 设备类型
-    isMobile: width < BREAKPOINTS.md,
-    isTablet: width >= BREAKPOINTS.md && width < BREAKPOINTS.lg,
-    isDesktop: width >= BREAKPOINTS.lg,
-    
-    // 具体断点
-    isSm: width < BREAKPOINTS.sm,
-    isMd: width >= BREAKPOINTS.sm && width < BREAKPOINTS.md,
-    isLg: width >= BREAKPOINTS.md && width < BREAKPOINTS.lg,
-    isXl: width >= BREAKPOINTS.lg && width < BREAKPOINTS.xl,
-    is2xl: width >= BREAKPOINTS.xl,
-    
-    // 屏幕尺寸
-    width,
-    height,
-    
-    // 方向
-    isLandscape: width > height,
-    isPortrait: width <= height,
-    
-    // 触摸设备
-    isTouchDevice: detectTouchDevice(),
-  };
+  return getResponsiveState(width, height, detectTouchDevice());
 };
 
 /**

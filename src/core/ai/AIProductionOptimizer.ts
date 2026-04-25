@@ -13,7 +13,12 @@
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT, MAX_SLOTS, ACTUAL_GOODS_COUNT } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
-import { RECIPES, RECIPES_BY_ID } from '@/data/recipes';
+import {
+  ALL_BUILDINGS,
+  getAvailableOutputModes,
+  getBuildingProduction,
+  hasMultipleOutputModes,
+} from '@/data/buildings';
 import { AIPersonality } from './AIPersonality';
 import {
   hasBuildingSpecificMethods,
@@ -61,12 +66,21 @@ export interface MethodEvaluation {
   recommendation: 'switch' | 'keep' | 'consider';
 }
 
+export interface OutputModeEvaluation {
+  outputModeId: number;
+  score: number;
+  estimatedProfit: number;
+  switchCost: number;
+}
+
 /**
  * 建筑优化建议
  */
 export interface BuildingOptimization {
   buildingId: number;
   buildingTypeId: number;
+  currentOutputModeId: number;
+  recommendedOutputModeId: number;
   currentMethods: Record<string, number>;
   recommendedMethods: Record<string, number>;
   expectedProfitChange: number;
@@ -74,6 +88,7 @@ export interface BuildingOptimization {
   netBenefit: number;
   priority: number;
   evaluations: MethodEvaluation[];
+  outputModeEvaluations: OutputModeEvaluation[];
 }
 
 /**
@@ -105,6 +120,7 @@ const DEFAULT_CONFIG: OptimizerConfig = {
 
 // 切换冷却记录：buildingId -> lastSwitchTick
 const switchCooldowns: Map<number, number> = new Map();
+const OUTPUT_MODE_SWITCH_COST_RATIO = 0.02;
 
 // ==================== 市场分析 ====================
 
@@ -178,17 +194,152 @@ export function analyzeBuildingMarket(
   world: GameWorld,
   buildingId: number
 ): { inputs: MarketCondition[]; outputs: MarketCondition[] } {
-  const recipeId = world.buildings.recipeIds[buildingId];
-  const recipe = RECIPES_BY_ID.get(recipeId);
+  const buildingTypeId = world.buildings.types[buildingId];
+  const outputModeId = world.buildings.outputModeIds[buildingId];
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
   
-  if (!recipe) {
+  if (!production) {
     return { inputs: [], outputs: [] };
   }
   
-  const inputs = recipe.inputs.map(i => analyzeMarketCondition(world, i.goodsId));
-  const outputs = recipe.outputs.map(o => analyzeMarketCondition(world, o.goodsId));
+  const inputs = production.inputs.map(i => analyzeMarketCondition(world, i.goodsId));
+  const outputs = production.outputs.map(o => analyzeMarketCondition(world, o.goodsId));
   
   return { inputs, outputs };
+}
+
+function analyzeProductionMarket(
+  world: GameWorld,
+  production: NonNullable<ReturnType<typeof getBuildingProduction>>
+): { inputs: MarketCondition[]; outputs: MarketCondition[] } {
+  return {
+    inputs: production.inputs.map(i => analyzeMarketCondition(world, i.goodsId)),
+    outputs: production.outputs.map(o => analyzeMarketCondition(world, o.goodsId)),
+  };
+}
+
+function evaluateOutputMode(
+  world: GameWorld,
+  buildingId: number,
+  outputModeId: number,
+  currentOutputModeId: number
+): OutputModeEvaluation | null {
+  const buildingTypeId = world.buildings.types[buildingId];
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
+  const building = ALL_BUILDINGS.find(item => item.id === buildingTypeId);
+
+  if (!production || !building) {
+    return null;
+  }
+
+  const marketConditions = analyzeProductionMarket(world, production);
+
+  const outputRevenue = production.outputs.reduce((sum, output) => {
+    const unitPrice = world.goods.prices[output.goodsId]
+      || ALL_GOODS.find(goods => goods.id === output.goodsId)?.basePrice
+      || 1;
+    return sum + output.amount * unitPrice;
+  }, 0);
+
+  const inputCost = production.inputs.reduce((sum, input) => {
+    const unitPrice = world.goods.prices[input.goodsId]
+      || ALL_GOODS.find(goods => goods.id === input.goodsId)?.basePrice
+      || 1;
+    return sum + input.amount * unitPrice;
+  }, 0);
+
+  const grossMargin = (outputRevenue - inputCost) / Math.max(inputCost, 1);
+  const avgOutputMarketScore = marketConditions.outputs.reduce((sum, output) => sum + output.marketScore, 0)
+    / Math.max(marketConditions.outputs.length, 1);
+  const avgInputMarketScore = marketConditions.inputs.reduce((sum, input) => sum + input.marketScore, 0)
+    / Math.max(marketConditions.inputs.length, 1);
+
+  const score = grossMargin * 100 + avgOutputMarketScore * 0.8 - avgInputMarketScore * 0.35;
+  const estimatedProfit = grossMargin + (avgOutputMarketScore - avgInputMarketScore) / 200;
+  const switchCost = outputModeId === currentOutputModeId
+    ? 0
+    : building.buildCost * OUTPUT_MODE_SWITCH_COST_RATIO;
+
+  return {
+    outputModeId,
+    score,
+    estimatedProfit,
+    switchCost,
+  };
+}
+
+function evaluateBuildingOutputModes(
+  world: GameWorld,
+  buildingId: number,
+  config: OptimizerConfig = DEFAULT_CONFIG
+): {
+  currentOutputModeId: number;
+  recommendedOutputModeId: number;
+  expectedProfitChange: number;
+  switchCost: number;
+  evaluations: OutputModeEvaluation[];
+} {
+  const buildingTypeId = world.buildings.types[buildingId];
+  const currentOutputModeId = world.buildings.outputModeIds[buildingId] ?? 0;
+  const buildingLevel = world.buildings.levels[buildingId];
+
+  if (!hasMultipleOutputModes(buildingTypeId)) {
+    return {
+      currentOutputModeId,
+      recommendedOutputModeId: currentOutputModeId,
+      expectedProfitChange: 0,
+      switchCost: 0,
+      evaluations: [],
+    };
+  }
+
+  const modeIds = getAvailableOutputModes(buildingTypeId, buildingLevel)
+    .map(mode => mode.modeId);
+  const candidateModeIds = modeIds.includes(currentOutputModeId)
+    ? modeIds
+    : [currentOutputModeId, ...modeIds];
+
+  const evaluations = candidateModeIds
+    .map(outputModeId => evaluateOutputMode(world, buildingId, outputModeId, currentOutputModeId))
+    .filter((evaluation): evaluation is OutputModeEvaluation => evaluation !== null);
+
+  if (evaluations.length === 0) {
+    return {
+      currentOutputModeId,
+      recommendedOutputModeId: currentOutputModeId,
+      expectedProfitChange: 0,
+      switchCost: 0,
+      evaluations: [],
+    };
+  }
+
+  const currentEvaluation = evaluations.find(evaluation => evaluation.outputModeId === currentOutputModeId)
+    ?? evaluations[0];
+  const bestEvaluation = evaluations.reduce((best, evaluation) => (
+    evaluation.score > best.score ? evaluation : best
+  ), currentEvaluation);
+
+  const expectedProfitChange = bestEvaluation.estimatedProfit - currentEvaluation.estimatedProfit;
+  const switchCost = bestEvaluation.switchCost;
+  const netBenefit = expectedProfitChange - switchCost / 100000;
+
+  if (bestEvaluation.outputModeId === currentOutputModeId || netBenefit <= config.minProfitChangeToSwitch) {
+    return {
+      currentOutputModeId,
+      recommendedOutputModeId: currentOutputModeId,
+      expectedProfitChange: 0,
+      switchCost: 0,
+      evaluations,
+    };
+  }
+
+  return {
+    currentOutputModeId,
+    recommendedOutputModeId: bestEvaluation.outputModeId,
+    expectedProfitChange,
+    switchCost,
+    evaluations,
+  };
 }
 
 // ==================== 生产方式评估 ====================
@@ -320,6 +471,8 @@ export function evaluateBuildingMethods(
   buildingConfig.slots.forEach((slot, i) => {
     currentMethods[slot.id] = world.buildings.slotMethods[slotOffset + i] || 0;
   });
+
+  const outputModeRecommendation = evaluateBuildingOutputModes(world, buildingId, config);
   
   // 分析市场状况
   const marketConditions = analyzeBuildingMarket(world, buildingId);
@@ -356,8 +509,8 @@ export function evaluateBuildingMethods(
   }
   
   // 计算预期收益
-  let expectedProfitChange = 0;
-  let switchCosts = 0;
+  let expectedProfitChange = outputModeRecommendation.expectedProfitChange;
+  let switchCosts = outputModeRecommendation.switchCost;
   
   for (const eval_ of evaluations) {
     if (recommendedMethods[eval_.slotId] === eval_.methodId && 
@@ -378,6 +531,8 @@ export function evaluateBuildingMethods(
   return {
     buildingId,
     buildingTypeId,
+    currentOutputModeId: outputModeRecommendation.currentOutputModeId,
+    recommendedOutputModeId: outputModeRecommendation.recommendedOutputModeId,
     currentMethods,
     recommendedMethods,
     expectedProfitChange,
@@ -385,6 +540,7 @@ export function evaluateBuildingMethods(
     netBenefit,
     priority,
     evaluations,
+    outputModeEvaluations: outputModeRecommendation.evaluations,
   };
 }
 
@@ -436,7 +592,13 @@ export function executeMethodSwitch(
   world: GameWorld,
   optimization: BuildingOptimization
 ): boolean {
-  const { buildingId, currentMethods, recommendedMethods } = optimization;
+  const {
+    buildingId,
+    currentOutputModeId,
+    recommendedOutputModeId,
+    currentMethods,
+    recommendedMethods,
+  } = optimization;
   const buildingTypeId = world.buildings.types[buildingId];
   const buildingConfig = getBuildingConfig(buildingTypeId);
   
@@ -444,6 +606,21 @@ export function executeMethodSwitch(
   
   let switched = false;
   const slotOffset = buildingId * MAX_SLOTS;
+  const owner = world.buildings.owners[buildingId];
+
+  if (currentOutputModeId !== recommendedOutputModeId) {
+    const building = ALL_BUILDINGS.find(item => item.id === buildingTypeId);
+    const switchCost = (building?.buildCost || 0) * OUTPUT_MODE_SWITCH_COST_RATIO;
+
+    if (world.companies.cash[owner] >= switchCost) {
+      world.companies.cash[owner] -= switchCost;
+      world.buildings.outputModeIds[buildingId] = recommendedOutputModeId;
+      switched = true;
+
+      console.log(`[AI生产优化] 建筑#${buildingId} 产品模式: ` +
+        `${currentOutputModeId} -> ${recommendedOutputModeId}, 成本¥${switchCost}`);
+    }
+  }
   
   for (let i = 0; i < buildingConfig.slots.length; i++) {
     const slot = buildingConfig.slots[i];
@@ -454,7 +631,6 @@ export function executeMethodSwitch(
       // 检查切换成本
       const method = getMethodById(recommendedMethodId);
       const switchCost = method?.switchCost || 50000;
-      const owner = world.buildings.owners[buildingId];
       
       // 检查资金
       if (world.companies.cash[owner] >= switchCost) {

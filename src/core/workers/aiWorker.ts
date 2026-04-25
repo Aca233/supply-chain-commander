@@ -1,6 +1,8 @@
 /**
  * AI决策Worker
- * 
+ *
+ * v4.0更新：recipeId字段改为outputModeId
+ *
  * 运行在独立线程，负责计算AI公司的决策
  * 完全避免主线程阻塞
  */
@@ -234,7 +236,7 @@ function handleDeepDecision(request: AIDecisionRequest): AIDecisionResult {
         decisions.push({
           type: 'build',
           buildingTypeId: investment.buildingTypeId,
-          recipeId: investment.recipeId,
+          recipeId: investment.recipeId, // v4.0: 实际存储outputModeId
           priority: investment.expectedROI,
           confidence: 1 - investment.riskScore,
           reason: `投资机会: 预期ROI ${(investment.expectedROI * 100).toFixed(1)}%, 回收期${investment.paybackPeriod}天`,
@@ -571,6 +573,7 @@ function optimizeProduction(
 
 /**
  * 寻找投资机会
+ * v4.0: recipeId字段实际存储outputModeId
  */
 function findInvestmentOpportunities(
   company: CompanyStateDTO,
@@ -586,7 +589,7 @@ function findInvestmentOpportunities(
   
   // 为高需求商品寻找生产机会
   for (const goods of highDemandGoods.slice(0, 3)) {
-    // 简化：假设建筑类型ID = 商品ID / 10 (实际需要根据配方映射)
+    // 简化：假设建筑类型ID = 商品ID / 10 (实际需要根据建筑production映射)
     const buildingTypeId = Math.floor(goods.id / 10) % 10;
     
     // 估算投资回报
@@ -602,7 +605,7 @@ function findInvestmentOpportunities(
     opportunities.push({
       type: 'build',
       buildingTypeId,
-      recipeId: goods.id % 100, // 简化
+      recipeId: goods.id % 100, // v4.0: 实际存储outputModeId（简化计算）
       expectedROI,
       paybackPeriod,
       riskScore,

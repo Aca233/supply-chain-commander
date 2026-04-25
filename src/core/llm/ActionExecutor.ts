@@ -1,6 +1,8 @@
 /**
  * 操作执行器
  * 将 LLM 的 function call 映射到游戏 Store 操作
+ *
+ * v4.0更新：recipeId改为outputModeId
  */
 
 import { useGameStore } from '@/stores/gameStore';
@@ -119,11 +121,11 @@ function executeBuildBuilding(store: ReturnType<typeof useGameStore.getState>, a
     return { success: false, message: '建筑定义不存在' };
   }
   
-  // 获取配方ID（使用第一个可用配方）
-  const recipeId = buildingDef.availableRecipes[0];
+  // v4.0: 获取默认产品模式ID（使用第一个可用模式）
+  const outputModeId = buildingDef.production?.outputModes?.[0]?.modeId || 0;
   
   // 执行建造
-  const result = store.buildBuilding(typeId, recipeId);
+  const result = store.buildBuilding(typeId, outputModeId);
   
   if (result !== null) {
     return { 

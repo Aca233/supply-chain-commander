@@ -1,11 +1,14 @@
 /**
  * 游戏存档管理器
  * 处理游戏状态的保存和加载
+ *
+ * v4.0更新：使用outputModeIds替代recipeIds
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT } from '@/core/constants';
-import { BUILDINGS_BY_ID } from '@/data/buildings';
+import { BUILDINGS_BY_ID, getBuildingProduction, getAvailableOutputModes } from '@/data/buildings';
+import { backfillManualTargetsFromCurrentEfficiency, hydrateProductionControlState } from '@/core/production/ProductionControl';
 
 export interface SaveMetadata {
   id: string;
@@ -32,8 +35,12 @@ export interface SerializedWorld {
     owners: number[];
     levels: number[];
     efficiencies: number[];
-    recipeIds: number[];
-    isActive: number[];  // 新增：保存建筑激活状态
+    productionControlModes?: number[];
+    manualEfficiencyTargets?: number[];
+    outputModeIds: number[];  // v4.0更新：替代recipeIds
+    isActive: number[];
+    // 兼容旧存档
+    recipeIds?: number[];
   };
   companies: {
     count: number;
@@ -81,8 +88,10 @@ export class SaveManager {
         owners: Array.from(world.buildings.owners),
         levels: Array.from(world.buildings.levels),
         efficiencies: Array.from(world.buildings.efficiencies),
-        recipeIds: Array.from(world.buildings.recipeIds),
-        isActive: Array.from(world.buildings.isActive),  // 保存建筑激活状态
+        productionControlModes: Array.from(world.buildings.productionControlModes),
+        manualEfficiencyTargets: Array.from(world.buildings.manualEfficiencyTargets),
+        outputModeIds: Array.from(world.buildings.outputModeIds),  // v4.0更新
+        isActive: Array.from(world.buildings.isActive),
       },
       companies: {
         count: world.companies.count,
@@ -120,10 +129,24 @@ export class SaveManager {
     world.buildings.owners.set(data.buildings.owners);
     world.buildings.levels.set(data.buildings.levels);
     world.buildings.efficiencies.set(data.buildings.efficiencies);
-    world.buildings.recipeIds.set(data.buildings.recipeIds);
+
+    if (data.buildings.productionControlModes) {
+      world.buildings.productionControlModes.set(data.buildings.productionControlModes);
+    }
+    if (data.buildings.manualEfficiencyTargets) {
+      world.buildings.manualEfficiencyTargets.set(data.buildings.manualEfficiencyTargets);
+    }
     
-    // 验证并修复建筑配方（解决旧存档配方不匹配问题）
-    this.validateAndFixBuildingRecipes(world);
+    // v4.0更新：处理outputModeIds，兼容旧存档的recipeIds
+    if (data.buildings.outputModeIds) {
+      world.buildings.outputModeIds.set(data.buildings.outputModeIds);
+    } else if (data.buildings.recipeIds) {
+      // 旧存档迁移：将recipeIds映射到outputModeIds
+      this.migrateRecipeIdsToOutputModeIds(data.buildings.recipeIds, data.buildings.types, world);
+    }
+    
+    // 验证并修复建筑生产模式
+    this.validateAndFixBuildingOutputModes(world);
     
     // 恢复建筑激活状态（修复建筑暂停问题）
     if (data.buildings.isActive) {
@@ -133,6 +156,13 @@ export class SaveManager {
       for (let i = 0; i < data.buildings.count; i++) {
         world.buildings.isActive[i] = 1;
       }
+    }
+
+    if (data.buildings.manualEfficiencyTargets) {
+      hydrateProductionControlState(world);
+    } else {
+      backfillManualTargetsFromCurrentEfficiency(world);
+      hydrateProductionControlState(world);
     }
     
     world.companies.count = data.companies.count;
@@ -148,15 +178,35 @@ export class SaveManager {
   }
   
   /**
-   * 验证并修复建筑配方
-   * 解决旧存档中建筑配方ID与当前数据定义不匹配的问题
+   * 旧存档迁移：将recipeIds映射到outputModeIds
+   * 由于配方系统已删除，我们使用默认模式0
    */
-  private validateAndFixBuildingRecipes(world: GameWorld): void {
+  private migrateRecipeIdsToOutputModeIds(
+    recipeIds: number[],
+    buildingTypes: number[],
+    world: GameWorld
+  ): void {
+    console.log('[存档迁移] 检测到旧版存档，正在迁移recipeIds到outputModeIds...');
+    
+    for (let i = 0; i < recipeIds.length; i++) {
+      // 旧存档的recipeIds无法直接映射，使用默认模式0
+      world.buildings.outputModeIds[i] = 0;
+    }
+    
+    console.log(`[存档迁移] 完成迁移 ${recipeIds.length} 个建筑到默认生产模式`);
+  }
+  
+  /**
+   * 验证并修复建筑生产模式
+   * v4.0更新：使用outputModeIds替代recipeIds
+   */
+  private validateAndFixBuildingOutputModes(world: GameWorld): void {
     let fixedCount = 0;
     
     for (let i = 0; i < world.buildings.count; i++) {
       const buildingTypeId = world.buildings.types[i];
-      const currentRecipeId = world.buildings.recipeIds[i];
+      const currentModeId = world.buildings.outputModeIds[i];
+      const buildingLevel = world.buildings.levels[i];
       
       const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
       if (!buildingDef) {
@@ -164,22 +214,33 @@ export class SaveManager {
         continue;
       }
       
-      // 零售建筑和服务建筑没有配方，跳过
-      if (buildingDef.category === 'retail' || buildingDef.defaultRecipeId === -1) {
+      // 零售建筑不需要生产模式
+      if (buildingDef.category === 'retail') {
         continue;
       }
       
-      // 检查当前配方是否在该建筑的可用配方列表中
-      if (!buildingDef.availableRecipes.includes(currentRecipeId)) {
-        const correctRecipeId = buildingDef.defaultRecipeId;
-        world.buildings.recipeIds[i] = correctRecipeId;
+      // 检查当前模式是否有效
+      const availableModes = getAvailableOutputModes(buildingTypeId, buildingLevel);
+      const production = getBuildingProduction(buildingTypeId, currentModeId);
+      
+      if (!production) {
+        // 当前模式无效，使用默认模式0
+        world.buildings.outputModeIds[i] = 0;
         fixedCount++;
-        console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 配方从 ${currentRecipeId} 修复为 ${correctRecipeId}`);
+        console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 生产模式从 ${currentModeId} 修复为 0`);
+      } else if (availableModes.length > 0) {
+        // 检查模式是否在可用列表中
+        const modeExists = availableModes.some(m => m.modeId === currentModeId);
+        if (!modeExists) {
+          world.buildings.outputModeIds[i] = 0;
+          fixedCount++;
+          console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 模式 ${currentModeId} 不可用，修复为 0`);
+        }
       }
     }
     
     if (fixedCount > 0) {
-      console.log(`[存档修复] 共修复了 ${fixedCount} 个建筑的配方分配`);
+      console.log(`[存档修复] 共修复了 ${fixedCount} 个建筑的生产模式`);
     }
   }
   

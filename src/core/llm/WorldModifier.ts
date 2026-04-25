@@ -1,6 +1,8 @@
 /**
  * 世界状态修改器
  * 实现"上帝模式"的核心干预能力
+ *
+ * v4.0更新：recipeIds改为outputModeIds
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
@@ -378,7 +380,9 @@ export function grantBuilding(
     world.buildings.owners[slotId] = companyId;
     world.buildings.levels[slotId] = 1;
     world.buildings.isActive[slotId] = 1;
-    world.buildings.recipeIds[slotId] = buildingDef.availableRecipes[0] || 0;
+    // v4.0: 使用outputModeIds而非recipeIds
+    const defaultOutputMode = buildingDef.production?.outputModes?.[0]?.modeId || 0;
+    world.buildings.outputModeIds[slotId] = defaultOutputMode;
     world.buildings.progress[slotId] = 0;
     
     grantedCount++;

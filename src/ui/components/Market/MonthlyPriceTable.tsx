@@ -452,9 +452,9 @@ export const MonthlyPriceTable: React.FC = () => {
           {compareMode && (
             <CardContent className="py-3 border-t border-[var(--border)]">
               <div className="flex flex-wrap gap-2 items-center">
-                {allReports.map(report => (
+                {allReports.map((report, index) => (
                   <Badge
-                    key={report.id}
+                    key={`${report.id}-${index}`}
                     variant={selectedMonthsForCompare.includes(report.id) ? 'primary' : 'outline'}
                     className="cursor-pointer"
                     onClick={() => toggleCompareMonth(report.id)}

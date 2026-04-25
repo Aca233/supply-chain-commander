@@ -10,6 +10,7 @@ import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager
 import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 import { formatGameDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { shouldUseCompactSettingsLayout } from './responsivePageLayout';
 import {
   loadLLMConfig,
   saveLLMConfig,
@@ -55,7 +56,8 @@ const BalanceTuningPanel = lazy(() => import('@/ui/components/Balance/BalanceTun
 const MonthlyPriceTable = lazy(() => import('@/ui/components/Market/MonthlyPriceTable'));
 
 export const Settings: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactSettingsLayout({ isMobile, isTablet, isNarrowDesktop });
   const { getWorld, ui, toggleTheme, tick } = useGameStore();
   const world = getWorld();
   const theme = ui.theme;
@@ -297,14 +299,30 @@ export const Settings: React.FC = () => {
     },
   ];
 
+  const settingsRowClassName = useCompactDesktop
+    ? 'flex flex-wrap items-start justify-between gap-4'
+    : 'flex items-center justify-between';
+  const fullWidthActionsClassName = useCompactDesktop
+    ? 'w-full sm:w-auto'
+    : '';
+  const defaultSelectTriggerClassName = useCompactDesktop
+    ? 'w-full sm:w-40'
+    : 'w-40';
+  const intervalSelectTriggerClassName = useCompactDesktop
+    ? 'w-full sm:w-32'
+    : 'w-32';
+  const countSelectTriggerClassName = useCompactDesktop
+    ? 'w-full sm:w-24'
+    : 'w-24';
+
   return (
-    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
-      <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>⚙️ 设置</h1>
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : useCompactDesktop ? 'p-4' : 'p-6'}`}>
+      <h1 className={`font-bold ${isMobile ? 'text-lg' : useCompactDesktop ? 'text-xl' : 'text-2xl'}`}>⚙️ 设置</h1>
 
       <Tabs defaultValue="game">
         <TabsList
           variant="game"
-          className={isMobile ? 'w-full grid grid-cols-7 gap-1 p-1' : ''}
+          className={useCompactDesktop ? 'w-full flex flex-wrap justify-start gap-2 p-1 h-auto' : ''}
         >
           <TabsTrigger
             value="game"
@@ -373,7 +391,7 @@ export const Settings: React.FC = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               {/* 默认游戏速度 */}
-              <div className="flex items-center justify-between">
+              <div className={settingsRowClassName}>
                 <div>
                   <div className="text-[var(--text-primary)] font-medium">默认游戏速度</div>
                   <div className="text-sm text-[var(--text-muted)]">设置游戏启动时的默认速度</div>
@@ -382,7 +400,7 @@ export const Settings: React.FC = () => {
                   value={String(settings.gameSpeed)}
                   onValueChange={(v) => handleSettingChange('gameSpeed', Number(v))}
                 >
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className={defaultSelectTriggerClassName}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -395,7 +413,7 @@ export const Settings: React.FC = () => {
               </div>
 
               {/* 自动存档 */}
-              <div className="flex items-center justify-between">
+              <div className={settingsRowClassName}>
                 <div>
                   <div className="text-[var(--text-primary)] font-medium">自动存档</div>
                   <div className="text-sm text-[var(--text-muted)]">定期自动保存游戏进度</div>
@@ -410,7 +428,7 @@ export const Settings: React.FC = () => {
               {settings.autoSave && (
                 <>
                   {/* 自动存档间隔 */}
-                  <div className="flex items-center justify-between pl-4 border-l-2 border-[var(--accent)]">
+                  <div className={`${settingsRowClassName} pl-4 border-l-2 border-[var(--accent)]`}>
                     <div>
                       <div className="text-[var(--text-primary)]">自动存档间隔</div>
                       <div className="text-sm text-[var(--text-muted)]">每隔多长时间自动保存一次</div>
@@ -419,7 +437,7 @@ export const Settings: React.FC = () => {
                       value={String(settings.autoSaveInterval || 60000)}
                       onValueChange={(v) => handleSettingChange('autoSaveInterval', Number(v))}
                     >
-                      <SelectTrigger className="w-32">
+                      <SelectTrigger className={intervalSelectTriggerClassName}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -433,7 +451,7 @@ export const Settings: React.FC = () => {
                   </div>
 
                   {/* 最大自动存档数 */}
-                  <div className="flex items-center justify-between pl-4 border-l-2 border-[var(--accent)]">
+                  <div className={`${settingsRowClassName} pl-4 border-l-2 border-[var(--accent)]`}>
                     <div>
                       <div className="text-[var(--text-primary)]">最大自动存档数</div>
                       <div className="text-sm text-[var(--text-muted)]">超过此数量后删除最旧的存档</div>
@@ -442,7 +460,7 @@ export const Settings: React.FC = () => {
                       value={String(settings.maxAutoSaves || 5)}
                       onValueChange={(v) => handleSettingChange('maxAutoSaves', Number(v))}
                     >
-                      <SelectTrigger className="w-24">
+                      <SelectTrigger className={countSelectTriggerClassName}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -465,12 +483,12 @@ export const Settings: React.FC = () => {
               <CardTitle>🎨 外观设置</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
+              <div className={settingsRowClassName}>
                 <div>
                   <div className="text-[var(--text-primary)] font-medium">主题模式</div>
                   <div className="text-sm text-[var(--text-muted)]">切换深色/浅色主题</div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                   <Button
                     variant={theme === 'light' ? 'primary' : 'secondary'}
                     size="sm"
@@ -499,7 +517,7 @@ export const Settings: React.FC = () => {
               <CardTitle>🌐 语言设置</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
+              <div className={settingsRowClassName}>
                 <div>
                   <div className="text-[var(--text-primary)] font-medium">界面语言</div>
                   <div className="text-sm text-[var(--text-muted)]">选择游戏界面语言</div>
@@ -508,7 +526,7 @@ export const Settings: React.FC = () => {
                   value={settings.language}
                   onValueChange={(v) => handleSettingChange('language', v)}
                 >
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className={defaultSelectTriggerClassName}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -529,18 +547,19 @@ export const Settings: React.FC = () => {
               <CardTitle>📝 创建存档</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 <Input
                   value={saveName}
                   onChange={(e) => setSaveName(e.target.value)}
                   placeholder="存档名称（可选）"
-                  className="flex-1"
+                  className="flex-1 min-w-[220px]"
                 />
-                <Button onClick={handleSave}>
+                <Button onClick={handleSave} className={fullWidthActionsClassName}>
                   💾 保存游戏
                 </Button>
                 <Button
                   variant="success"
+                  className={fullWidthActionsClassName}
                   onClick={() => {
                     if (world) {
                       saveManager.quickSave(world, world.tick, Date.now());
@@ -558,9 +577,9 @@ export const Settings: React.FC = () => {
           {/* 存档列表 */}
           <Card variant="elevated">
             <CardHeader>
-              <div className="flex justify-between items-center w-full">
+              <div className="flex flex-wrap items-start justify-between gap-3 w-full">
                 <CardTitle>📂 存档列表</CardTitle>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm text-[var(--text-muted)]">
                     存储使用: {formatBytes(storageUsage.used)} / {formatBytes(storageUsage.total)}
                   </span>
@@ -574,16 +593,18 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
-              <DataTable
-                data={saves}
-                columns={saveColumns}
-                rowKey="id"
-                variant="game"
-                hoverable
-                emptyText="暂无存档记录"
-                emptyIcon="📭"
-              />
+            <CardContent className="p-0 overflow-x-auto">
+              <div className="min-w-[720px]">
+                <DataTable
+                  data={saves}
+                  columns={saveColumns}
+                  rowKey="id"
+                  variant="game"
+                  hoverable
+                  emptyText="暂无存档记录"
+                  emptyIcon="📭"
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -759,7 +780,7 @@ export const Settings: React.FC = () => {
               
               {/* 模型选择 */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <label className="block text-[var(--text-primary)] font-medium">模型</label>
                   <Button
                     size="xs"
@@ -841,7 +862,7 @@ export const Settings: React.FC = () => {
               </div>
               
               {/* 高级选项 */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${useCompactDesktop ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div className="space-y-2">
                   <label className="block text-[var(--text-primary)] font-medium">最大 Token</label>
                   <Input

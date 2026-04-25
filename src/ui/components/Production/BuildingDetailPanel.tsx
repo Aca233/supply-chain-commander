@@ -5,9 +5,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, hasMultipleOutputModes } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
-import { RECIPES } from '@/data/recipes';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
@@ -21,6 +20,8 @@ import {
   Card,
   Badge,
   ProgressBar,
+  Switch,
+  Slider,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -38,19 +39,34 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
   buildingIndex,
   onClose,
 }) => {
-  const { getWorld, playerCash, upgradeBuilding, toggleBuildingActive, setBuildingRecipe, demolishBuilding, tick, setSelectedGoods, setCurrentPage } = useGameStore();
+  const {
+    getWorld,
+    playerCash,
+    upgradeBuilding,
+    toggleBuildingActive,
+    setOutputMode,
+    demolishBuilding,
+    getBuildingProductionControl,
+    setBuildingProductionControlAuto,
+    setBuildingManualProductionTarget,
+    tick,
+    setSelectedGoods,
+    setCurrentPage,
+  } = useGameStore();
   const world = getWorld();
-  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [showOutputModeModal, setShowOutputModeModal] = useState(false);
   const [showDemolishModal, setShowDemolishModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const productionControl = getBuildingProductionControl(buildingIndex);
+  const isPlayerOwnedBuilding = productionControl?.ownerCompanyId === 0;
 
   const buildingData = useMemo(() => {
     if (!world) return null;
 
     const typeId = world.buildings.types[buildingIndex];
     const buildingDef = ALL_BUILDINGS.find((b) => b.id === typeId);
-    const recipeId = world.buildings.recipeIds[buildingIndex];
-    const recipe = RECIPES.find((r) => r.id === recipeId);
+    const outputModeId = world.buildings.outputModeIds[buildingIndex];
+    const production = getBuildingProduction(typeId, outputModeId);
     const level = world.buildings.levels[buildingIndex];
     const efficiency = world.buildings.efficiencies[buildingIndex];
     const isActive = world.buildings.isActive[buildingIndex];
@@ -65,14 +81,16 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       dailyNeed: number;
     }> = [];
 
-    if (recipe && !isRetail) {
-      for (let j = 0; j < recipe.inputs.length; j++) {
-        const input = recipe.inputs[j];
+    const ticksRequired = production?.ticksRequired || 1;
+
+    if (production && production.inputs && !isRetail) {
+      for (let j = 0; j < production.inputs.length; j++) {
+        const input = production.inputs[j];
         const current = world.buildings.inputBuffers[buildingIndex * 8 + j];
         const required = input.amount;
         const percentage = Math.min(1, current / required);
         const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
-        const dailyNeed = (input.amount / recipe.ticksRequired) * 24 * efficiency;
+        const dailyNeed = (input.amount / ticksRequired) * 24 * efficiency;
 
         inputs.push({
           goodsId: input.goodsId,
@@ -94,11 +112,11 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     }> = [];
 
     let dailyRevenue = 0;
-    if (recipe) {
-      for (let j = 0; j < recipe.outputs.length; j++) {
-        const output = recipe.outputs[j];
+    if (production && production.outputs) {
+      for (let j = 0; j < production.outputs.length; j++) {
+        const output = production.outputs[j];
         const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
-        const dailyAmount = (output.amount / recipe.ticksRequired) * 24 * efficiency;
+        const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
         const buffer = world.buildings.outputBuffers[buildingIndex * 8 + j];
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
         dailyRevenue += dailyAmount * price;
@@ -132,6 +150,23 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     else if (hasBottleneck) status = 'error';
     else if (efficiency < 0.8) status = 'warning';
 
+    // 获取生产配置名称
+    let productionName = isRetail ? '零售' : '无配方';
+    if (production) {
+      if (buildingDef?.production?.outputModes) {
+        const mode = buildingDef.production.outputModes.find(m => m.modeId === outputModeId);
+        if (mode) {
+          productionName = mode.name;
+        } else if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
+          const outputGoods = ALL_GOODS.find(g => g.id === buildingDef.production!.outputs![0].goodsId);
+          productionName = outputGoods?.name || buildingDef.name;
+        }
+      } else if (production.outputs && production.outputs.length > 0) {
+        const outputGoods = ALL_GOODS.find(g => g.id === production.outputs![0].goodsId);
+        productionName = `生产${outputGoods?.name || '商品'}`;
+      }
+    }
+
     return {
       typeId,
       name: buildingDef?.name || `建筑#${typeId}`,
@@ -141,8 +176,8 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       efficiency,
       isActive,
       isRetail,
-      recipeId,
-      recipeName: recipe?.name || (isRetail ? '零售' : '无配方'),
+      outputModeId,
+      productionName,
       inputs,
       outputs,
       dailyRevenue,
@@ -155,6 +190,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       nextCapacity,
       nextEfficiency,
       buildingDef,
+      hasMultipleOutputModes: hasMultipleOutputModes(typeId),
     };
   }, [world, buildingIndex, playerCash, tick]);
 
@@ -217,11 +253,12 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     };
   }, [buildingData, world, buildingIndex, playerCash]);
 
-  const availableRecipes = useMemo(() => {
+  // 获取可用的生产模式
+  const availableOutputModes = useMemo(() => {
     if (!buildingData) return [];
     const buildingDef = ALL_BUILDINGS.find(b => b.id === buildingData.typeId);
-    if (!buildingDef) return [];
-    return RECIPES.filter(recipe => buildingDef.availableRecipes.includes(recipe.id));
+    if (!buildingDef || !buildingDef.production?.outputModes) return [];
+    return buildingDef.production.outputModes;
   }, [buildingData]);
 
   if (!buildingData) return null;
@@ -234,9 +271,16 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
 
   const handleUpgrade = () => upgradeBuilding(buildingIndex);
   const handleToggleActive = () => toggleBuildingActive(buildingIndex);
-  const handleChangeRecipe = (newRecipeId: number) => {
-    setBuildingRecipe(buildingIndex, newRecipeId);
-    setShowRecipeModal(false);
+  const handleChangeOutputMode = (newOutputModeId: number) => {
+    setOutputMode(buildingIndex, newOutputModeId);
+    setShowOutputModeModal(false);
+  };
+  const handleToggleAutoAdjust = (checked: boolean) => {
+    setBuildingProductionControlAuto(buildingIndex, checked);
+  };
+  const handleManualTargetChange = (values: number[]) => {
+    if (!values.length) return;
+    setBuildingManualProductionTarget(buildingIndex, values[0] / 100);
   };
 
   const statusConfig = {
@@ -311,6 +355,64 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             </div>
           </div>
         </Card>
+
+        {/* 产量控制 */}
+        {productionControl && (
+          <Card variant="elevated" padding="md">
+            <h4 className="text-xs font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
+              🎛️ 产量控制
+            </h4>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-muted)]">所属公司</span>
+                <span className="text-[var(--text-primary)]">
+                  {productionControl.ownerCompanyName}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-muted)]">控制模式</span>
+                <Badge variant={productionControl.autoAdjustEnabled ? 'info' : 'warning'} size="sm">
+                  {productionControl.autoAdjustEnabled ? '自动模式' : '手动模式'}
+                </Badge>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-sm text-[var(--text-secondary)]">自动调整产量</span>
+                <Switch
+                  checked={productionControl.autoAdjustEnabled}
+                  onCheckedChange={handleToggleAutoAdjust}
+                  disabled={!productionControl.canManage}
+                  variant="game"
+                />
+              </div>
+
+              <Slider
+                value={[Math.round(productionControl.manualTarget * 100)]}
+                min={productionControl.manualTargetRange.min * 100}
+                max={productionControl.manualTargetRange.max * 100}
+                step={1}
+                onValueChange={handleManualTargetChange}
+                label="手动产量"
+                showValue
+                formatValue={(v) => `${Math.round(v)}%`}
+                variant="game"
+                color="warning"
+                disabled={
+                  !productionControl.canManage ||
+                  productionControl.autoAdjustEnabled
+                }
+              />
+
+              {!productionControl.canManage && (
+                <Card variant="default" status="warning" padding="sm">
+                  <p className="text-xs text-[var(--warning)]">
+                    当前无权管理该建筑产量。需要对所属公司拥有 `influence_strategy` 权限。
+                  </p>
+                </Card>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* 输入资源 */}
         {!buildingData.isRetail && buildingData.inputs.length > 0 && (
@@ -401,6 +503,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             size="lg"
             fullWidth
             onClick={() => setShowUpgradeModal(true)}
+            disabled={!isPlayerOwnedBuilding}
           >
             <div>
               <div className="font-medium">🚀 升级到 Lv.{buildingData.level + 1}</div>
@@ -424,6 +527,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             size="sm"
             className="flex-1"
             onClick={handleToggleActive}
+            disabled={!isPlayerOwnedBuilding}
           >
             {buildingData.isActive ? '⏸ 暂停生产' : '▶ 恢复生产'}
           </Button>
@@ -431,10 +535,10 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             variant="secondary"
             size="sm"
             className="flex-1"
-            onClick={() => setShowRecipeModal(true)}
-            disabled={buildingData.isRetail || availableRecipes.length <= 1}
+            onClick={() => setShowOutputModeModal(true)}
+            disabled={!isPlayerOwnedBuilding || buildingData.isRetail || !buildingData.hasMultipleOutputModes}
           >
-            🔄 更换配方
+            🔄 更换生产
           </Button>
         </div>
 
@@ -443,47 +547,48 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
           size="sm"
           fullWidth
           onClick={() => setShowDemolishModal(true)}
+          disabled={!isPlayerOwnedBuilding}
           className="text-[var(--error)] hover:bg-red-500/10"
         >
           🗑️ 拆除建筑
         </Button>
       </div>
 
-      {/* 配方选择弹窗 */}
-      <Dialog open={showRecipeModal} onOpenChange={setShowRecipeModal}>
+      {/* 生产模式选择弹窗 */}
+      <Dialog open={showOutputModeModal} onOpenChange={setShowOutputModeModal}>
         <DialogContent size="md" variant="game">
           <DialogHeader>
-            <DialogTitle>选择配方</DialogTitle>
+            <DialogTitle>选择生产模式</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-2">
-            {availableRecipes.map((recipe) => {
-              const isCurrentRecipe = recipe.id === buildingData.recipeId;
+            {availableOutputModes.map((mode) => {
+              const isCurrentMode = mode.modeId === buildingData.outputModeId;
               return (
                 <Card
-                  key={recipe.id}
-                  variant={isCurrentRecipe ? 'game' : 'elevated'}
+                  key={mode.modeId}
+                  variant={isCurrentMode ? 'game' : 'elevated'}
                   padding="sm"
-                  interactive={!isCurrentRecipe}
-                  selected={isCurrentRecipe}
-                  onClick={() => !isCurrentRecipe && handleChangeRecipe(recipe.id)}
+                  interactive={!isCurrentMode && isPlayerOwnedBuilding}
+                  selected={isCurrentMode}
+                  onClick={() => !isCurrentMode && isPlayerOwnedBuilding && handleChangeOutputMode(mode.modeId)}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">{recipe.name}</span>
-                    {isCurrentRecipe && <Badge variant="primary" size="sm">当前使用</Badge>}
+                    <span className="text-sm font-medium text-[var(--text-primary)]">{mode.name}</span>
+                    {isCurrentMode && <Badge variant="primary" size="sm">当前使用</Badge>}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                     <div className="flex items-center gap-1">
-                      {recipe.inputs.map((input, idx) => (
+                      {mode.inputs?.map((input, idx) => (
                         <span key={idx} className="flex items-center gap-0.5">
                           <GoodsIcon goodsId={input.goodsId} size={12} />
                           <span>{input.amount}</span>
-                          {idx < recipe.inputs.length - 1 && <span>+</span>}
+                          {idx < (mode.inputs?.length || 0) - 1 && <span>+</span>}
                         </span>
                       ))}
                     </div>
                     <span>→</span>
                     <div className="flex items-center gap-1">
-                      {recipe.outputs.map((output, idx) => (
+                      {mode.outputs.map((output, idx) => (
                         <span key={idx} className="flex items-center gap-0.5 text-[var(--success)]">
                           <GoodsIcon goodsId={output.goodsId} size={12} />
                           <span>{output.amount}</span>
@@ -492,13 +597,13 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
                     </div>
                   </div>
                   <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                    生产周期: {recipe.ticksRequired} tick
+                    生产周期: {mode.ticksRequired || buildingData.buildingDef?.production?.ticksRequired || 1} tick
                   </div>
                 </Card>
               );
             })}
-            {availableRecipes.length === 0 && (
-              <div className="text-center text-[var(--text-muted)] py-8">暂无可用配方</div>
+            {availableOutputModes.length === 0 && (
+              <div className="text-center text-[var(--text-muted)] py-8">暂无可用生产模式</div>
             )}
           </DialogBody>
         </DialogContent>
@@ -602,7 +707,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
               <Button
                 variant="primary"
                 onClick={() => { demolishBuilding(buildingIndex); setShowDemolishModal(false); onClose(); }}
-                disabled={!demolitionEstimate?.canAfford}
+                disabled={!demolitionEstimate?.canAfford || !isPlayerOwnedBuilding}
                 className="bg-[var(--error)] hover:bg-red-600"
               >
                 确认拆除

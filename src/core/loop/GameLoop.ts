@@ -48,6 +48,7 @@ import { updateRetailSystem, RetailTickResult, processWholesaleSupply, Wholesale
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
 import { updateMonthlyTracker, resetMonthlyPriceTracker } from '../economy/MonthlyPriceTracker';
+import { forEachRetainedTradeNewestFirst } from '../market/TradeLedger';
 
 // 导入新闻系统
 import {
@@ -996,12 +997,16 @@ export class GameLoop {
     const trades = this.world.trades;
     const currentTick = this.world.tick;
     
-    for (let i = 0; i < trades.count; i++) {
-      const tradeTick = trades.ticks[i];
-      if (tradeTick > currentTick - 24 && tradeTick <= currentTick) {
-        dailyGDP += trades.quantities[i] * trades.prices[i];
+    forEachRetainedTradeNewestFirst(this.world, tradeIdx => {
+      const tradeTick = trades.ticks[tradeIdx];
+      if (tradeTick <= currentTick - 24) {
+        return false;
       }
-    }
+
+      if (tradeTick > currentTick - 24 && tradeTick <= currentTick) {
+        dailyGDP += trades.quantities[tradeIdx] * trades.prices[tradeIdx];
+      }
+    });
     
     // 年化GDP（乘以365天）
     const annualizedGDP = dailyGDP * 365;

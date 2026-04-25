@@ -1,6 +1,8 @@
 /**
  * 高性能数据结构
- * 
+ *
+ * v4.0更新：byRecipe索引改为byOutputMode
+ *
  * 包含：
  * 1. 建筑索引 - 按所有者、类型快速查找建筑
  * 2. 交易历史环形缓冲区 - 固定大小的交易记录
@@ -286,14 +288,15 @@ export class BuildingIndex {
   // 按类型索引: typeId -> Set<buildingId>
   private byType: Map<number, Set<number>> = new Map();
   
-  // 按配方索引: recipeId -> Set<buildingId>
-  private byRecipe: Map<number, Set<number>> = new Map();
+  // 按产品模式索引: outputModeId -> Set<buildingId>（v4.0: 替代原来的byRecipe）
+  private byOutputMode: Map<number, Set<number>> = new Map();
   
   // 所有建筑ID
   private allBuildings: Set<number> = new Set();
   
   /**
    * 添加建筑到索引
+   * v4.0: recipeId参数实际接收outputModeId
    */
   add(buildingId: number, ownerId: number, typeId: number, recipeId: number): void {
     this.allBuildings.add(buildingId);
@@ -310,24 +313,25 @@ export class BuildingIndex {
     }
     this.byType.get(typeId)!.add(buildingId);
     
-    // 按配方索引
+    // 按产品模式索引（v4.0: 替代原来的按配方索引）
     if (recipeId >= 0) {
-      if (!this.byRecipe.has(recipeId)) {
-        this.byRecipe.set(recipeId, new Set());
+      if (!this.byOutputMode.has(recipeId)) {
+        this.byOutputMode.set(recipeId, new Set());
       }
-      this.byRecipe.get(recipeId)!.add(buildingId);
+      this.byOutputMode.get(recipeId)!.add(buildingId);
     }
   }
   
   /**
    * 从索引移除建筑
+   * v4.0: recipeId参数实际接收outputModeId
    */
   remove(buildingId: number, ownerId: number, typeId: number, recipeId: number): void {
     this.allBuildings.delete(buildingId);
     this.byOwner.get(ownerId)?.delete(buildingId);
     this.byType.get(typeId)?.delete(buildingId);
     if (recipeId >= 0) {
-      this.byRecipe.get(recipeId)?.delete(buildingId);
+      this.byOutputMode.get(recipeId)?.delete(buildingId);
     }
   }
   
@@ -360,11 +364,19 @@ export class BuildingIndex {
   }
   
   /**
-   * 获取使用某配方的所有建筑
+   * 获取使用某产品模式的所有建筑
+   * v4.0: 替代原来的按配方查找
    */
   getByRecipe(recipeId: number): number[] {
-    const set = this.byRecipe.get(recipeId);
+    const set = this.byOutputMode.get(recipeId);
     return set ? Array.from(set) : [];
+  }
+  
+  /**
+   * 获取使用某产品模式的所有建筑（新API名称）
+   */
+  getByOutputMode(outputModeId: number): number[] {
+    return this.getByRecipe(outputModeId);
   }
   
   /**
@@ -410,7 +422,7 @@ export class BuildingIndex {
   clear(): void {
     this.byOwner.clear();
     this.byType.clear();
-    this.byRecipe.clear();
+    this.byOutputMode.clear();
     this.allBuildings.clear();
   }
 }

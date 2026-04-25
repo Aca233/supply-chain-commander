@@ -376,6 +376,24 @@ export function removeFromCompanyGoodsIndex(
   cgIndex.remove(orderIdx, companyId, goodsId, orderType);
 }
 
+export function finalizeFilledOrder(world: GameWorld, orderIdx: number): void {
+  const o = world.orders;
+  if (!o.isActive[orderIdx] || o.remainings[orderIdx] > 0) {
+    return;
+  }
+
+  const companyId = o.companyIds[orderIdx];
+  const goodsId = o.goodsIds[orderIdx];
+  const orderType = o.types[orderIdx];
+
+  getOrderBookIndex().removeOrder(orderIdx);
+  removeFromCompanyGoodsIndex(orderIdx, companyId, goodsId, orderType);
+  activeOrderIndices.delete(orderIdx);
+  o.isActive[orderIdx] = 0;
+  o.activeCount--;
+  releaseOrderSlot(orderIdx, orderType);
+}
+
 /** 每公司每商品最大订单数（放宽限制） */
 const MAX_ORDERS_PER_COMPANY_GOODS = 6;
 

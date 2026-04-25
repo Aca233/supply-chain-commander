@@ -3,6 +3,8 @@
  * 每个建筑可配置多个槽位，每个槽位可选择不同的生产方式
  */
 
+import { RETAIL_BUILDINGS } from '@/data/buildings';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -651,9 +653,9 @@ export const BUILDING_SLOT_CONFIGS: BuildingSlotConfig[] = [
     ],
   })),
   
-  // 零售建筑 (ID 49-58) - 只有自动化（零售建筑不生产）
-  ...[49, 50, 51, 52, 53, 54, 55, 56, 57, 58].map(id => ({
-    buildingTypeId: id,
+  // 零售建筑 - 只有自动化（零售建筑不生产）
+  ...RETAIL_BUILDINGS.map(building => ({
+    buildingTypeId: building.id,
     slots: [
       { slotType: 'automation' as ProductionSlotType, availableMethods: [110, 111, 112], defaultMethod: 111 },
     ],

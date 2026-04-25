@@ -6,8 +6,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
-import { RECIPES } from '@/data/recipes';
 import {
   ProductionOverview,
   BuildingCard,
@@ -16,6 +14,7 @@ import {
   BuildingDetailPanel,
   ConstructionQueuePanel,
 } from '@/ui/components/Production';
+import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
 
 // 设计系统组件
 import {
@@ -34,15 +33,15 @@ type ViewMode = 'grid' | 'list';
 export const Production: React.FC = () => {
   const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding, setPendingBuildTypeId } = useGameStore();
   const world = getWorld();
-  const { isMobile } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useOverlayPanels = isMobile || isTablet || isNarrowDesktop;
   
   // 状态
   const [selectedBuilding, setSelectedBuilding] = useState<number | null>(null);
   const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  // 移动端默认隐藏左侧建筑栏和建造队列
-  const [showCatalog, setShowCatalog] = useState(!isMobile);
-  const [showConstructionQueue, setShowConstructionQueue] = useState(!isMobile);
+  const [showCatalog, setShowCatalog] = useState(!useOverlayPanels);
+  const [showConstructionQueue, setShowConstructionQueue] = useState(false);
   
   const processedStoreSelectionRef = useRef<number | null>(null);
   const processedPendingBuildRef = useRef<number | null>(null);
@@ -63,6 +62,15 @@ export const Production: React.FC = () => {
       setStoreSelectedBuilding(null);
     }
   }, [ui.selectedBuildingId, setStoreSelectedBuilding]);
+
+  useEffect(() => {
+    setShowCatalog(!useOverlayPanels);
+    if (!useOverlayPanels) {
+      setShowConstructionQueue(true);
+    } else {
+      setShowConstructionQueue(false);
+    }
+  }, [useOverlayPanels]);
 
   // 获取玩家的建筑列表
   const playerBuildingList = useMemo(() => {
@@ -86,8 +94,8 @@ export const Production: React.FC = () => {
   }, [world, tick]);
 
   // 处理建造建筑
-  const handleBuild = useCallback((buildingTypeId: number, recipeId: number) => {
-    const buildingId = buildBuilding(buildingTypeId, recipeId);
+  const handleBuild = useCallback((buildingTypeId: number, outputModeId: number) => {
+    const buildingId = buildBuilding(buildingTypeId, outputModeId);
     if (buildingId !== null) {
       setBuildModalTypeId(null);
       setSelectedBuilding(buildingId);
@@ -104,32 +112,48 @@ export const Production: React.FC = () => {
     setBuildModalTypeId(typeId);
   }, []);
 
+  const showPersistentCatalog = showCatalog && !useOverlayPanels;
+  const showPersistentDetail = selectedBuilding !== null && !useOverlayPanels;
+  const showPersistentQueue = showConstructionQueue && !useOverlayPanels;
+
   return (
-    <div className="h-full flex">
+    <div className="h-full min-h-0 flex">
       {/* 左侧建筑目录 */}
-      {showCatalog && (
+      {showPersistentCatalog && (
         <div className="w-64 flex-shrink-0 h-full">
           <BuildingCatalog onSelectBuilding={handleOpenBuildModal} />
         </div>
       )}
 
       {/* 主内容区 */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
         {/* 头部 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-muted)] bg-[var(--bg-surface)]">
-          <div className="flex items-center gap-4">
-            <Button
-              variant={showCatalog ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setShowCatalog(!showCatalog)}
-            >
-              {showCatalog ? '◀' : '▶'}
-            </Button>
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 lg:px-6 border-b border-[var(--border-muted)] bg-[var(--bg-surface)]">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant={showCatalog ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setShowCatalog((open) => !open)}
+              >
+                {showCatalog ? (useOverlayPanels ? '隐藏目录' : '◀') : (useOverlayPanels ? '建筑目录' : '▶')}
+              </Button>
+              <Button
+                variant={selectedBuilding !== null ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => {
+                  if (selectedBuilding !== null) setSelectedBuilding(null);
+                }}
+                disabled={selectedBuilding === null}
+              >
+                建筑详情
+              </Button>
+            </div>
             <div>
               <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
                 🏭 生产管理
               </h2>
-              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
                 <Badge variant="outline" size="sm">
                   建筑: {playerBuildings}/100
                 </Badge>
@@ -141,12 +165,12 @@ export const Production: React.FC = () => {
           </div>
           
           {/* 视图切换和队列按钮 */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             {/* 建造队列按钮 */}
             <Button
               variant={showConstructionQueue ? 'primary' : 'ghost'}
               size="sm"
-              onClick={() => setShowConstructionQueue(!showConstructionQueue)}
+              onClick={() => setShowConstructionQueue((open) => !open)}
             >
               🏗️ 建造队列
             </Button>
@@ -162,9 +186,9 @@ export const Production: React.FC = () => {
         </div>
 
         {/* 内容区域 */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 min-h-0 flex">
           {/* 建筑展示区 */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
             {/* 生产概览 */}
             <ProductionOverview />
 
@@ -173,7 +197,7 @@ export const Production: React.FC = () => {
               <div className="flex flex-col items-center justify-center py-16 text-[var(--text-muted)]">
                 <div className="text-6xl mb-4">🏗️</div>
                 <h3 className="text-lg font-medium text-[var(--text-secondary)] mb-2">还没有建筑</h3>
-                <p className="text-sm mb-4">从左侧目录选择建筑开始建造吧</p>
+                <p className="text-sm mb-4">{useOverlayPanels ? '打开建筑目录开始建造吧' : '从左侧目录选择建筑开始建造吧'}</p>
                 {!showCatalog && (
                   <Button onClick={() => setShowCatalog(true)}>
                     📋 打开建筑目录
@@ -209,8 +233,8 @@ export const Production: React.FC = () => {
           </div>
 
           {/* 右侧详情面板 */}
-          {selectedBuilding !== null && (
-            <div className="w-80 flex-shrink-0 h-full border-l border-[var(--border-muted)] animate-slide-in-right">
+          {showPersistentDetail && (
+            <div className="w-80 flex-shrink-0 h-full border-l border-[var(--border-muted)]">
               <BuildingDetailPanel
                 buildingIndex={selectedBuilding}
                 onClose={() => setSelectedBuilding(null)}
@@ -230,10 +254,10 @@ export const Production: React.FC = () => {
       )}
 
       {/* 建造队列悬浮面板 */}
-      {showConstructionQueue && (
+      {showPersistentQueue && (
         <div
           className={`fixed bottom-4 w-80 z-40 transition-all duration-300 ${
-            selectedBuilding !== null ? 'right-[340px]' : 'right-4'
+            showPersistentDetail ? 'right-[340px]' : 'right-4'
           }`}
         >
           <ConstructionQueuePanel
@@ -243,16 +267,43 @@ export const Production: React.FC = () => {
         </div>
       )}
 
-      {/* 动画样式 */}
-      <style>{`
-        @keyframes slideInRight {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-        .animate-slide-in-right {
-          animation: slideInRight 0.2s ease-out;
-        }
-      `}</style>
+      {/* 响应式覆盖层面板 */}
+      <ResponsiveOverlayPanel
+        open={useOverlayPanels && showCatalog}
+        title="建筑目录"
+        position="left"
+        widthClassName="max-w-sm"
+        onClose={() => setShowCatalog(false)}
+      >
+        <BuildingCatalog onSelectBuilding={handleOpenBuildModal} />
+      </ResponsiveOverlayPanel>
+
+      <ResponsiveOverlayPanel
+        open={useOverlayPanels && selectedBuilding !== null}
+        title="建筑详情"
+        position="right"
+        widthClassName="max-w-lg"
+        onClose={() => setSelectedBuilding(null)}
+      >
+        {selectedBuilding !== null && (
+          <BuildingDetailPanel
+            buildingIndex={selectedBuilding}
+            onClose={() => setSelectedBuilding(null)}
+          />
+        )}
+      </ResponsiveOverlayPanel>
+
+      <ResponsiveOverlayPanel
+        open={useOverlayPanels && showConstructionQueue}
+        title="建造队列"
+        position="bottom"
+        onClose={() => setShowConstructionQueue(false)}
+      >
+        <ConstructionQueuePanel
+          collapsed={false}
+          onToggleCollapse={() => setShowConstructionQueue(false)}
+        />
+      </ResponsiveOverlayPanel>
     </div>
   );
 };

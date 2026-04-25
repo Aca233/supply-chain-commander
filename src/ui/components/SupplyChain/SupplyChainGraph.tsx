@@ -5,7 +5,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { GOODS_BY_ID, GoodsDefinition } from '@/data/goods';
-import { RECIPES } from '@/data/recipes';
 import {
   buildDependencyGraph,
   getUpstreamMaterials,

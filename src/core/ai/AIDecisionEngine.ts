@@ -22,9 +22,8 @@ import {
   ConstructionType,
 } from '@/core/construction/ConstructionManager';
 import { getBaseMaterials, calculateMaterialsValue } from '@/data/buildingMaterials';
-import { ALL_BUILDINGS } from '@/data/buildings';
+import { ALL_BUILDINGS, getBuildingProduction, hasMultipleOutputModes } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
-import { RECIPES, RecipeDefinition } from '@/data/recipes';
 import {
   GOODS_COUNT,
   AI_DECISION_INTERVAL,
@@ -169,6 +168,7 @@ import {
   optimizeCompanyProduction,
   BuildingOptimization,
 } from './AIProductionOptimizer';
+import { applyAutomaticEfficiencySafely } from '@/core/production/ProductionControl';
 
 // Phase 7: 附属建筑系统
 import {
@@ -202,7 +202,7 @@ export type DecisionType = 'production' | 'pricing' | 'trading' | 'investment' |
 interface BuildingIntent {
   companyId: number;
   buildingTypeId: number;
-  recipeId: number;
+  outputModeId: number;
   cost: number;
   createdTick: number;
   attempts: number; // 尝试次数
@@ -230,7 +230,7 @@ function addBuildingIntent(intent: BuildingIntent): void {
   // 检查是否已有相同类型的建造意向
   const exists = intents.some(i =>
     i.buildingTypeId === intent.buildingTypeId &&
-    i.recipeId === intent.recipeId
+    i.outputModeId === intent.outputModeId
   );
   
   if (!exists && intents.length < 3) { // 每个公司最多3个待建意向
@@ -242,10 +242,10 @@ function addBuildingIntent(intent: BuildingIntent): void {
 /**
  * 移除建造意向
  */
-function removeBuildingIntent(companyId: number, buildingTypeId: number, recipeId: number): void {
+function removeBuildingIntent(companyId: number, buildingTypeId: number, outputModeId: number): void {
   const intents = buildingIntents.get(companyId) || [];
   const newIntents = intents.filter(i =>
-    !(i.buildingTypeId === buildingTypeId && i.recipeId === recipeId)
+    !(i.buildingTypeId === buildingTypeId && i.outputModeId === outputModeId)
   );
   buildingIntents.set(companyId, newIntents);
 }
@@ -379,7 +379,7 @@ function tryTakeSellOrderForMaterial(
  * 尝试执行建造（从意向队列调用）
  */
 function tryExecuteBuild(world: GameWorld, intent: BuildingIntent): boolean {
-  const { companyId, buildingTypeId, recipeId, cost } = intent;
+  const { companyId, buildingTypeId, outputModeId, cost } = intent;
   
   // 检查资金
   const currentCash = world.companies.cash[companyId];
@@ -430,8 +430,8 @@ function tryExecuteBuild(world: GameWorld, intent: BuildingIntent): boolean {
       world.companies.inventories[idx] -= mat.amount;
     }
     
-    // 3. 创建建筑
-    const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
+    // 3. 创建建筑（使用outputModeId替代recipeId）
+    const buildingId = addBuilding(world, companyId, buildingTypeId, outputModeId);
     
     // 4. 更新公司资产
     const priceGetter = (goodsId: number) => world.goods.prices[goodsId];
@@ -631,12 +631,14 @@ export function generateProductionDecisions(
     if (world.buildings.owners[i] !== companyId) continue;
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统：从建筑定义获取生产配置
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.outputs || production.outputs.length === 0) continue;
     
     // 获取产出商品
-    const outputGoodsId = recipe.outputs[0]?.goodsId;
+    const outputGoodsId = production.outputs[0]?.goodsId;
     if (outputGoodsId === undefined) continue;
     
     // 计算最优产量
@@ -657,7 +659,7 @@ export function generateProductionDecisions(
         confidence: 0.8,
       });
     } else {
-      // 亏损时考虑减产或转换配方
+      // 亏损时考虑减产或转换生产模式
       decisions.push({
         type: 'production',
         companyId,
@@ -770,11 +772,13 @@ function generateTakeSellOrderDecisions(
     if (world.buildings.owners[i] !== companyId) continue;
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.inputs) continue;
     
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const currentNeed = materialNeeds.get(input.goodsId) || 0;
       const efficiency = world.buildings.efficiencies[i] || 1;
       materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * 24);
@@ -1056,12 +1060,14 @@ export function generateTradingDecisions(
     if (world.buildings.owners[i] !== companyId) continue;
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.inputs) continue;
     
     // 检查每种原材料
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const currentStock = world.companies.inventories[companyId * GOODS_COUNT + input.goodsId];
       const neededPerCycle = input.amount;
       
@@ -1176,14 +1182,27 @@ export function generateInvestmentDecisions(
       const demand = world.goods.demands[opportunity];
       const gapRatio = demand > 0 ? (demand - supply) / demand : 0;
       
-      // 找能生产该商品的建筑
+      // 找能生产该商品的建筑（使用新的生产系统）
       for (const building of ALL_BUILDINGS) {
-        const recipe = RECIPES.find(r =>
-          r.buildingTypeId === building.id &&
-          r.outputs.some(o => o.goodsId === opportunity)
-        );
+        // 检查建筑是否能生产该商品
+        const production = building.production;
+        if (!production) continue;
         
-        if (recipe && assessment.cash >= building.buildCost * 1.1) {  // 降低资金要求从1.2到1.1
+        // 检查默认产出或outputModes中是否包含该商品
+        let canProduceOpportunity = production.outputs?.some(o => o.goodsId === opportunity);
+        let targetOutputModeId = 0;
+        
+        if (!canProduceOpportunity && production.outputModes) {
+          for (const mode of production.outputModes) {
+            if (mode.outputs.some(o => o.goodsId === opportunity)) {
+              canProduceOpportunity = true;
+              targetOutputModeId = mode.modeId;
+              break;
+            }
+          }
+        }
+        
+        if (canProduceOpportunity && assessment.cash >= building.buildCost * 1.1) {
           // 【优化2】提高优先级，根据供需缺口调整（优先级范围提高）
           const basePriority = 7 + Math.min(gapRatio * 4, 3); // 7-10
           
@@ -1197,14 +1216,14 @@ export function generateInvestmentDecisions(
             action: 'build',
             params: {
               buildingTypeId: building.id,
-              recipeId: recipe.id,
+              outputModeId: targetOutputModeId,
               cost: building.buildCost,
               targetGoodsId: opportunity,
               reason: 'market_opportunity',
             },
             priority: adjustedPriority,
-            expectedProfit: building.buildCost * 0.2 * (1 + gapRatio),  // 提高预期利润
-            confidence: 0.65 + gapRatio * 0.2,  // 提高置信度
+            expectedProfit: building.buildCost * 0.2 * (1 + gapRatio),
+            confidence: 0.65 + gapRatio * 0.2,
           });
           break;
         }
@@ -1216,14 +1235,26 @@ export function generateInvestmentDecisions(
     for (const shortage of materialShortages.slice(0, 3)) {
       const { goodsId, shortageRatio } = shortage;
       
-      // 找能生产该原材料的建筑
+      // 找能生产该原材料的建筑（使用新的生产系统）
       for (const building of ALL_BUILDINGS) {
-        const recipe = RECIPES.find(r =>
-          r.buildingTypeId === building.id &&
-          r.outputs.some(o => o.goodsId === goodsId)
-        );
+        const production = building.production;
+        if (!production) continue;
         
-        if (recipe && assessment.cash >= building.buildCost * 1.2) {  // 降低资金要求从1.5到1.2
+        // 检查是否能生产该商品
+        let canProduceGoods = production.outputs?.some(o => o.goodsId === goodsId);
+        let targetOutputModeId = 0;
+        
+        if (!canProduceGoods && production.outputModes) {
+          for (const mode of production.outputModes) {
+            if (mode.outputs.some(o => o.goodsId === goodsId)) {
+              canProduceGoods = true;
+              targetOutputModeId = mode.modeId;
+              break;
+            }
+          }
+        }
+        
+        if (canProduceGoods && assessment.cash >= building.buildCost * 1.2) {
           // 【新增】应用建筑类型偏好权重
           const buildingWeight = getBuildingTypeWeight(personality, building.id);
           const basePriority = 8 + Math.min(shortageRatio, 2); // 8-10 (提高)
@@ -1234,14 +1265,14 @@ export function generateInvestmentDecisions(
             action: 'build',
             params: {
               buildingTypeId: building.id,
-              recipeId: recipe.id,
+              outputModeId: targetOutputModeId,
               cost: building.buildCost,
               targetGoodsId: goodsId,
               reason: 'supply_chain',
             },
             priority: basePriority * buildingWeight,
-            expectedProfit: building.buildCost * 0.25,  // 提高预期利润
-            confidence: 0.75,  // 提高置信度
+            expectedProfit: building.buildCost * 0.25,
+            confidence: 0.75,
           });
           break;
         }
@@ -1252,10 +1283,10 @@ export function generateInvestmentDecisions(
     const profitableBuildings = findProfitableBuildings(world, companyId);
     for (const { buildingId, profitMargin } of profitableBuildings.slice(0, 3)) {
       const typeId = world.buildings.types[buildingId];
-      const recipeId = world.buildings.recipeIds[buildingId];
+      const outputModeId = world.buildings.outputModeIds[buildingId];
       const building = ALL_BUILDINGS.find(b => b.id === typeId);
       
-      if (building && assessment.cash >= building.buildCost * 1.1) {  // 降低资金要求从1.3到1.1
+      if (building && assessment.cash >= building.buildCost * 1.1) {
         // 【新增】应用建筑类型偏好权重
         const buildingWeight = getBuildingTypeWeight(personality, typeId);
         const basePriority = 7 + Math.min(profitMargin * 10, 3); // 7-10 (提高)
@@ -1266,23 +1297,23 @@ export function generateInvestmentDecisions(
           action: 'build',
           params: {
             buildingTypeId: typeId,
-            recipeId: recipeId,
+            outputModeId: outputModeId,
             cost: building.buildCost,
             reason: 'scale_expansion',
           },
           priority: basePriority * buildingWeight,
-          expectedProfit: building.buildCost * profitMargin * 1.2,  // 提高预期利润
-          confidence: 0.7,  // 提高置信度
+          expectedProfit: building.buildCost * profitMargin * 1.2,
+          confidence: 0.7,
         });
       }
     }
     
     // 【策略4】多元化驱动 - 分散投资到新领域
-    if (personality.specializationDegree < 0.6 && assessment.buildingCount < 15) {  // 放宽条件
+    if (personality.specializationDegree < 0.6 && assessment.buildingCount < 15) {
       const newOpportunities = findDiversificationOpportunities(world, companyId);
-      for (const opp of newOpportunities.slice(0, 3)) {  // 增加候选数量
+      for (const opp of newOpportunities.slice(0, 3)) {
         const building = ALL_BUILDINGS.find(b => b.id === opp.buildingTypeId);
-        if (building && assessment.cash >= building.buildCost * 1.2) {  // 降低资金要求
+        if (building && assessment.cash >= building.buildCost * 1.2) {
           // 【新增】应用建筑类型偏好权重
           const buildingWeight = getBuildingTypeWeight(personality, opp.buildingTypeId);
           const basePriority = 6 + opp.attractiveness; // 6-9 (提高)
@@ -1293,13 +1324,13 @@ export function generateInvestmentDecisions(
             action: 'build',
             params: {
               buildingTypeId: opp.buildingTypeId,
-              recipeId: opp.recipeId,
+              outputModeId: opp.outputModeId,
               cost: building.buildCost,
               reason: 'diversification',
             },
             priority: basePriority * buildingWeight,
-            expectedProfit: building.buildCost * 0.15,  // 提高预期利润
-            confidence: 0.55,  // 提高置信度
+            expectedProfit: building.buildCost * 0.15,
+            confidence: 0.55,
           });
         }
       }
@@ -1343,35 +1374,33 @@ export function generateInvestmentDecisions(
     // 寻找低成本建筑（建造成本<现金的60%）
     const affordableBuildings = ALL_BUILDINGS.filter(b =>
       b.buildCost < assessment.cash * 0.6 &&
-      b.category !== 'retail' && // 排除零售建筑
-      b.category !== 'service'   // 排除服务建筑
+      b.category !== 'retail' &&
+      b.category !== 'service'
     );
     
     for (const building of affordableBuildings.slice(0, 3)) {
-      const recipe = RECIPES.find(r => r.buildingTypeId === building.id);
-      if (recipe) {
-        const outputGoodsId = recipe.outputs[0]?.goodsId;
-        if (outputGoodsId !== undefined) {
-          const demand = world.goods.demands[outputGoodsId];
-          const supply = world.goods.supplies[outputGoodsId];
-          
-          // 只有供不应求时才考虑
-          if (demand > supply * 1.2) {
-            decisions.push({
-              type: 'investment',
-              companyId,
-              action: 'build',
-              params: {
-                buildingTypeId: building.id,
-                recipeId: recipe.id,
-                cost: building.buildCost,
-                reason: 'affordable_opportunity',
-              },
-              priority: 5,
-              expectedProfit: building.buildCost * 0.1,
-              confidence: 0.4,
-            });
-          }
+      const production = building.production;
+      if (production && production.outputs && production.outputs.length > 0) {
+        const outputGoodsId = production.outputs[0].goodsId;
+        const demand = world.goods.demands[outputGoodsId];
+        const supply = world.goods.supplies[outputGoodsId];
+        
+        // 只有供不应求时才考虑
+        if (demand > supply * 1.2) {
+          decisions.push({
+            type: 'investment',
+            companyId,
+            action: 'build',
+            params: {
+              buildingTypeId: building.id,
+              outputModeId: 0,
+              cost: building.buildCost,
+              reason: 'affordable_opportunity',
+            },
+            priority: 5,
+            expectedProfit: building.buildCost * 0.1,
+            confidence: 0.4,
+          });
         }
       }
     }
@@ -1409,16 +1438,17 @@ function findMaterialShortages(
   const shortages: Array<{ goodsId: number; shortageRatio: number }> = [];
   const materialNeeds = new Map<number, number>();
   
-  // 统计公司所有建筑的原材料需求
+  // 统计公司所有建筑的原材料需求（使用新的生产系统）
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] !== companyId) continue;
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.inputs) continue;
     
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const current = materialNeeds.get(input.goodsId) || 0;
       materialNeeds.set(input.goodsId, current + input.amount * 24);
     }
@@ -1454,20 +1484,26 @@ function findProfitableBuildings(
     if (world.buildings.owners[i] !== companyId) continue;
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production) continue;
     
     // 计算利润率
     let inputCost = 0;
     let outputValue = 0;
     
-    for (const input of recipe.inputs) {
-      inputCost += input.amount * world.goods.prices[input.goodsId];
+    if (production.inputs) {
+      for (const input of production.inputs) {
+        inputCost += input.amount * world.goods.prices[input.goodsId];
+      }
     }
     
-    for (const output of recipe.outputs) {
-      outputValue += output.amount * world.goods.prices[output.goodsId];
+    if (production.outputs) {
+      for (const output of production.outputs) {
+        outputValue += output.amount * world.goods.prices[output.goodsId];
+      }
     }
     
     if (inputCost > 0) {
@@ -1489,8 +1525,8 @@ function findProfitableBuildings(
 function findDiversificationOpportunities(
   world: GameWorld,
   companyId: number
-): Array<{ buildingTypeId: number; recipeId: number; attractiveness: number }> {
-  const opportunities: Array<{ buildingTypeId: number; recipeId: number; attractiveness: number }> = [];
+): Array<{ buildingTypeId: number; outputModeId: number; attractiveness: number }> {
+  const opportunities: Array<{ buildingTypeId: number; outputModeId: number; attractiveness: number }> = [];
   
   // 获取公司现有的建筑类型
   const existingTypes = new Set<number>();
@@ -1500,19 +1536,19 @@ function findDiversificationOpportunities(
     }
   }
   
-  // 寻找公司尚未涉足的建筑类型
+  // 寻找公司尚未涉足的建筑类型（使用新的生产系统）
   for (const building of ALL_BUILDINGS) {
     if (existingTypes.has(building.id)) continue;
     if (building.category === 'retail' || building.category === 'service') continue;
     
-    const recipe = RECIPES.find(r => r.buildingTypeId === building.id);
-    if (!recipe) continue;
+    const production = building.production;
+    if (!production || !production.outputs || production.outputs.length === 0) continue;
     
     // 计算吸引力
     let attractiveness = 1;
     
     // 检查产出商品的市场情况
-    for (const output of recipe.outputs) {
+    for (const output of production.outputs) {
       const demand = world.goods.demands[output.goodsId];
       const supply = world.goods.supplies[output.goodsId];
       if (demand > supply) {
@@ -1522,7 +1558,7 @@ function findDiversificationOpportunities(
     
     opportunities.push({
       buildingTypeId: building.id,
-      recipeId: recipe.id,
+      outputModeId: 0,
       attractiveness,
     });
   }
@@ -1569,7 +1605,7 @@ function generateShortageProductionDecisions(
     const buildingInfo = findBuildingForGoods(goodsId);
     if (!buildingInfo) continue;
     
-    const { building, recipe } = buildingInfo;
+    const { building, outputModeId: targetOutputModeId } = buildingInfo;
     
     // 检查是否负担得起（需要至少1.1倍建造成本）
     if (building.buildCost * 1.1 > maxInvestment) continue;
@@ -1619,7 +1655,7 @@ function generateShortageProductionDecisions(
       action: 'build',
       params: {
         buildingTypeId: building.id,
-        recipeId: recipe.id,
+        outputModeId: targetOutputModeId,
         cost: building.buildCost,
         targetGoodsId: goodsId,
         reason: hasOrderBookShortage ? 'orderbook_shortage' : 'shortage_driven',
@@ -1768,14 +1804,16 @@ function calculateSupplyChainDemand(world: GameWorld): Map<number, number> {
   for (let i = 0; i < world.buildings.count; i++) {
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.inputs) continue;
     
     const efficiency = world.buildings.efficiencies[i] || 1;
     
     // 累计原材料需求（每日需求 = 每tick需求 × 24）
-    for (const input of recipe.inputs) {
+    for (const input of production.inputs) {
       const current = demand.get(input.goodsId) || 0;
       demand.set(input.goodsId, current + input.amount * efficiency * 24);
     }
@@ -1785,24 +1823,31 @@ function calculateSupplyChainDemand(world: GameWorld): Map<number, number> {
 }
 
 /**
- * 找到能生产指定商品的建筑和配方
+ * 找到能生产指定商品的建筑和生产配置
  */
 function findBuildingForGoods(goodsId: number): {
   building: typeof ALL_BUILDINGS[0];
-  recipe: RecipeDefinition;
+  outputModeId: number;
 } | null {
   for (const building of ALL_BUILDINGS) {
     // 跳过零售和服务类建筑
     if (building.category === 'retail' || building.category === 'service') continue;
     
-    // 查找能产出该商品的配方
-    const recipe = RECIPES.find(r =>
-      r.buildingTypeId === building.id &&
-      r.outputs.some(o => o.goodsId === goodsId)
-    );
+    const production = building.production;
+    if (!production) continue;
     
-    if (recipe) {
-      return { building, recipe };
+    // 检查默认产出
+    if (production.outputs?.some(o => o.goodsId === goodsId)) {
+      return { building, outputModeId: 0 };
+    }
+    
+    // 检查outputModes中的产出
+    if (production.outputModes) {
+      for (const mode of production.outputModes) {
+        if (mode.outputs.some(o => o.goodsId === goodsId)) {
+          return { building, outputModeId: mode.modeId };
+        }
+      }
     }
   }
   
@@ -2213,12 +2258,10 @@ function executeProductionDecision(world: GameWorld, decision: AIDecision): bool
   
   // 根据目标产量调整效率
   if (decision.action === 'reduce_production') {
-    world.buildings.efficiencies[buildingId] = Math.max(0.3, currentEfficiency * 0.9);
+    return applyAutomaticEfficiencySafely(world, buildingId, Math.max(0.3, currentEfficiency * 0.9));
   } else {
-    world.buildings.efficiencies[buildingId] = Math.min(1.5, currentEfficiency * 1.05);
+    return applyAutomaticEfficiencySafely(world, buildingId, Math.min(1.5, currentEfficiency * 1.05));
   }
-  
-  return true;
 }
 
 function executePricingDecision(world: GameWorld, decision: AIDecision): boolean {
@@ -2233,7 +2276,7 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
   if (action === 'build') {
     // 新建建筑 - 使用建造系统（需要材料和时间）
     const buildingTypeId = params.buildingTypeId as number;
-    const recipeId = params.recipeId as number;
+    const outputModeId = (params.outputModeId as number) || 0;
     const cost = params.cost as number;
     
     // 检查资金是否充足
@@ -2248,10 +2291,10 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       return false;
     }
     
-    // 检查配方是否有效（服务类建筑可能没有配方）
-    if (recipeId >= 0) {
-      const recipe = RECIPES.find(r => r.id === recipeId);
-      if (!recipe) {
+    // 检查outputModeId是否有效（如果建筑有多个生产模式）
+    if (outputModeId > 0 && hasMultipleOutputModes(buildingTypeId)) {
+      const production = getBuildingProduction(buildingTypeId, outputModeId);
+      if (!production) {
         return false;
       }
     }
@@ -2292,7 +2335,7 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
       addBuildingIntent({
         companyId,
         buildingTypeId,
-        recipeId,
+        outputModeId,
         cost,
         createdTick: world.tick,
         attempts: 0,
@@ -2354,11 +2397,11 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
         world.companies.inventories[idx] -= mat.amount;
       }
       
-      // 3. 直接创建建筑
-      const buildingId = addBuilding(world, companyId, buildingTypeId, recipeId);
+      // 3. 直接创建建筑（使用outputModeId替代recipeId）
+      const buildingId = addBuilding(world, companyId, buildingTypeId, outputModeId);
       
       // 4. 从待建队列中移除（如果存在）
-      removeBuildingIntent(companyId, buildingTypeId, recipeId);
+      removeBuildingIntent(companyId, buildingTypeId, outputModeId);
       
       // 更新公司资产
       const materialsValue = calculateMaterialsValue(materials, priceGetter);
@@ -2416,9 +2459,9 @@ function executeInvestmentDecision(world: GameWorld, decision: AIDecision): bool
     world.companies.cash[companyId] -= cost;
     world.buildings.levels[buildingId] = targetLevel;
     
-    // 升级效率加成
+    // 升级效率加成（遵循生产控制：手动模式不被自动系统覆盖）
     const efficiencyMultiplier = buildingDef.efficiencyMultipliers[targetLevel - 1] || 1;
-    world.buildings.efficiencies[buildingId] = efficiencyMultiplier;
+    applyAutomaticEfficiencySafely(world, buildingId, efficiencyMultiplier);
     
     console.log(`[AI] 公司 ${world.companies.names[companyId]} 升级了建筑 #${buildingId} 到 Lv.${targetLevel}`);
     return true;
@@ -3406,12 +3449,14 @@ function estimateDailyOutput(world: GameWorld, companyId: number, goodsId: numbe
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
     
-    const recipeId = b.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    // 使用新的生产系统
+    const buildingTypeId = b.types[i];
+    const outputModeId = b.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.outputs) continue;
     
-    // 检查该配方是否产出目标商品
-    for (const output of recipe.outputs) {
+    // 检查该生产配置是否产出目标商品
+    for (const output of production.outputs) {
       if (output.goodsId === goodsId) {
         // 基础产量 × 效率 × 24tick/天
         const efficiency = b.efficiencies[i] || 1;
@@ -3472,12 +3517,14 @@ export function autoPostBuyOrders(world: GameWorld): number {
       if (b.owners[i] !== companyId) continue;
       if (!b.isActive[i]) continue;
       
-      const recipeId = b.recipeIds[i];
-      const recipe = RECIPES.find(r => r.id === recipeId);
-      if (!recipe) continue;
+      // 使用新的生产系统
+      const buildingTypeId = b.types[i];
+      const outputModeId = b.outputModeIds[i];
+      const production = getBuildingProduction(buildingTypeId, outputModeId);
+      if (!production || !production.inputs) continue;
       
       // 累计原材料需求
-      for (const input of recipe.inputs) {
+      for (const input of production.inputs) {
         const currentNeed = materialNeeds.get(input.goodsId) || 0;
         const efficiency = b.efficiencies[i] || 1;
         materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * 24);
@@ -3718,9 +3765,10 @@ function evaluateSubsidiaries(
   const evaluations: SubsidiaryEvaluation[] = [];
   const b = world.buildings;
   
-  // 获取建筑的配方信息
-  const recipeId = b.recipeIds[buildingId];
-  const recipe = RECIPES.find(r => r.id === recipeId);
+  // 使用新的生产系统获取建筑的生产配置
+  const buildingTypeId = b.types[buildingId];
+  const outputModeId = b.outputModeIds[buildingId];
+  const production = getBuildingProduction(buildingTypeId, outputModeId);
   
   for (const def of subsidiaries) {
     let score = 50; // 基础分
@@ -3734,8 +3782,8 @@ function evaluateSubsidiaries(
       score += bonus * 2; // 每1%产出加成 +2分
       
       // 估算收益
-      if (recipe) {
-        for (const output of recipe.outputs) {
+      if (production && production.outputs) {
+        for (const output of production.outputs) {
           const price = world.goods.prices[output.goodsId];
           expectedBenefit += output.amount * price * (effects.outputMultiplier - 1) * 24 * 30; // 月收益
         }
@@ -3980,36 +4028,36 @@ function getCompanyPersonalityForSubsidiary(companyId: number): AIPersonality {
  */
 const STRATEGIC_BUILDING_MATERIALS = [
   // === 建筑材料 ===
-  { goodsId: 14, name: '钢材', minSupply: 500, buildingTypeId: 8 },      // 钢铁厂
-  { goodsId: 21, name: '水泥', minSupply: 500, buildingTypeId: 14 },     // 水泥厂
-  { goodsId: 17, name: '玻璃', minSupply: 300, buildingTypeId: 11 },     // 玻璃厂
-  { goodsId: 36, name: '建筑材料', minSupply: 200, buildingTypeId: 14 }, // 水泥厂
-  { goodsId: 6, name: '木材', minSupply: 400, buildingTypeId: 5 },       // 伐木场
+  { goodsId: 14, name: '钢材', minSupply: 500, buildingTypeId: 8, outputModeId: 0 },      // 钢铁厂
+  { goodsId: 21, name: '水泥', minSupply: 500, buildingTypeId: 14, outputModeId: 0 },     // 水泥厂
+  { goodsId: 17, name: '玻璃', minSupply: 300, buildingTypeId: 11, outputModeId: 0 },     // 玻璃厂
+  { goodsId: 36, name: '建筑材料', minSupply: 200, buildingTypeId: 14, outputModeId: 0 }, // 水泥厂
+  { goodsId: 6, name: '木材', minSupply: 400, buildingTypeId: 5, outputModeId: 0 },       // 伐木场
   
   // === 关键中间材料（多产业链依赖）===
-  { goodsId: 11, name: '天然橡胶', minSupply: 300, buildingTypeId: 32 }, // 橡胶园
-  { goodsId: 19, name: '橡胶制品', minSupply: 200, buildingTypeId: 10 }, // 化工厂
-  { goodsId: 20, name: '化学品', minSupply: 300, buildingTypeId: 10 },   // 化工厂
-  { goodsId: 18, name: '塑料', minSupply: 300, buildingTypeId: 10 },     // 化工厂
-  { goodsId: 15, name: '铜材', minSupply: 200, buildingTypeId: 8 },      // 钢铁厂
-  { goodsId: 16, name: '铝材', minSupply: 200, buildingTypeId: 15 },     // 铝冶炼厂
+  { goodsId: 11, name: '天然橡胶', minSupply: 300, buildingTypeId: 32, outputModeId: 0 }, // 橡胶园
+  { goodsId: 19, name: '橡胶制品', minSupply: 200, buildingTypeId: 10, outputModeId: 0 }, // 化工厂
+  { goodsId: 20, name: '化学品', minSupply: 300, buildingTypeId: 10, outputModeId: 0 },   // 化工厂
+  { goodsId: 18, name: '塑料', minSupply: 300, buildingTypeId: 10, outputModeId: 0 },     // 化工厂
+  { goodsId: 15, name: '铜材', minSupply: 200, buildingTypeId: 8, outputModeId: 0 },      // 钢铁厂
+  { goodsId: 16, name: '铝材', minSupply: 200, buildingTypeId: 15, outputModeId: 0 },     // 铝冶炼厂
   
   // === 关键零部件（高端产品必需）===
-  { goodsId: 26, name: '电子元件', minSupply: 200, buildingTypeId: 16 }, // 电子厂 - 手机、电脑、汽车、家电等必需
-  { goodsId: 27, name: '芯片', minSupply: 100, buildingTypeId: 17 },     // 芯片厂 - 高端电子产品必需
-  { goodsId: 28, name: '电池', minSupply: 150, buildingTypeId: 20 },     // 电池厂 - 电动车、手机、储能必需
-  { goodsId: 29, name: '电机', minSupply: 100, buildingTypeId: 21 },     // 机械厂 - 电动设备必需
-  { goodsId: 30, name: '屏幕', minSupply: 100, buildingTypeId: 21 },     // 机械厂 - 手机、电脑必需
-  { goodsId: 31, name: '机械部件', minSupply: 150, buildingTypeId: 21 }, // 机械厂 - 工业机器人等必需
-  { goodsId: 32, name: '汽车零部件', minSupply: 100, buildingTypeId: 21 }, // 机械厂 - 汽车生产必需
+  { goodsId: 26, name: '电子元件', minSupply: 200, buildingTypeId: 16, outputModeId: 0 }, // 电子厂 - 手机、电脑、汽车、家电等必需
+  { goodsId: 27, name: '芯片', minSupply: 100, buildingTypeId: 17, outputModeId: 0 },     // 芯片厂 - 高端电子产品必需
+  { goodsId: 28, name: '电池', minSupply: 150, buildingTypeId: 20, outputModeId: 0 },     // 电池厂 - 电动车、手机、储能必需
+  { goodsId: 29, name: '电机', minSupply: 100, buildingTypeId: 21, outputModeId: 0 },     // 机械厂 - 电动设备必需
+  { goodsId: 30, name: '屏幕', minSupply: 100, buildingTypeId: 21, outputModeId: 0 },     // 机械厂 - 手机、电脑必需
+  { goodsId: 31, name: '机械部件', minSupply: 150, buildingTypeId: 21, outputModeId: 0 }, // 机械厂 - 工业机器人等必需
+  { goodsId: 32, name: '汽车零部件', minSupply: 100, buildingTypeId: 21, outputModeId: 0 }, // 机械厂 - 汽车生产必需
   
   // === 原材料（上游供应）===
-  { goodsId: 0, name: '铁矿石', minSupply: 500, buildingTypeId: 0 },     // 铁矿
-  { goodsId: 1, name: '铜矿石', minSupply: 300, buildingTypeId: 1 },     // 铜矿 - 铜材的上游
-  { goodsId: 3, name: '煤炭', minSupply: 500, buildingTypeId: 2 },       // 煤矿
-  { goodsId: 9, name: '硅石', minSupply: 300, buildingTypeId: 7 },       // 矿场
-  { goodsId: 12, name: '化工原料', minSupply: 300, buildingTypeId: 9 },  // 炼油厂（副产品）
-  { goodsId: 13, name: '锂矿', minSupply: 200, buildingTypeId: 33 },     // 锂矿 - 电池生产必需
+  { goodsId: 0, name: '铁矿石', minSupply: 500, buildingTypeId: 0, outputModeId: 0 },     // 铁矿
+  { goodsId: 1, name: '铜矿石', minSupply: 300, buildingTypeId: 1, outputModeId: 0 },     // 铜矿 - 铜材的上游
+  { goodsId: 3, name: '煤炭', minSupply: 500, buildingTypeId: 2, outputModeId: 0 },       // 煤矿
+  { goodsId: 9, name: '硅石', minSupply: 300, buildingTypeId: 7, outputModeId: 0 },       // 矿场
+  { goodsId: 12, name: '化工原料', minSupply: 300, buildingTypeId: 9, outputModeId: 0 },  // 炼油厂（副产品）
+  { goodsId: 13, name: '锂矿', minSupply: 200, buildingTypeId: 33, outputModeId: 0 },     // 锂矿 - 电池生产必需
 ];
 
 /**
@@ -4070,12 +4118,16 @@ export function generateStrategicMaterialDecisions(
     // 检查是否负担得起
     if (building.buildCost > assessment.cash * 0.5) continue;
     
-    // 找到对应的配方
-    const recipe = RECIPES.find(r => 
-      r.buildingTypeId === buildingTypeId &&
-      r.outputs.some(o => o.goodsId === goodsId)
-    );
-    if (!recipe) continue;
+    // 获取outputModeId（从战略材料配置中获取，默认为0）
+    const targetOutputModeId = material.outputModeId || 0;
+    
+    // 验证生产配置是否有效
+    const production = getBuildingProduction(buildingTypeId, targetOutputModeId);
+    if (!production) continue;
+    
+    // 验证该生产配置是否产出目标商品
+    const canProduceTarget = production.outputs?.some(o => o.goodsId === goodsId);
+    if (!canProduceTarget) continue;
     
     // 生成紧急建造决策
     // 优先级极高：15+（比普通投资决策的8-12更高）
@@ -4092,7 +4144,7 @@ export function generateStrategicMaterialDecisions(
       action: 'build',
       params: {
         buildingTypeId,
-        recipeId: recipe.id,
+        outputModeId: targetOutputModeId,
         cost: building.buildCost,
         targetGoodsId: goodsId,
         reason: 'strategic_material_emergency',
@@ -4196,9 +4248,9 @@ interface ZeroSupplyGoods {
   name: string;
   category: string;
   basePrice: number;
-  hasRecipe: boolean;          // 是否有生产配方
+  hasProduction: boolean;      // 是否有生产配置
   buildingTypeId: number;      // 可生产该商品的建筑类型
-  recipeId: number;            // 配方ID
+  outputModeId: number;        // 生产模式ID
   buildingCost: number;        // 建筑成本
   dependencyCount: number;     // 有多少其他商品依赖此商品
   urgencyScore: number;        // 紧急程度
@@ -4210,12 +4262,30 @@ interface ZeroSupplyGoods {
 function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
   const zeroSupplyGoods: ZeroSupplyGoods[] = [];
   
-  // 计算依赖关系：哪些商品作为原材料被其他配方使用
+  // 计算依赖关系：哪些商品作为原材料被其他建筑使用
   const dependencyCount = new Map<number, number>();
-  for (const recipe of RECIPES) {
-    for (const input of recipe.inputs) {
-      const count = dependencyCount.get(input.goodsId) || 0;
-      dependencyCount.set(input.goodsId, count + 1);
+  for (const building of ALL_BUILDINGS) {
+    const production = building.production;
+    if (!production) continue;
+    
+    // 检查默认inputs
+    if (production.inputs) {
+      for (const input of production.inputs) {
+        const count = dependencyCount.get(input.goodsId) || 0;
+        dependencyCount.set(input.goodsId, count + 1);
+      }
+    }
+    
+    // 检查outputModes中的inputs
+    if (production.outputModes) {
+      for (const mode of production.outputModes) {
+        if (mode.inputs) {
+          for (const input of mode.inputs) {
+            const count = dependencyCount.get(input.goodsId) || 0;
+            dependencyCount.set(input.goodsId, count + 1);
+          }
+        }
+      }
     }
   }
   
@@ -4231,31 +4301,24 @@ function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
     // 跳过零售类商品（由零售系统处理）
     const category = world.goods.categories[goodsId];
     
-    // 找能生产该商品的配方和建筑
-    let hasRecipe = false;
+    // 找能生产该商品的建筑和生产配置
+    let hasProduction = false;
     let buildingTypeId = -1;
-    let recipeId = -1;
+    let outputModeId = 0;
     let buildingCost = 0;
     
-    for (const recipe of RECIPES) {
-      const produces = recipe.outputs.some(o => o.goodsId === goodsId);
-      if (produces) {
-        hasRecipe = true;
-        recipeId = recipe.id;
-        buildingTypeId = recipe.buildingTypeId;
-        
-        const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
-        if (building) {
-          buildingCost = building.buildCost;
-        }
-        break;
-      }
+    const buildingInfo = findBuildingForGoods(goodsId);
+    if (buildingInfo) {
+      hasProduction = true;
+      buildingTypeId = buildingInfo.building.id;
+      outputModeId = buildingInfo.outputModeId;
+      buildingCost = buildingInfo.building.buildCost;
     }
     
-    // 如果没有配方，跳过（原材料由采掘类建筑生产）
-    if (!hasRecipe) continue;
+    // 如果没有生产配置，跳过（原材料由采掘类建筑生产）
+    if (!hasProduction) continue;
     
-    // 计算紧急程度：依赖此商品的配方越多，越紧急
+    // 计算紧急程度：依赖此商品的建筑越多，越紧急
     const deps = dependencyCount.get(goodsId) || 0;
     let urgencyScore = deps * 10;
     
@@ -4276,9 +4339,9 @@ function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
       name: goods.name,
       category,
       basePrice: goods.basePrice,
-      hasRecipe,
+      hasProduction,
       buildingTypeId,
-      recipeId,
+      outputModeId,
       buildingCost,
       dependencyCount: deps,
       urgencyScore,
@@ -4338,9 +4401,9 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
   
   // 为每个零供应商品分配建造任务
   for (const zeroGoods of zeroSupplyGoods.slice(0, 5)) { // 每次最多处理5个
-    const { goodsId, buildingTypeId, recipeId, buildingCost } = zeroGoods;
+    const { goodsId, buildingTypeId, outputModeId, buildingCost } = zeroGoods;
     
-    if (buildingTypeId < 0 || recipeId < 0) continue;
+    if (buildingTypeId < 0 || outputModeId < 0) continue;
     
     // 优先选择pioneer公司
     let selectedCompanyId = -1;
@@ -4374,7 +4437,7 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
       action: 'build',
       params: {
         buildingTypeId,
-        recipeId,
+        outputModeId,
         cost: buildingCost,
         targetGoodsId: goodsId,
         reason: 'zero_supply_forced',
@@ -4438,16 +4501,17 @@ interface ColdGoodsInfo {
 function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
   const coldGoods: ColdGoodsInfo[] = [];
   
-  // 统计每种商品的生产建筑数量
+  // 统计每种商品的生产建筑数量（使用新的生产系统）
   const producerCounts = new Map<number, number>();
   for (let i = 0; i < world.buildings.count; i++) {
     if (!world.buildings.isActive[i]) continue;
     
-    const recipeId = world.buildings.recipeIds[i];
-    const recipe = RECIPES.find(r => r.id === recipeId);
-    if (!recipe) continue;
+    const buildingTypeId = world.buildings.types[i];
+    const outputModeId = world.buildings.outputModeIds[i];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+    if (!production || !production.outputs) continue;
     
-    for (const output of recipe.outputs) {
+    for (const output of production.outputs) {
       const count = producerCounts.get(output.goodsId) || 0;
       producerCounts.set(output.goodsId, count + 1);
     }
@@ -4538,7 +4602,11 @@ export function buildForColdGoods(world: GameWorld): number {
       continue; // 没有可建造的建筑
     }
     
-    const { building, recipe } = buildingInfo;
+    const { building, outputModeId } = buildingInfo;
+    
+    // 获取生产配置用于检查原材料
+    const production = getBuildingProduction(building.id, outputModeId);
+    if (!production) continue;
     
     // 找一个有资金的AI公司来建造
     // 优先选择：
@@ -4566,16 +4634,19 @@ export function buildForColdGoods(world: GameWorld): number {
       for (let i = 0; i < world.buildings.count; i++) {
         if (world.buildings.owners[i] !== companyId) continue;
         
-        const recipeId = world.buildings.recipeIds[i];
-        const existingRecipe = RECIPES.find(r => r.id === recipeId);
-        if (!existingRecipe) continue;
+        const existingBuildingTypeId = world.buildings.types[i];
+        const existingOutputModeId = world.buildings.outputModeIds[i];
+        const existingProduction = getBuildingProduction(existingBuildingTypeId, existingOutputModeId);
+        if (!existingProduction || !existingProduction.outputs) continue;
         
         // 检查是否生产目标商品的原材料
-        for (const input of recipe.inputs) {
-          if (existingRecipe.outputs.some(o => o.goodsId === input.goodsId)) {
-            hasRelatedIndustry = true;
-            score += 20;
-            break;
+        if (production.inputs) {
+          for (const input of production.inputs) {
+            if (existingProduction.outputs.some(o => o.goodsId === input.goodsId)) {
+              hasRelatedIndustry = true;
+              score += 20;
+              break;
+            }
           }
         }
         if (hasRelatedIndustry) break;
@@ -4606,7 +4677,7 @@ export function buildForColdGoods(world: GameWorld): number {
         action: 'build',
         params: {
           buildingTypeId: building.id,
-          recipeId: recipe.id,
+          outputModeId: outputModeId,
           cost: building.buildCost,
           targetGoodsId: cold.goodsId,
           reason: 'cold_goods_supply',

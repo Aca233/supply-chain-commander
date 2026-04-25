@@ -1,12 +1,14 @@
 /**
  * 需求曲线与消费者分层系统
  * 实现多层次消费者的需求模拟和价格弹性计算
+ *
+ * v4.0更新：使用getBuildingProduction替代RECIPES
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { ALL_GOODS, GoodsDefinition, CONSUMER_GOODS } from '@/data/goods';
+import { ALL_GOODS, GoodsDefinition, CONSUMER_GOODS, GoodsId } from '@/data/goods';
 import { GOODS_COUNT, DEMAND_SMOOTHING_FACTOR, TICKS_PER_DAY, ACTUAL_GOODS_COUNT, MAX_SUPPLY_DEMAND_RATIO } from '@/core/constants';
-import { RECIPES } from '@/data/recipes';
+import { ALL_BUILDINGS } from '@/data/buildings';
 
 /**
  * 消费者层级定义
@@ -676,13 +678,15 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
 /**
  * 【P0修复】计算派生需求 - 供应链需求传导
  *
+ * v4.0更新：使用getBuildingProduction替代RECIPES
+ *
  * 原理：最终产品的需求会向上游传导
  * 例如：服装需求 → 纺织品需求 → 棉花需求
  *
  * 算法：
- * 1. 遍历所有配方
- * 2. 对于每个配方的输出商品，获取其当前需求量
- * 3. 根据配方的输入输出比例，计算输入商品的派生需求
+ * 1. 遍历所有建筑的生产配置
+ * 2. 对于每个生产配置的输出商品，获取其当前需求量
+ * 3. 根据输入输出比例，计算输入商品的派生需求
  * 4. 使用衰减系数（0.6）避免需求过度放大
  *
  * 【P3修复】新增企业/机构需求
@@ -699,42 +703,51 @@ export function calculateDerivedDemand(world: GameWorld): void {
   // 临时存储派生需求增量
   const derivedDemands = new Float32Array(ACTUAL_GOODS_COUNT);
   
-  // 遍历所有配方
-  for (const recipe of RECIPES) {
-    // 跳过无输出的配方（如纯采掘）
-    if (recipe.outputs.length === 0) continue;
-    
-    // 计算输出商品的总需求
-    let outputDemandTotal = 0;
-    for (const output of recipe.outputs) {
-      outputDemandTotal += world.goods.demands[output.goodsId] || 0;
-    }
-    
-    // 如果输出商品没有需求，跳过
-    if (outputDemandTotal <= 0) continue;
-    
-    // 计算输出总量（用于比例计算）
-    let outputAmountTotal = 0;
-    for (const output of recipe.outputs) {
-      outputAmountTotal += output.amount;
-    }
-    
-    if (outputAmountTotal <= 0) continue;
-    
-    // 计算需要的生产批次数（基于需求和产出比例）
-    // 使用最大输出商品的需求/产出比
-    let maxBatches = 0;
-    for (const output of recipe.outputs) {
-      const demand = world.goods.demands[output.goodsId] || 0;
-      const batchesNeeded = demand / output.amount;
-      maxBatches = Math.max(maxBatches, batchesNeeded);
-    }
-    
-    // 为每个输入商品添加派生需求
-    for (const input of recipe.inputs) {
-      // 派生需求 = 批次数 × 输入量 × 衰减系数
-      const derivedDemand = maxBatches * input.amount * DERIVED_DEMAND_FACTOR;
-      derivedDemands[input.goodsId] += derivedDemand;
+  // 遍历所有建筑的生产配置
+  for (const building of ALL_BUILDINGS) {
+    const productionVariants = building.production.outputModes?.length
+      ? building.production.outputModes
+      : [building.production];
+
+    for (const production of productionVariants) {
+      const outputs = production.outputs || [];
+      const inputs = production.inputs || [];
+
+      // 跳过无输出的配置（如纯采掘）
+      if (outputs.length === 0) continue;
+
+      // 计算输出商品的总需求
+      let outputDemandTotal = 0;
+      for (const output of outputs) {
+        outputDemandTotal += world.goods.demands[output.goodsId] || 0;
+      }
+
+      // 如果输出商品没有需求，跳过
+      if (outputDemandTotal <= 0) continue;
+
+      // 计算输出总量（用于比例计算）
+      let outputAmountTotal = 0;
+      for (const output of outputs) {
+        outputAmountTotal += output.amount;
+      }
+
+      if (outputAmountTotal <= 0) continue;
+
+      // 计算需要的生产批次数（基于需求和产出比例）
+      // 使用最大输出商品的需求/产出比
+      let maxBatches = 0;
+      for (const output of outputs) {
+        const demand = world.goods.demands[output.goodsId] || 0;
+        const batchesNeeded = demand / output.amount;
+        maxBatches = Math.max(maxBatches, batchesNeeded);
+      }
+
+      // 为每个输入商品添加派生需求
+      for (const input of inputs) {
+        // 派生需求 = 批次数 × 输入量 × 衰减系数
+        const derivedDemand = maxBatches * input.amount * DERIVED_DEMAND_FACTOR;
+        derivedDemands[input.goodsId] += derivedDemand;
+      }
     }
   }
   
@@ -802,27 +815,27 @@ function addInstitutionalDemand(world: GameWorld, derivedDemands: Float32Array):
   // 机构需求配置表：[商品ID, 基础日需求量, 机构类型描述]
   const institutionalDemands: Array<[number, number, string]> = [
     // 医疗机构需求
-    [73, 50, '医院-疫苗'],          // 疫苗：每天50批
-    [72, 100, '医院-抗生素'],       // 抗生素：每天100批
-    [77, 200, '医院-医用耗材'],     // 医用耗材：每天200箱
-    [78, 5, '医院-诊断设备'],       // 诊断设备：每天5台
-    [79, 1, '医院-手术设备'],       // 手术设备：每天1台
+    [GoodsId.VACCINE, 50, '医院-疫苗'],
+    [GoodsId.ANTIBIOTICS, 100, '医院-抗生素'],
+    [GoodsId.MEDICAL_SUPPLIES, 200, '医院-医用耗材'],
+    [GoodsId.MEDICAL_DEVICE, 5, '医院-诊断设备'],
+    [GoodsId.OTC_DRUG, 150, '医院-基础药品'],
     
     // 航空企业需求
-    [33, 20, '航空-航空部件'],      // 航空部件：每天20套
+    [GoodsId.AIRCRAFT_PARTS, 20, '航空-航空部件'],
     
     // 能源企业需求
-    [34, 100, '能源-光伏板'],       // 光伏板：每天100块
-    [35, 30, '能源-风机叶片'],      // 风机叶片：每天30片
-    [49, 10, '能源-光伏系统'],      // 光伏系统：每天10套
-    [50, 8, '能源-储能系统'],       // 储能系统：每天8套
+    [GoodsId.SOLAR_PANEL, 100, '能源-光伏板'],
+    [GoodsId.WIND_BLADE, 30, '能源-风机叶片'],
+    [GoodsId.SOLAR_SYSTEM, 10, '能源-光伏系统'],
+    [GoodsId.ENERGY_STORAGE, 8, '能源-储能系统'],
     
     // 制造企业需求
-    [51, 15, '工厂-工业机器人'],    // 工业机器人：每天15台
-    [47, 200, '建筑-建材成品'],     // 建材成品：每天200套
+    [GoodsId.INDUSTRIAL_ROBOT, 15, '工厂-工业机器人'],
+    [GoodsId.BUILDING_PRODUCTS, 200, '建筑-建材成品'],
     
     // 物流企业需求
-    [37, 500, '物流-包装材料'],     // 包装材料：每天500套
+    [GoodsId.PACKAGING, 500, '物流-包装材料'],
   ];
   
   // 应用机构需求

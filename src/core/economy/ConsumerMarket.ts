@@ -19,12 +19,12 @@
  */
 
 import { GameWorld } from '../world/GameWorld';
-import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition } from '@/data/goods';
+import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition, GoodsId } from '@/data/goods';
 import { GOODS_COUNT, MAX_ORDERS } from '../constants';
-import { getOrderBookView, OrderView } from '../market/OrderBook';
+import { finalizeFilledOrder, getOrderBookView, OrderView } from '../market/OrderBook';
 import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
-import { RECIPES } from '@/data/recipes';
-import { updateRetailSystem, RetailTickResult } from './RetailSystem';
+import { getBuildingProduction, getRetailConfig } from '@/data/buildings';
+import { recordTrade, TradeOrderRef, TradePartyRef } from '../market/TradeLedger';
 
 // ==================== 预计算查找表（O(1)查找替代O(n)） ====================
 
@@ -34,11 +34,9 @@ for (const goods of ALL_GOODS) {
   GOODS_BY_ID.set(goods.id, goods);
 }
 
-// 配方ID到配方定义的Map（避免每次 RECIPES.find()）
-const RECIPES_BY_ID: Map<number, typeof RECIPES[0]> = new Map();
-for (const recipe of RECIPES) {
-  RECIPES_BY_ID.set(recipe.id, recipe);
-}
+// 配方系统已废弃，使用getBuildingProduction替代
+// 保留空的Map定义以兼容可能的旧代码
+const RECIPES_BY_ID: Map<number, unknown> = new Map();
 
 // ==================== 可复用结果对象（减少GC压力） ====================
 
@@ -140,6 +138,72 @@ const EMPTY_SUMMARY: MarketConsumptionSummary = {
   b2bQuantity: 0,
 };
 
+const INSTITUTIONAL_GOODS = [
+  GoodsId.VACCINE,
+  GoodsId.ANTIBIOTICS,
+  GoodsId.MEDICAL_SUPPLIES,
+  GoodsId.MEDICAL_DEVICE,
+  GoodsId.AIRCRAFT_PARTS,
+  GoodsId.SOLAR_PANEL,
+  GoodsId.WIND_BLADE,
+  GoodsId.SOLAR_SYSTEM,
+  GoodsId.ENERGY_STORAGE,
+  GoodsId.INDUSTRIAL_ROBOT,
+  GoodsId.BUILDING_PRODUCTS,
+  GoodsId.PACKAGING,
+];
+
+const INSTITUTIONAL_DEMAND_RATE = 0.18;
+const INSTITUTIONAL_MAX_PREMIUM_RATIO = 1.65;
+const INSTITUTIONAL_MIN_TRADE_QUANTITY = 1;
+const INSTITUTIONAL_PRICE_SENSITIVITY = 0.2;
+
+function accumulatePurchaseSummary(
+  summary: MarketConsumptionSummary,
+  result: ConsumerPurchaseResult,
+): void {
+  if (result.quantity <= 0) {
+    return;
+  }
+
+  summary.totalPurchases++;
+  summary.totalSpent += result.totalSpent;
+  summary.totalQuantity += result.quantity;
+  summary.purchasesByGoods.set(result.goodsId, result);
+}
+
+function getRetailServedGoods(world: GameWorld): Set<number> {
+  const servedGoods = new Set<number>();
+
+  if (!world.retail || world.retail.count <= 0) {
+    return servedGoods;
+  }
+
+  for (let retailId = 0; retailId < world.retail.count; retailId++) {
+    const buildingId = world.retail.buildingIds[retailId];
+    const buildingType = world.buildings.types[buildingId];
+    const retailConfig = getRetailConfig(buildingType);
+    if (!retailConfig) continue;
+
+    for (const goodsId of retailConfig.allowedGoodsIds) {
+      const inventoryIdx = retailId * GOODS_COUNT + goodsId;
+      if (world.retail.inventories[inventoryIdx] > 0) {
+        servedGoods.add(goodsId);
+      }
+    }
+  }
+
+  return servedGoods;
+}
+
+/**
+ * 零售是否可服务消费者
+ * 规则：至少有一家已注册零售店在可售商品中存在库存
+ */
+export function canRetailServeConsumers(world: GameWorld): boolean {
+  return getRetailServedGoods(world).size > 0;
+}
+
 /**
  * 执行消费者市场购买
  * 性能优化：使用间隔执行和商品分批处理
@@ -174,34 +238,40 @@ export function executeConsumerPurchases(
   
   // 1. 处理消费者购买
   if (shouldExecuteConsumer) {
-    // 【修复】零售系统已在GameLoop中单独调用，这里不再重复调用
-    // 检查是否启用零售系统 - 如果有零售店，跳过传统市场购买
-    if (world.retail && world.retail.count > 0) {
-      // 零售系统在GameLoop中单独处理，这里只更新统计信息
-      // summary保持为空，零售结果由GameLoop中的updateRetailSystem提供
-    } else {
-      // 降级：没有零售店时，使用传统的直接市场购买（向后兼容）
-      // 性能优化：商品分组处理，每次只处理一组
-      const groupIndex = (currentTick / config.executionInterval) % config.goodsBatchGroups;
-      const goodsToProcess = CONSUMER_GOODS.filter(
-        (_, idx) => idx % config.goodsBatchGroups === groupIndex
-      );
-      
-      for (const goods of goodsToProcess) {
-        // 调整消费量以补偿分组（每组处理goodsBatchGroups倍的量）
-        const adjustedConfig = {
-          ...config,
-          consumptionRatePerTick: config.consumptionRatePerTick * config.goodsBatchGroups,
-        };
-        const result = purchaseGoodsForConsumers(world, goods, adjustedConfig);
-        
-        if (result.quantity > 0) {
-          summary.totalPurchases++;
-          summary.totalSpent += result.totalSpent;
-          summary.totalQuantity += result.quantity;
-          summary.purchasesByGoods.set(goods.id, result);
-        }
+    const servedByRetail = getRetailServedGoods(world);
+
+    // 商品分组处理，每次只处理一组
+    const groupIndex = (currentTick / config.executionInterval) % config.goodsBatchGroups;
+    const goodsToProcess = CONSUMER_GOODS.filter(
+      (_, idx) => idx % config.goodsBatchGroups === groupIndex
+    );
+    
+    for (const goods of goodsToProcess) {
+      // 零售系统当前能承接的商品交给零售，未覆盖或断货商品回退到直购市场
+      if (servedByRetail.has(goods.id)) {
+        continue;
       }
+
+      // 调整消费量以补偿分组（每组处理goodsBatchGroups倍的量）
+      const adjustedConfig = {
+        ...config,
+        consumptionRatePerTick: config.consumptionRatePerTick * config.goodsBatchGroups,
+      };
+      const result = purchaseGoodsForConsumers(world, goods, adjustedConfig);
+
+      accumulatePurchaseSummary(summary, result);
+    }
+
+    const institutionalGoodsToProcess = INSTITUTIONAL_GOODS.filter(
+      (_, idx) => idx % config.goodsBatchGroups === groupIndex
+    );
+
+    for (const goodsId of institutionalGoodsToProcess) {
+      const goods = GOODS_BY_ID.get(goodsId);
+      if (!goods) continue;
+
+      const result = purchaseGoodsForInstitutions(world, goods, config);
+      accumulatePurchaseSummary(summary, result);
     }
   }
   
@@ -249,14 +319,16 @@ function executeB2BPurchases(
     if (!b.isActive[buildingId]) continue;
     
     const companyId = b.owners[buildingId];
-    const recipeId = b.recipeIds[buildingId];
-    // 使用预计算的Map进行O(1)查找（替代O(n)的RECIPES.find）
-    const recipe = RECIPES_BY_ID.get(recipeId);
+    const buildingTypeId = b.types[buildingId];
+    const outputModeId = b.outputModeIds[buildingId];
+    // 使用getBuildingProduction替代RECIPES
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
     
-    if (!recipe) continue;
+    if (!production) continue;
     
-    // 遍历配方的每个输入
-    for (const input of recipe.inputs) {
+    const inputs = production.inputs || [];
+    // 遍历生产配置的每个输入
+    for (const input of inputs) {
       const goodsId = input.goodsId;
       const neededPerCycle = input.amount;
       
@@ -398,7 +470,6 @@ function executeCompanyPurchase(
 ): { success: boolean; quantity: number; cost: number } {
   const o = world.orders;
   const c = world.companies;
-  const t = world.trades;
   
   const orderIdx = sellOrder.idx;
   
@@ -443,29 +514,20 @@ function executeCompanyPurchase(
   world.goods.supplies[goodsId] += actualQuantity;
   world.goods.demands[goodsId] += actualQuantity;
   
-  // 6. 创建成交记录
-  const tradeId = t.nextTradeId++;
-  const tradeIdx = t.count % t.maxTrades;
-  
-  t.buyOrderIds[tradeIdx] = -1;  // 自动采购没有正式订单
-  t.sellOrderIds[tradeIdx] = orderIdx;
-  t.buyCompanyIds[tradeIdx] = buyerCompanyId;
-  t.sellCompanyIds[tradeIdx] = sellCompanyId;
-  t.goodsIds[tradeIdx] = goodsId;
-  t.quantities[tradeIdx] = actualQuantity;
-  t.prices[tradeIdx] = price;
-  t.ticks[tradeIdx] = world.tick;
-  t.count++;
-  
-  // 7. 更新累计销售统计（卖方的销售记录）
-  const sellStatsIdx = sellCompanyId * GOODS_COUNT + goodsId;
-  t.cumulativeSalesQuantity[sellStatsIdx] += actualQuantity;
-  t.cumulativeSalesRevenue[sellStatsIdx] += totalCost;
+  recordTrade(world, {
+    buyOrderId: -1,
+    sellOrderId: orderIdx,
+    buyCompanyId: buyerCompanyId,
+    sellCompanyId,
+    goodsId,
+    quantity: actualQuantity,
+    price,
+    tick: world.tick,
+  });
   
   // 8. 如果订单完全成交，标记为非激活
   if (o.remainings[orderIdx] <= 0) {
-    o.isActive[orderIdx] = 0;
-    o.activeCount--;
+    finalizeFilledOrder(world, orderIdx);
   }
   
   return {
@@ -484,13 +546,47 @@ function purchaseGoodsForConsumers(
   config: ConsumerBuyConfig
 ): ConsumerPurchaseResult {
   const goodsId = goods.id;
-  const basePrice = goods.basePrice;
   const currentDemand = world.goods.demands[goodsId];
-  
-  // 本tick需要消费的量
-  const targetQuantity = currentDemand * config.consumptionRatePerTick;
-  
-  if (targetQuantity < config.minTradeQuantity) {
+
+  return purchaseGoodsForDemandSegment(
+    world,
+    goods,
+    currentDemand * config.consumptionRatePerTick,
+    config.maxPremiumRatio,
+    config.minTradeQuantity,
+    config.priceSensitivity,
+  );
+}
+
+function purchaseGoodsForInstitutions(
+  world: GameWorld,
+  goods: GoodsDefinition,
+  config: ConsumerBuyConfig,
+): ConsumerPurchaseResult {
+  const currentDemand = world.goods.demands[goods.id];
+
+  return purchaseGoodsForDemandSegment(
+    world,
+    goods,
+    currentDemand * Math.min(config.consumptionRatePerTick, INSTITUTIONAL_DEMAND_RATE),
+    INSTITUTIONAL_MAX_PREMIUM_RATIO,
+    INSTITUTIONAL_MIN_TRADE_QUANTITY,
+    INSTITUTIONAL_PRICE_SENSITIVITY,
+  );
+}
+
+function purchaseGoodsForDemandSegment(
+  world: GameWorld,
+  goods: GoodsDefinition,
+  targetQuantity: number,
+  maxPremiumRatio: number,
+  minTradeQuantity: number,
+  priceSensitivity: number,
+): ConsumerPurchaseResult {
+  const goodsId = goods.id;
+  const basePrice = goods.basePrice;
+
+  if (targetQuantity < minTradeQuantity) {
     return {
       goodsId,
       quantity: 0,
@@ -499,18 +595,12 @@ function purchaseGoodsForConsumers(
       ordersConsumed: 0,
     };
   }
-  
-  // 计算消费者愿意支付的最高价格
-  const maxAcceptablePrice = basePrice * config.maxPremiumRatio;
-  
-  // 获取当前市场卖单
+
+  const maxAcceptablePrice = basePrice * maxPremiumRatio;
   const orderBook = getOrderBookView(world, goodsId);
-  
-  // 按价格从低到高排序的卖单
   const sellOrders = orderBook.sellOrders;
-  
+
   if (sellOrders.length === 0) {
-    // 没有卖单，消费者无法购买
     return {
       goodsId,
       quantity: 0,
@@ -519,50 +609,45 @@ function purchaseGoodsForConsumers(
       ordersConsumed: 0,
     };
   }
-  
-  // 执行购买
+
   let remainingQuantity = targetQuantity;
   let totalSpent = 0;
   let totalQuantity = 0;
   let ordersConsumed = 0;
-  
+
   for (const sellOrder of sellOrders) {
     if (remainingQuantity <= 0) break;
-    
-    // 检查价格是否可接受
+
     if (sellOrder.price > maxAcceptablePrice) {
-      // 价格太高，消费者不接受
       continue;
     }
-    
-    // 计算购买意愿（价格越低意愿越强）
+
     const priceRatio = sellOrder.price / basePrice;
-    const purchaseWillingness = calculatePurchaseWillingness(priceRatio, config.priceSensitivity);
-    
-    // 调整后的购买量
+    const purchaseWillingness = calculatePurchaseWillingness(priceRatio, priceSensitivity);
     const adjustedQuantity = Math.min(
       remainingQuantity * purchaseWillingness,
       sellOrder.remaining
     );
-    
-    if (adjustedQuantity >= config.minTradeQuantity) {
-      // 执行购买
-      const purchaseResult = executeOrderPurchase(
-        world,
-        goodsId,
-        sellOrder,
-        adjustedQuantity
-      );
-      
-      if (purchaseResult.success) {
-        totalSpent += purchaseResult.cost;
-        totalQuantity += purchaseResult.quantity;
-        remainingQuantity -= purchaseResult.quantity;
-        ordersConsumed++;
-      }
+
+    if (adjustedQuantity < minTradeQuantity) {
+      continue;
+    }
+
+    const purchaseResult = executeOrderPurchase(
+      world,
+      goodsId,
+      sellOrder,
+      adjustedQuantity
+    );
+
+    if (purchaseResult.success) {
+      totalSpent += purchaseResult.cost;
+      totalQuantity += purchaseResult.quantity;
+      remainingQuantity -= purchaseResult.quantity;
+      ordersConsumed++;
     }
   }
-  
+
   return {
     goodsId,
     quantity: totalQuantity,
@@ -609,7 +694,6 @@ function executeOrderPurchase(
 ): { success: boolean; quantity: number; cost: number } {
   const o = world.orders;
   const c = world.companies;
-  const t = world.trades;
   
   const orderIdx = sellOrder.idx;
   
@@ -645,32 +729,20 @@ function executeOrderPurchase(
   // 4. 更新供给数据（商品被消费，供给减少）
   world.goods.supplies[goodsId] += actualQuantity;
   
-  // 5. 创建成交记录
-  const tradeId = t.nextTradeId++;
-  const tradeIdx = t.count % t.maxTrades;
-  
-  // 使用特殊的消费者ID（-1表示消费者市场）
-  const CONSUMER_ID = -1;
-  
-  t.buyOrderIds[tradeIdx] = -1;  // 消费者没有正式订单
-  t.sellOrderIds[tradeIdx] = orderIdx;
-  t.buyCompanyIds[tradeIdx] = CONSUMER_ID;
-  t.sellCompanyIds[tradeIdx] = sellCompanyId;
-  t.goodsIds[tradeIdx] = goodsId;
-  t.quantities[tradeIdx] = actualQuantity;
-  t.prices[tradeIdx] = price;
-  t.ticks[tradeIdx] = world.tick;
-  t.count++;
-  
-  // 6. 更新累计销售统计（卖方的销售记录）
-  const sellStatsIdx = sellCompanyId * GOODS_COUNT + goodsId;
-  t.cumulativeSalesQuantity[sellStatsIdx] += actualQuantity;
-  t.cumulativeSalesRevenue[sellStatsIdx] += totalCost;
+  recordTrade(world, {
+    buyOrderId: TradeOrderRef.CONSUMER_DIRECT,
+    sellOrderId: orderIdx,
+    buyCompanyId: TradePartyRef.CONSUMER_MARKET,
+    sellCompanyId,
+    goodsId,
+    quantity: actualQuantity,
+    price,
+    tick: world.tick,
+  });
   
   // 7. 如果订单完全成交，标记为非激活
   if (o.remainings[orderIdx] <= 0) {
-    o.isActive[orderIdx] = 0;
-    o.activeCount--;
+    finalizeFilledOrder(world, orderIdx);
   }
   
   return {

@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/ui/desig
 import { Button } from '@/ui/design-system/components/Button/Button';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { MonthlyNewsReport, NewsCategory, NewsImportance } from '@/core/news';
+import { shouldUseCompactNewsLayout } from './responsivePageLayout';
 
 // 分类图标映射
 const CATEGORY_ICONS: Record<NewsCategory, string> = {
@@ -131,7 +132,7 @@ const MonthlyReportCard: React.FC<{
         className="cursor-pointer hover:bg-white/[0.02] transition-colors"
         onClick={onToggle}
       >
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex flex-wrap items-start gap-3 flex-1">
           {/* 日期徽章 */}
           <div className="flex-shrink-0 w-16 h-16 rounded-xl bg-gradient-to-br from-amber-900/50 to-orange-900/50 flex flex-col items-center justify-center border border-amber-500/20">
             <span className="text-xs text-amber-400/80">第{report.year}年</span>
@@ -149,7 +150,7 @@ const MonthlyReportCard: React.FC<{
           </div>
           
           {/* 标签 */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {report.isLLMGenerated && (
               <span className="px-2 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded-full">
                 🤖 AI
@@ -198,7 +199,7 @@ const MonthlyReportCard: React.FC<{
             )}
             
             {/* 统计数据 */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="p-3 rounded-lg bg-[var(--bg-muted)]">
                 <div className="text-xs text-[var(--text-muted)] mb-1">GDP</div>
                 <div className="text-sm font-medium text-[var(--text-primary)]">
@@ -239,7 +240,8 @@ const MonthlyReportCard: React.FC<{
 export const News: React.FC = () => {
   const { tick, getNewsHistory, getNewsCount, hasUnreadNews, showNewsPopup } = useGameStore();
   const newsVersion = useGameStore((s) => s.ui.newsVersion);
-  const { isMobile } = useMobile();
+  const { isMobile, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactNewsLayout({ isMobile, isNarrowDesktop });
   
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -266,10 +268,10 @@ export const News: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col gap-4 overflow-hidden">
+    <div className="h-full min-h-0 flex flex-col gap-4">
       {/* 头部 */}
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap flex-shrink-0">
+        <div className="flex items-center gap-3 flex-wrap">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             📰 商业周刊
             {hasUnread && (
@@ -280,7 +282,7 @@ export const News: React.FC = () => {
             共 {newsCount} 期
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant={filter === 'all' ? 'primary' : 'ghost'}
             size="sm"
@@ -299,7 +301,7 @@ export const News: React.FC = () => {
       </div>
       
       {/* 新闻列表 */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pb-4">
+      <div className={`flex-1 min-h-0 overflow-y-auto space-y-4 ${useCompactDesktop ? 'pb-4' : 'pb-6'}`}>
         {sortedNews.length === 0 ? (
           <Card variant="glass" className="p-8">
             <div className="text-center text-[var(--text-muted)]">

@@ -1,6 +1,8 @@
 /**
  * AI Worker管理器
  *
+ * v4.0更新：使用outputModeIds替代recipeIds
+ *
  * 管理AI Worker实例，处理主线程与Worker之间的通信
  * 负责序列化GameWorld数据，发送到Worker，并应用返回的决策
  */
@@ -214,7 +216,7 @@ export class AIWorkerManager {
         buildings.push({
           id: i,
           typeId: world.buildings.types[i],
-          recipeId: world.buildings.recipeIds[i],
+          recipeId: world.buildings.outputModeIds[i],  // v4.0: 使用outputModeIds替代recipeIds
           isActive: world.buildings.isActive[i] === 1,
           efficiency: world.buildings.efficiencies[i],
           level: world.buildings.levels[i],
@@ -403,6 +405,12 @@ export class AIWorkerManager {
       case 'adjust_price':
         return this.applyPriceAdjustDecision(world, companyId, decision);
         
+      case 'upgrade':
+        return this.applyUpgradeDecision(world, companyId, decision);
+        
+      case 'demolish':
+        return this.applyDemolishDecision(world, companyId, decision);
+        
       default:
         console.warn(`[AIWorkerManager] 未知决策类型: ${decision.type}`);
         return false;
@@ -521,7 +529,7 @@ export class AIWorkerManager {
       queue.progress[slot] = 0;
       queue.startTicks[slot] = world.tick;
       queue.estimatedEndTicks[slot] = world.tick + 48;  // 默认2天
-      queue.recipeIds[slot] = decision.recipeId || 0;
+      queue.outputModeIds[slot] = decision.recipeId || 0;  // v4.0: 使用outputModeIds替代recipeIds
       queue.existingBuildingIds[slot] = -1;  // 新建
       queue.isActive[slot] = 1;
       queue.count++;
@@ -574,6 +582,115 @@ export class AIWorkerManager {
     // 直接修改订单价格
     world.orders.prices[decision.orderId] = decision.newPrice;
     return true;
+  }
+  
+  /**
+   * 应用升级决策
+   * 升级现有建筑到更高等级
+   */
+  private applyUpgradeDecision(
+    world: GameWorld,
+    companyId: number,
+    decision: AIDecisionDTO
+  ): boolean {
+    // 验证必要参数
+    const buildingId = decision.orderId;  // 复用orderId字段作为buildingId
+    if (buildingId === undefined) {
+      return false;
+    }
+    
+    // 验证建筑归属
+    if (world.buildings.owners[buildingId] !== companyId) {
+      return false;
+    }
+    
+    const currentLevel = world.buildings.levels[buildingId];
+    const maxLevel = 5;  // 建筑最大等级
+    
+    // 检查是否已达到最大等级
+    if (currentLevel >= maxLevel) {
+      return false;
+    }
+    
+    // 将升级任务添加到建造队列
+    try {
+      const queue = world.construction;
+      
+      // 检查队列容量
+      if (queue.count >= queue.maxQueueSize) {
+        return false;
+      }
+      
+      // 查找空闲槽位
+      let slot = -1;
+      for (let i = 0; i < queue.maxQueueSize; i++) {
+        if (!queue.isActive[i]) {
+          slot = i;
+          break;
+        }
+      }
+      
+      if (slot < 0) {
+        return false;
+      }
+      
+      // 添加升级任务
+      queue.companyIds[slot] = companyId;
+      queue.buildingTypeIds[slot] = world.buildings.types[buildingId];
+      queue.targetLevels[slot] = currentLevel + 1;  // 目标等级
+      queue.statuses[slot] = 0;  // WAITING
+      queue.progress[slot] = 0;
+      queue.startTicks[slot] = world.tick;
+      queue.estimatedEndTicks[slot] = world.tick + 24;  // 升级时间较短
+      queue.outputModeIds[slot] = world.buildings.outputModeIds[buildingId];
+      queue.existingBuildingIds[slot] = buildingId;  // 标记为升级现有建筑
+      queue.isActive[slot] = 1;
+      queue.count++;
+      
+      return true;
+    } catch (error) {
+      console.warn('[AIWorkerManager] 升级决策应用失败:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * 应用拆除决策
+   * 拆除不需要的建筑
+   */
+  private applyDemolishDecision(
+    world: GameWorld,
+    companyId: number,
+    decision: AIDecisionDTO
+  ): boolean {
+    // 验证必要参数
+    const buildingId = decision.orderId;  // 复用orderId字段作为buildingId
+    if (buildingId === undefined) {
+      return false;
+    }
+    
+    // 验证建筑归属
+    if (world.buildings.owners[buildingId] !== companyId) {
+      return false;
+    }
+    
+    // 验证建筑是否存在且活跃
+    if (!world.buildings.isActive[buildingId]) {
+      return false;
+    }
+    
+    try {
+      // 标记建筑为非活跃状态
+      world.buildings.isActive[buildingId] = 0;
+      
+      // 可选：回收部分建造成本（拆除返还20%）
+      // 这里简化处理，不实际返还资金，由其他系统处理
+      
+      return true;
+    } catch (error) {
+      console.warn('[AIWorkerManager] 拆除决策应用失败:', error);
+      return false;
+    }
   }
   
   /**

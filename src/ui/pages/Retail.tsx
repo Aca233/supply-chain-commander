@@ -8,6 +8,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { formatNumber } from '@/ui/utils/format';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { shouldUseCompactRetailLayout } from './responsivePageLayout';
 
 // 设计系统组件
 import {
@@ -23,7 +24,8 @@ import {
 } from '@/ui/design-system';
 
 const Retail: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactRetailLayout({ isMobile, isTablet, isNarrowDesktop });
   const {
     getPlayerRetailStores,
     getRetailStoreDetails,
@@ -66,8 +68,8 @@ const Retail: React.FC = () => {
   };
 
   return (
-    <div className={`space-y-4 ${isMobile ? 'pb-4' : isTablet ? 'p-4' : 'p-6'}`}>
-      <h1 className={`font-bold ${isMobile ? 'text-lg' : 'text-2xl'}`}>
+    <div className={`space-y-4 ${isMobile ? 'pb-4' : useCompactDesktop ? 'p-4' : 'p-6'}`}>
+      <h1 className={`font-bold ${isMobile ? 'text-lg' : useCompactDesktop ? 'text-xl' : 'text-2xl'}`}>
         🏪 零售管理
       </h1>
 
@@ -78,7 +80,7 @@ const Retail: React.FC = () => {
             <CardTitle>📊 市场概览</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={`grid gap-4 ${useCompactDesktop ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
               <StatWidget
                 title="总零售店数"
                 value={marketOverview.totalStores.toString()}
@@ -135,7 +137,7 @@ const Retail: React.FC = () => {
 
       {/* 玩家零售店列表 */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-[var(--text-primary)]">
             我的零售店
           </h2>
@@ -166,7 +168,7 @@ const Retail: React.FC = () => {
             <Card key={store.id} variant="elevated">
               {/* 店铺头部 */}
               <CardHeader>
-                <div className="flex items-center justify-between w-full">
+                <div className="flex flex-wrap items-start justify-between gap-3 w-full">
                   <div>
                     <CardTitle>{store.typeName} #{store.id}</CardTitle>
                     <p className="text-sm text-[var(--text-muted)]">
@@ -187,7 +189,7 @@ const Retail: React.FC = () => {
 
               <CardContent className="space-y-4">
                 {/* 经营指标 */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className={`grid gap-4 ${useCompactDesktop ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-3'}`}>
                   <StatWidget
                     title="今日营收"
                     value={`¥${formatNumber(store.dailyRevenue)}`}
@@ -216,7 +218,7 @@ const Retail: React.FC = () => {
                     📦 库存管理
                   </h4>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[760px] text-sm">
                       <thead>
                         <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-default)]">
                           <th className="pb-2">商品</th>

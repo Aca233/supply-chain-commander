@@ -30,6 +30,7 @@ import {
   type Column,
 } from '@/ui/design-system';
 import { useMobile } from '@/ui/hooks/useMobile';
+import { shouldUseCompactStockMarketLayout } from '@/ui/pages/responsivePageLayout';
 import { CompanyProfile, StockView } from '@/core/finance/CompanyProfile';
 
 // ============ 辅助函数 ============
@@ -137,7 +138,7 @@ const StockDetailPanel: React.FC<{
   return (
     <div className="space-y-4">
       {/* 股票头部信息 */}
-      <div className="flex justify-between items-start">
+      <div className="flex flex-wrap justify-between items-start gap-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-2xl font-bold text-[var(--text-primary)]">
@@ -171,7 +172,7 @@ const StockDetailPanel: React.FC<{
       </Card>
 
       {/* 行情指标 */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <div className="text-center">
           <p className="text-xs text-[var(--text-muted)]">开盘</p>
           <p className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
@@ -199,7 +200,7 @@ const StockDetailPanel: React.FC<{
       </div>
 
       {/* 估值指标 */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <div className="text-center">
           <p className="text-xs text-[var(--text-muted)]">市盈率</p>
           <p className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
@@ -485,6 +486,8 @@ const TradeDialog: React.FC<{
  * 持仓列表
  */
 const HoldingsPanel: React.FC = () => {
+  const { isTablet, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactStockMarketLayout({ isTablet, isNarrowDesktop });
   const { getPlayerHoldings, getStockInfo, getCompanyProfile, tick } = useGameStore();
 
   const holdings = useMemo(() => {
@@ -594,33 +597,35 @@ const HoldingsPanel: React.FC = () => {
   return (
     <Card variant="elevated">
       <CardHeader>
-        <div className="flex justify-between items-center w-full">
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full">
           <CardTitle>💼 我的持仓</CardTitle>
           <Badge variant={summary.totalGain >= 0 ? 'success' : 'error'} glow>
             {formatPercent(summary.gainPercent)}
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <DataTable
-          data={holdings}
-          columns={columns}
-          rowKey="companyId"
-          variant="game"
-          hoverable
-          compact
-        />
-        <div className="p-3 border-t border-[var(--border-muted)] bg-[var(--bg-muted)]">
-          <div className="flex justify-between text-sm">
-            <span className="text-[var(--text-muted)]">
-              持仓 {summary.count} 只 | 总成本 {formatMoney(summary.totalCost)}
-            </span>
-            <span className="font-medium">
-              总市值 <span className="text-[var(--text-primary)]">{formatMoney(summary.totalValue)}</span>
-              <span className={`ml-2 ${summary.totalGain >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                {summary.totalGain >= 0 ? '+' : ''}{formatMoney(summary.totalGain)}
+      <CardContent className="p-0 overflow-x-auto">
+        <div className="min-w-[760px]">
+          <DataTable
+            data={holdings}
+            columns={columns}
+            rowKey="companyId"
+            variant="game"
+            hoverable
+            compact
+          />
+          <div className="p-3 border-t border-[var(--border-muted)] bg-[var(--bg-muted)]">
+            <div className={`text-sm ${useCompactDesktop ? 'space-y-2' : 'flex justify-between'}`}>
+              <span className="block text-[var(--text-muted)]">
+                持仓 {summary.count} 只 | 总成本 {formatMoney(summary.totalCost)}
               </span>
-            </span>
+              <span className="block font-medium">
+                总市值 <span className="text-[var(--text-primary)]">{formatMoney(summary.totalValue)}</span>
+                <span className={`ml-2 ${summary.totalGain >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
+                  {summary.totalGain >= 0 ? '+' : ''}{formatMoney(summary.totalGain)}
+                </span>
+              </span>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -691,7 +696,8 @@ const MarketOverviewCard: React.FC = () => {
 // ============ 主组件 ============
 
 export const StockMarketPanel: React.FC = () => {
-  const { isMobile, isTablet } = useMobile();
+  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
+  const useCompactDesktop = shouldUseCompactStockMarketLayout({ isTablet, isNarrowDesktop });
   const { getAICompanyProfiles, getPlayerHoldings, tick } = useGameStore();
 
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
@@ -807,21 +813,25 @@ export const StockMarketPanel: React.FC = () => {
 
   // 桌面/平板布局
   return (
-    <div className={`space-y-6 ${isTablet ? 'p-4' : 'p-6'}`}>
-      <div className="flex justify-between items-center">
-        <h1 className={`font-bold ${isTablet ? 'text-xl' : 'text-2xl'}`}>📈 股票市场</h1>
-        <div className="flex gap-2">
+    <div className={`space-y-6 ${useCompactDesktop ? 'p-4' : 'p-6'}`}>
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <h1 className={`font-bold ${useCompactDesktop ? 'text-xl' : 'text-2xl'}`}>📈 股票市场</h1>
+        <div className="flex flex-wrap gap-2 w-full xl:w-auto">
           <input
             type="text"
             placeholder="搜索股票..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] w-48"
+            className={`px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] ${
+              useCompactDesktop ? 'flex-1 min-w-[220px]' : 'w-48'
+            }`}
           />
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)]"
+            className={`px-4 py-2 bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] ${
+              useCompactDesktop ? 'w-full sm:w-auto' : ''
+            }`}
           >
             <option value="marketCap">按市值</option>
             <option value="priceChange">按涨跌</option>
@@ -833,9 +843,9 @@ export const StockMarketPanel: React.FC = () => {
       {/* 市场概览 */}
       <MarketOverviewCard />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* 左侧：股票列表 */}
-        <div className="lg:col-span-1 space-y-3 max-h-[600px] overflow-y-auto">
+        <div className="xl:col-span-1 space-y-3 max-h-[600px] overflow-y-auto">
           <h3 className="text-sm font-medium text-[var(--text-muted)] sticky top-0 bg-[var(--bg-base)] py-2">
             上市公司 ({companies.length})
           </h3>
@@ -850,7 +860,7 @@ export const StockMarketPanel: React.FC = () => {
         </div>
 
         {/* 右侧：股票详情 */}
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-2">
           {selectedProfile ? (
             <Card variant="elevated" padding="lg">
               <StockDetailPanel profile={selectedProfile} onTrade={handleTrade} />

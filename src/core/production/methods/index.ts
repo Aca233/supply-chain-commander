@@ -1,10 +1,15 @@
 /**
  * 生产方式系统主入口
- * 
- * 此模块提供了完整的建筑专属生产方式系统:
- * - 107种建筑类型，每种有专属的生产方式槽位和方法
- * - 约600+个独特的生产方式配置
- * - 支持产量、品质、能耗、人力、污染等多维度修正
+ *
+ * 重构版本：适配新的40种建筑（ID 0-39）
+ * - 采掘类：15种 (ID 0-14)
+ * - 加工类：12种 (ID 15-26)
+ * - 制造类：10种 (ID 27-36)
+ * - 奢侈品类：2种 (ID 37-38)
+ * - 服务类：1种 (ID 39)
+ *
+ * 每种建筑有3个槽位，每槽位有3-4种生产方式可选
+ * 总计约360+个独特的生产方式配置
  */
 
 // 导出类型定义
@@ -39,35 +44,21 @@ export {
 import { registerExtractionMethods } from './extraction';
 import { registerProcessingMethods } from './processing';
 import { registerManufacturingMethods } from './manufacturing';
-import { registerServiceMethods } from './service';
-import { registerAgricultureMethods } from './agriculture';
-import { registerPharmaMethods } from './pharma';
-import { registerDefenseMethods } from './defense';
 import { registerLuxuryMethods } from './luxury';
-import { registerTechMethods } from './tech';
-import { registerConsumerMethods } from './consumer';
-import { registerTransportMethods } from './transport';
-import { registerMiscMethods } from './misc';
+import { registerServiceMethods } from './service';
 
 // 导入统计函数
-import { 
-  getRegisteredBuildingCount, 
-  getRegisteredMethodCount 
+import {
+  getRegisteredBuildingCount,
+  getRegisteredMethodCount
 } from './registry';
 
 // 导出各产业链配置（可选单独导入）
 export { EXTRACTION_CONFIGS, registerExtractionMethods } from './extraction';
 export { PROCESSING_CONFIGS, registerProcessingMethods } from './processing';
 export { MANUFACTURING_CONFIGS, registerManufacturingMethods } from './manufacturing';
-export { SERVICE_CONFIGS, registerServiceMethods } from './service';
-export { AGRICULTURE_CONFIGS, registerAgricultureMethods } from './agriculture';
-export { PHARMA_CONFIGS, registerPharmaMethods } from './pharma';
-export { DEFENSE_CONFIGS, registerDefenseMethods } from './defense';
 export { LUXURY_CONFIGS, registerLuxuryMethods } from './luxury';
-export { TECH_CONFIGS, registerTechMethods } from './tech';
-export { CONSUMER_CONFIGS, registerConsumerMethods } from './consumer';
-export { TRANSPORT_CONFIGS, registerTransportMethods } from './transport';
-export { MISC_CONFIGS, registerMiscMethods } from './misc';
+export { SERVICE_CONFIGS, registerServiceMethods } from './service';
 
 let initialized = false;
 
@@ -84,19 +75,12 @@ export function initializeProductionMethods(): void {
   console.log('[ProductionMethods] 开始初始化建筑专属生产方式...');
   const startTime = performance.now();
 
-  // 按产业链顺序注册所有生产方式
-  registerExtractionMethods();   // ID 0-7: 采掘类
-  registerProcessingMethods();    // ID 8-15: 加工类
-  registerManufacturingMethods(); // ID 16-21: 制造类
-  registerServiceMethods();       // ID 22-24: 服务类
-  registerAgricultureMethods();   // ID 25-31: 农业产业链
-  registerPharmaMethods();        // ID 32-36: 医药产业链
-  registerDefenseMethods();       // ID 37-41: 军工产业链
-  registerLuxuryMethods();        // ID 42-46: 奢侈品产业链
-  registerTechMethods();          // ID 47-51: 科技产业链
-  registerConsumerMethods();      // ID 52-56: 日化产业链
-  registerTransportMethods();     // ID 57-61: 交通运输设备
-  registerMiscMethods();          // ID 62-106: 其他产业链
+  // 按产业链顺序注册所有生产方式（40种建筑，ID 0-39）
+  registerExtractionMethods();    // ID 0-14: 采掘类（15种）
+  registerProcessingMethods();    // ID 15-26: 加工类（12种）
+  registerManufacturingMethods(); // ID 27-36: 制造类（10种）
+  registerLuxuryMethods();        // ID 37-38: 奢侈品类（2种）
+  registerServiceMethods();       // ID 39: 服务类（1种）
 
   const endTime = performance.now();
   initialized = true;
@@ -105,7 +89,7 @@ export function initializeProductionMethods(): void {
   const buildingCount = getRegisteredBuildingCount();
   const methodCount = getRegisteredMethodCount();
   console.log(`[ProductionMethods] 初始化完成:
-  - 建筑数量: ${buildingCount}
+  - 建筑数量: ${buildingCount}/40
   - 生产方式总数: ${methodCount}
   - 耗时: ${(endTime - startTime).toFixed(2)}ms`);
 }
