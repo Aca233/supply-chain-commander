@@ -19,6 +19,8 @@ import {
   MAX_DEMOLITION_QUEUE,
   MAX_RESERVED_MATERIALS,
   MAX_RECOVERED_MATERIALS,
+  TICKS_PER_MONTH,
+  TICKS_PER_YEAR,
 } from '../constants';
 
 // ==================== 类型定义 ====================
@@ -631,16 +633,16 @@ export function recordPriceHistory(world: GameWorld): void {
 /**
  * 计算游戏内日期
  */
-export function tickToDate(tick: number): { year: number; month: number; day: number; hour: number } {
-  const day = Math.floor(tick / 24) + 1;
-  const hour = tick % 24;
-  const month = Math.floor((day - 1) / 30) + 1;
-  const year = Math.floor((month - 1) / 12) + 1;
+export function tickToDate(tick: number): { year: number; month: number; day: number } {
+  const dayIndex = Math.floor(tick);
+  const year = Math.floor(dayIndex / TICKS_PER_YEAR) + 1;
+  const month = Math.floor((dayIndex % TICKS_PER_YEAR) / TICKS_PER_MONTH) + 1;
+  const day = (dayIndex % TICKS_PER_MONTH) + 1;
+
   return {
     year,
-    month: ((month - 1) % 12) + 1,
-    day: ((day - 1) % 30) + 1,
-    hour,
+    month,
+    day,
   };
 }
 
@@ -649,5 +651,5 @@ export function tickToDate(tick: number): { year: number; month: number; day: nu
  */
 export function formatGameDate(tick: number): string {
   const date = tickToDate(tick);
-  return `第${date.year}年 ${date.month}月${date.day}日 ${date.hour}:00`;
+  return `第${date.year}年 ${date.month}月${date.day}日`;
 }

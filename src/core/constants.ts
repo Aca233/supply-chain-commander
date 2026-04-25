@@ -50,11 +50,34 @@ export const RECIPE_COUNT = 60;
 
 // ==================== 时间常量 ====================
 
+/** 旧版本中每天的小时数，用于存档/配置兼容转换 */
+export const LEGACY_HOURS_PER_DAY = 24;
+
 /** 每天tick数 */
-export const TICKS_PER_DAY = 24;
+export const TICKS_PER_DAY = 1;
+
+/** 每月tick数 */
+export const TICKS_PER_MONTH = 30;
 
 /** 每年tick数 */
-export const TICKS_PER_YEAR = 8760;
+export const TICKS_PER_YEAR = TICKS_PER_MONTH * 12;
+
+export function legacyHourTicksToDayTicks(
+  value: number,
+  rounding: 'none' | 'floor' | 'ceil' = 'none',
+): number {
+  const scaled = value / LEGACY_HOURS_PER_DAY;
+
+  if (rounding === 'floor') {
+    return Math.floor(scaled);
+  }
+
+  if (rounding === 'ceil') {
+    return Math.max(1, Math.ceil(scaled));
+  }
+
+  return scaled;
+}
 
 /** 默认tick间隔（毫秒）- 100ms作为1x基础(10 ticks/秒)，8x时为12.5ms */
 export const DEFAULT_TICK_INTERVAL = 100;

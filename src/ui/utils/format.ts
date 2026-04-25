@@ -2,6 +2,8 @@
  * 格式化工具函数
  */
 
+import { TICKS_PER_MONTH, TICKS_PER_YEAR } from '@/core/constants';
+
 /**
  * 格式化数字，添加千分位和可选的小数位
  */
@@ -49,32 +51,28 @@ export function formatPercent(value: number, decimals: number = 1): string {
  * 格式化时间（tick转换为可读时间）
  */
 export function formatTick(tick: number): string {
-  const hour = tick % 24;
-  const day = Math.floor(tick / 24) + 1;
-  const month = Math.floor((day - 1) / 30) + 1;
-  const year = Math.floor((month - 1) / 12) + 1;
-  const dayOfMonth = ((day - 1) % 30) + 1;
-  const monthOfYear = ((month - 1) % 12) + 1;
-  
-  return `第${year}年 ${monthOfYear}月${dayOfMonth}日 ${hour}:00`;
+  const dayIndex = Math.floor(tick);
+  const year = Math.floor(dayIndex / TICKS_PER_YEAR) + 1;
+  const month = Math.floor((dayIndex % TICKS_PER_YEAR) / TICKS_PER_MONTH) + 1;
+  const dayOfMonth = (dayIndex % TICKS_PER_MONTH) + 1;
+
+  return `第${year}年 ${month}月${dayOfMonth}日`;
 }
 
 /**
  * 格式化相对时间
  */
 export function formatRelativeTime(ticks: number): string {
-  if (ticks < 24) {
-    return `${ticks}小时`;
+  if (ticks < TICKS_PER_MONTH) {
+    return `${ticks}天`;
   }
-  const days = Math.floor(ticks / 24);
-  if (days < 30) {
-    return `${days}天`;
-  }
-  const months = Math.floor(days / 30);
+
+  const months = Math.floor(ticks / TICKS_PER_MONTH);
   if (months < 12) {
     return `${months}个月`;
   }
-  const years = Math.floor(months / 12);
+
+  const years = Math.floor(ticks / TICKS_PER_YEAR);
   return `${years}年`;
 }
 
