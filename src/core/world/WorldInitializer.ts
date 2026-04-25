@@ -291,7 +291,9 @@ function initializeMarketState(world: GameWorld): void {
     g.demands[i] = basePrice * 100;
   }
   
-  world.economyStats.gdp = 10000000000;
+  // GDP uses live activity after the first full in-game day.
+  // Starting from zero avoids the opening “flash crash” caused by a placeholder value.
+  world.economyStats.gdp = 0;
   world.economyStats.inflation = 0;
   world.economyStats.unemployment = 0.05;
   world.economyStats.interestRate = 0.03;

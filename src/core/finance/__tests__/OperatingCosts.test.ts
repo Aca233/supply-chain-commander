@@ -79,7 +79,11 @@ describe('OperatingCosts', () => {
     const breakdowns = applyOperatingCosts(world);
 
     expect(breakdowns[0].total).toBeCloseTo(expectedTotal);
-    expect(world.companies.cash[0]).toBeCloseTo(1_000_000 - expectedTotal);
+    expect(world.companies.cash[0]).toBeCloseTo(1_000_000 - breakdowns[0].cashExpense);
+    expect(breakdowns[0].cashExpense).toBeCloseTo(breakdowns[0].maintenance);
+    expect(breakdowns[0].nonCashExpense).toBeCloseTo(
+      breakdowns[0].labor + breakdowns[0].energy,
+    );
     expect(world.companies.cash[1]).toBeCloseTo(500_000);
   });
 

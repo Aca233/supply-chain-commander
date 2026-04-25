@@ -155,6 +155,8 @@ export class GameLoop {
   private lastPerfReport: TickPerformanceReport | null = null;
   private aiWorkerInitialized: boolean = false;
   private newsSystemInitialized: boolean = false;
+  private readonly recentRetailRevenue = new Float64Array(24);
+  private readonly recentServiceRevenue = new Float64Array(24);
   
   constructor(world: GameWorld) {
     this.world = world;
@@ -468,6 +470,10 @@ export class GameLoop {
     const endService = perfMonitor.startMeasure('service');
     const serviceConsumption = processServiceConsumption(this.world);
     endService();
+
+    const dailyActivitySlot = (currentTick - 1) % 24;
+    this.recentRetailRevenue[dailyActivitySlot] = retailResult.totalRevenue ?? 0;
+    this.recentServiceRevenue[dailyActivitySlot] = serviceConsumption.totalRevenue ?? 0;
     
     // 11. 检查高级订单触发（止损、止盈等）
     const endAdvanced = perfMonitor.startMeasure('advancedOrders');
@@ -822,8 +828,8 @@ export class GameLoop {
     // 3. 根据周期阶段调整经济参数
     this.applyCycleEffects(stats);
     
-    // 4. 每天更新GDP（错峰执行：从tick%24===0改为tick%24===3）
-    if (this.world.tick % 24 === 3) {
+    // 4. 每天更新GDP：等待一整天数据后再初始化，避免开局占位值导致假暴跌
+    if (this.world.tick >= 24 && this.world.tick % 24 === 0) {
       this.updateGDP();
     }
   }
@@ -994,7 +1000,7 @@ export class GameLoop {
    * 更新GDP
    */
   private updateGDP(): void {
-    // 计算日GDP：所有成交金额总和
+    // 这里更接近“日经济活动规模”，包含市场成交与零售/服务终端收入。
     let dailyGDP = 0;
     
     // 统计最近24个tick的成交总额
@@ -1011,10 +1017,20 @@ export class GameLoop {
         dailyGDP += trades.quantities[tradeIdx] * trades.prices[tradeIdx];
       }
     });
-    
+
+    for (let i = 0; i < 24; i++) {
+      dailyGDP += this.recentRetailRevenue[i];
+      dailyGDP += this.recentServiceRevenue[i];
+    }
+
     // 年化GDP（乘以365天）
     const annualizedGDP = dailyGDP * 365;
-    
+
+    if (this.world.economyStats.gdp <= 0) {
+      this.world.economyStats.gdp = annualizedGDP;
+      return;
+    }
+
     // 平滑更新GDP（避免剧烈波动）
     const smoothingFactor = 0.1;
     this.world.economyStats.gdp =

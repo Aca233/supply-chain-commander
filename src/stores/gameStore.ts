@@ -545,6 +545,7 @@ export const useGameStore = create<GameState & GameActions>()(
       let pendingTradeRevenue = 0;
       let pendingTradeCost = 0;
       let pendingRetailRevenue = 0;
+      let pendingCashOperatingCost = 0;
       let pendingMaintenanceCost = 0;
       let pendingLaborCost = 0;
       let pendingEnergyCost = 0;
@@ -583,7 +584,7 @@ export const useGameStore = create<GameState & GameActions>()(
         const shouldUpdateHistory = currentTick % HISTORY_UPDATE_INTERVAL === 0;
         const playerOperatingCosts = worldRef
           ? calculateCompanyOperatingCostPerTick(worldRef, 0)
-          : { maintenance: 0, labor: 0, energy: 0, total: 0 };
+          : { maintenance: 0, labor: 0, energy: 0, total: 0, cashExpense: 0, nonCashExpense: 0 };
         
         let tradeRevenue = 0;
         let tradeCost = 0;
@@ -600,6 +601,7 @@ export const useGameStore = create<GameState & GameActions>()(
         pendingTradeRevenue += tradeRevenue;
         pendingTradeCost += tradeCost;
         pendingRetailRevenue += result.retailResult.playerRevenue || 0;
+        pendingCashOperatingCost += playerOperatingCosts.cashExpense;
         pendingMaintenanceCost += playerOperatingCosts.maintenance;
         pendingLaborCost += playerOperatingCosts.labor;
         pendingEnergyCost += playerOperatingCosts.energy;
@@ -646,7 +648,7 @@ export const useGameStore = create<GameState & GameActions>()(
             
             // 综合收入和支出
             const totalRevenue = pendingTradeRevenue + retailRevenue;
-            const totalCost = pendingTradeCost + maintenanceCost + laborCost + energyCost;
+            const totalCost = pendingTradeCost + pendingCashOperatingCost;
             
             const currentCash = worldRef.companies.cash[0];
             const cashChange = currentCash - lastRecordedPlayerCash;
@@ -694,6 +696,7 @@ export const useGameStore = create<GameState & GameActions>()(
             pendingTradeRevenue = 0;
             pendingTradeCost = 0;
             pendingRetailRevenue = 0;
+            pendingCashOperatingCost = 0;
             pendingMaintenanceCost = 0;
             pendingLaborCost = 0;
             pendingEnergyCost = 0;
