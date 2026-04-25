@@ -4,7 +4,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY, TICKS_PER_MONTH, TICKS_PER_YEAR } from '@/core/constants';
 
 /**
  * 贷款类型
@@ -350,7 +350,7 @@ export function applyForLoan(
     startTick: world.tick,
     maturityTick: world.tick + termTicks,
     repaymentSchedule: loanType === 'short_term' ? 'bullet' : 'amortizing',
-    nextPaymentTick: world.tick + 720, // 30天后首次还款
+    nextPaymentTick: world.tick + TICKS_PER_MONTH,
     monthlyPayment,
     collateral: collateralValue,
     collateralType,
@@ -379,10 +379,10 @@ export function applyForLoan(
  */
 function getLoanTerm(loanType: LoanType): number {
   const terms: Record<LoanType, number> = {
-    'credit_line': 8640,      // 360天（滚动）
-    'short_term': 2160,       // 90天
-    'medium_term': 8640,      // 360天
-    'long_term': 25920,       // 1080天（3年）
+    'credit_line': 360 * TICKS_PER_DAY,
+    'short_term': 90 * TICKS_PER_DAY,
+    'medium_term': 360 * TICKS_PER_DAY,
+    'long_term': 3 * TICKS_PER_YEAR,
   };
   return terms[loanType];
 }
@@ -391,7 +391,7 @@ function getLoanTerm(loanType: LoanType): number {
  * 计算月供（等额本息）
  */
 function calculateMonthlyPayment(principal: number, annualRate: number, termTicks: number): number {
-  const months = termTicks / 720; // 30天=1月
+  const months = termTicks / TICKS_PER_MONTH;
   const monthlyRate = annualRate / 12;
   
   if (monthlyRate === 0) return principal / months;
@@ -456,7 +456,7 @@ export function makePayment(
   
   loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPortion);
   loan.totalInterestPaid += interestPortion;
-  loan.nextPaymentTick += 720; // 下个月
+  loan.nextPaymentTick += TICKS_PER_MONTH;
   
   // 更新银行总额
   bankingState.totalLoansOutstanding -= principalPortion;
@@ -492,7 +492,7 @@ export function prepayLoan(
   }
   
   // 提前还款罚金（剩余期限的利息的10%）
-  const remainingMonths = (loan.maturityTick - world.tick) / 720;
+  const remainingMonths = (loan.maturityTick - world.tick) / TICKS_PER_MONTH;
   const penaltyRate = 0.1;
   const penalty = loan.remainingPrincipal * (loan.interestRate / 12) * remainingMonths * penaltyRate;
   
@@ -529,7 +529,7 @@ function processOverdueLoans(world: GameWorld): void {
   for (const [loanId, loan] of bankingState.loans) {
     if (loan.status !== 'active') continue;
     
-    if (world.tick > loan.nextPaymentTick + 720) { // 逾期30天
+    if (world.tick > loan.nextPaymentTick + TICKS_PER_MONTH) {
       loan.missedPayments++;
       
       if (loan.missedPayments >= 3) {
@@ -569,7 +569,7 @@ export function updateBankingSystem(world: GameWorld): void {
   processOverdueLoans(world);
   
   // 定期重新评估信用（每30天）
-  if (world.tick % 720 === 0) {
+  if (world.tick % TICKS_PER_MONTH === 0) {
     for (const [companyId, profile] of bankingState.creditProfiles) {
       const { score, rating } = assessCreditworthiness(world, companyId);
       profile.score = score;
@@ -665,7 +665,7 @@ export function getAvailableLoanOptions(
   for (const { type, name } of loanTypes) {
     const interestRate = getLoanInterestRate(profile.rating, type, 0);
     const termTicks = getLoanTerm(type);
-    const termDays = termTicks / 24;
+    const termDays = termTicks / TICKS_PER_DAY;
     const maxAmount = Math.min(profile.availableCredit, bankingState.totalDeposits * 0.1);
     
     if (maxAmount > 10000) {

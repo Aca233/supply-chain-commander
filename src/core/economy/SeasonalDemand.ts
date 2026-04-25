@@ -3,6 +3,8 @@
  * 模拟不同商品在一年中的需求波动
  */
 
+import { TICKS_PER_DAY } from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -198,7 +200,7 @@ const SEASONAL_CONFIG_MAP: Map<number, GoodsSeasonalConfig> = new Map(
  * 根据tick获取当前季节
  */
 export function getCurrentSeason(tick: number): Season {
-  const day = Math.floor(tick / 24) + 1;
+  const day = Math.floor(tick / TICKS_PER_DAY) + 1;
   const month = ((Math.floor((day - 1) / 30) % 12) + 1);
   
   if (month >= 3 && month <= 5) return Season.SPRING;
@@ -211,7 +213,7 @@ export function getCurrentSeason(tick: number): Season {
  * 根据tick获取当前月份
  */
 export function getCurrentMonth(tick: number): number {
-  const day = Math.floor(tick / 24) + 1;
+  const day = Math.floor(tick / TICKS_PER_DAY) + 1;
   return ((Math.floor((day - 1) / 30) % 12) + 1);
 }
 
@@ -240,8 +242,7 @@ export function getSeasonalDemandMultiplier(goodsId: number, tick: number): numb
   const baseMultiplier = SEASONAL_PATTERNS[config.seasonalPattern][currentSeason];
   
   // 添加平滑过渡效果
-  const month = getCurrentMonth(tick);
-  const dayInMonth = Math.floor(tick / 24) % 30 + 1;
+  const dayInMonth = Math.floor(tick / TICKS_PER_DAY) % 30 + 1;
   
   // 获取相邻季节的倍数用于插值
   const nextSeason = ((currentSeason + 1) % 4) as Season;
@@ -318,7 +319,7 @@ export function getYearlySeasonalCurve(goodsId: number): number[] {
   for (let month = 1; month <= 12; month++) {
     // 将月份转换为tick（月中）
     const day = (month - 1) * 30 + 15;
-    const tick = day * 24;
+    const tick = day * TICKS_PER_DAY;
     curve.push(getSeasonalDemandMultiplier(goodsId, tick));
   }
   
@@ -385,7 +386,7 @@ export const SEASONAL_EVENTS: SeasonalEvent[] = [
  */
 export function getActiveSeasonalEvents(tick: number): SeasonalEvent[] {
   const month = getCurrentMonth(tick);
-  const day = Math.floor(tick / 24) % 30 + 1;
+  const day = Math.floor(tick / TICKS_PER_DAY) % 30 + 1;
   
   return SEASONAL_EVENTS.filter(event => {
     if (event.month !== month) return false;

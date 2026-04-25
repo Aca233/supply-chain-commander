@@ -3,6 +3,8 @@
  * 允许玩家对未来商品价格进行对冲和投机
  */
 
+import { TICKS_PER_DAY, TICKS_PER_MONTH } from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -164,7 +166,7 @@ export class FuturesMarket {
       
       // 创建未来3个月的合约
       for (let monthsAhead = 1; monthsAhead <= 3; monthsAhead++) {
-        const ticksPerMonth = 30 * 24;
+        const ticksPerMonth = TICKS_PER_MONTH;
         const expiryTick = currentTick + ticksPerMonth * monthsAhead;
         
         // 检查是否已存在该月份合约
@@ -185,7 +187,7 @@ export class FuturesMarket {
           tickSize: config.tickSize,
           tickValue: config.tickSize * config.contractSize,
           expiryTick,
-          lastTradingTick: expiryTick - 24,
+          lastTradingTick: expiryTick - TICKS_PER_DAY,
           isPhysicalDelivery: config.isPhysicalDelivery,
           deliveryMonth: monthsAhead,
           settlementPrice: futuresPrice,
@@ -217,7 +219,7 @@ export class FuturesMarket {
     
     for (const id of contractIds) {
       const contract = this.contracts.get(id);
-      if (contract && Math.abs(contract.expiryTick - expiryTick) < 24 * 7) {
+      if (contract && Math.abs(contract.expiryTick - expiryTick) < 7 * TICKS_PER_DAY) {
         return contract;
       }
     }
