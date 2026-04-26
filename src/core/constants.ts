@@ -84,20 +84,20 @@ export const DEFAULT_TICK_INTERVAL = 1000;
 
 // ==================== 经济常量 ====================
 
-/** 初始GDP（v2价格体系：对齐消费者年收入总和 ~¥100.68T） */
-export const INITIAL_GDP = 100_000_000_000_000;
+/** 初始GDP（游戏币） */
+export const INITIAL_GDP = 99_100_000_000_000;
 
-/** 初始人口（对齐DemandCurve消费者分层总和 2.1亿） */
-export const INITIAL_POPULATION = 210_000_000;
+/** 初始人口 */
+export const INITIAL_POPULATION = 1_400_000_000;
 
-/** 初始货币供应量（v2价格体系：6x调整） */
-export const INITIAL_MONEY_SUPPLY = 300_000_000_000;
+/** 初始货币供应量 */
+export const INITIAL_MONEY_SUPPLY = 1_800_000_000_000;
 
 /** 目标通胀率 */
-export const TARGET_INFLATION = 0.02;
+export const TARGET_INFLATION = 0.028;
 
 /** 基准利率 */
-export const BASE_INTEREST_RATE = 0.03;
+export const BASE_INTEREST_RATE = 0.043;
 
 // ==================== 价格稳定常量 ====================
 // 平衡性调优 v2.0: 进一步收紧价格边界，限制无成交商品价格变动
@@ -134,14 +134,14 @@ export const MAX_SUPPLY_DEMAND_RATIO = 100;  // 最大供需比限制在100:1
 
 // ==================== 玩家初始常量 ====================
 
-/** 玩家初始现金（v2价格体系：6x调整以匹配新基准价）*/
-export const PLAYER_INITIAL_CASH = 30_000_000;
+/** 玩家初始现金（增加以支持零售业务）*/
+export const PLAYER_INITIAL_CASH = 18_000_000;
 
 /** 玩家初始信用额度 */
-export const PLAYER_CREDIT_LIMIT = 5_000_000;
+export const PLAYER_CREDIT_LIMIT = 22_000_000;
 
 /** 玩家贷款利率 */
-export const PLAYER_CREDIT_RATE = 0.08;
+export const PLAYER_CREDIT_RATE = 0.058;
 
 /** 玩家初始声望 */
 export const PLAYER_INITIAL_REPUTATION = 50;
