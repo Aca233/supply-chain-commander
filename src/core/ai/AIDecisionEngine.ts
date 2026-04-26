@@ -4361,8 +4361,8 @@ function detectZeroSupplyGoods(world: GameWorld): ZeroSupplyGoods[] {
  * 优先分配给pioneer人格公司
  */
 export function forceBuildzeroSupplyGoods(world: GameWorld): number {
-  // 从每100tick改为每48tick运行一次（更高频率，约2游戏天）
-  if (world.tick % 48 !== 0) {
+  // 每15天运行一次（1 tick = 1天）
+  if (world.tick % 15 !== 0) {
     return 0;
   }
   
@@ -4600,8 +4600,8 @@ function detectColdGoods(world: GameWorld): ColdGoodsInfo[] {
  * @returns 触发的建造决策数量
  */
 export function buildForColdGoods(world: GameWorld): number {
-  // 从每200tick改为每96tick运行一次（约4游戏小时，提高响应速度）
-  if (world.tick % 96 !== 0) {
+  // 每30天运行一次（1 tick = 1天）
+  if (world.tick % 30 !== 0) {
     return 0;
   }
   

@@ -3,3 +3,4 @@
  */
 
 export { StockMarketPanel } from './StockMarketPanel';
+export { BankruptcyResolutionPanel } from './BankruptcyResolutionPanel';

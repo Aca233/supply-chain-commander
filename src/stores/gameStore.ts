@@ -62,6 +62,7 @@ import {
   getCompanyLoans,
   getCreditProfile,
   getAvailableLoanOptions,
+  getBankingState,
   Loan,
   CreditProfile,
   LoanType
@@ -80,10 +81,16 @@ import {
   buyStock,
   sellStock,
   initiateIPO,
+  IPOResult,
   Stock,
   Holding,
   StockMarketState
 } from '@/core/finance/StockMarket';
+import {
+  BankruptcyStrategySettings,
+  bankruptcyResolution,
+  resetBankruptcyResolution,
+} from '@/core/finance/BankruptcyResolution';
 import {
   evaluateCompanyValue,
   initiateAcquisition,
@@ -183,6 +190,7 @@ import {
   downloadPriceReportCSV,
   downloadPriceReportJSON,
 } from '@/core/economy/PriceDataExporter';
+import { saveManager } from '@/core/save/SaveManager';
 
 /**
  * UI状态
@@ -199,6 +207,7 @@ interface UIState {
   // 新闻系统
   showNewsDialog: boolean;
   pendingNews: MonthlyNewsReport | null;
+  newsDialogOpenSource: 'auto-generated' | 'manual';
   newsVersion: number;  // 用于触发新闻列表刷新
 }
 
@@ -341,6 +350,7 @@ interface GameActions {
   
   // 数据获取
   getWorld: () => GameWorld | null;
+  getTotalMoneySupply: () => { companyCash: number; householdCash: number; bankDeposits: number; total: number };
   getPlayerInventory: () => { goodsId: number; name: string; quantity: number; value: number }[];
   getOrderBook: (goodsId: number) => OrderBookView | null;
   getMarketStats: (goodsId: number) => MarketStats | null;
@@ -367,7 +377,12 @@ interface GameActions {
   getPlayerHoldings: () => Holding[];
   buyStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => boolean;
   sellStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => boolean;
-  playerIPO: (offeringShares: number, offeringPrice: number) => boolean;
+  playerIPO: (offeringShares: number, offeringPrice: number) => IPOResult;
+  getBankruptcyEvents: () => ReturnType<typeof bankruptcyResolution.getOpenEvents>;
+  getBankruptcyStrategy: () => BankruptcyStrategySettings;
+  updateBankruptcyStrategy: (patch: Partial<BankruptcyStrategySettings>) => void;
+  placeBankruptcyBid: (eventId: string, assetId: string, amount: number, source?: 'manual' | 'strategy') => boolean;
+  confirmBankruptcyPurchase: (eventId: string, assetId: string) => boolean;
   
   // 收购系统
   getCompanyValuation: (companyId: number) => { bookValue: number; marketValue: number; enterpriseValue: number; fairValue: number } | null;
@@ -454,7 +469,7 @@ interface GameActions {
   getLatestNews: () => MonthlyNewsReport | null;
   getNewsCount: () => number;
   hasUnreadNews: () => boolean;
-  showNewsPopup: (news: MonthlyNewsReport) => void;
+  showNewsPopup: (news: MonthlyNewsReport, source?: 'auto-generated' | 'manual') => void;
   hideNewsDialog: () => void;
   markCurrentNewsRead: () => void;
   navigateToNews: () => void;
@@ -495,7 +510,7 @@ let gameLoopRef: GameLoop | null = null;
 
 // 性能优化：限制状态更新频率
 let lastUIUpdateTick = 0;
-const UI_UPDATE_INTERVAL = 2; // 每2个tick更新一次UI状态（保持流畅度）
+const UI_UPDATE_INTERVAL = 1; // 每tick更新UI（1 tick=1天，每1秒刷新）
 
 // 财务历史数据更新间隔
 const HISTORY_UPDATE_INTERVAL = 4; // 每4个tick记录一次历史数据
@@ -515,7 +530,7 @@ export const useGameStore = create<GameState & GameActions>()(
     tick: 0,
     paused: true,
     speed: 1,
-    gameDate: '第1年 1月1日 0:00',
+    gameDate: '第1年 1月1日',
     playerCash: 0,
     playerAssets: 0,
     playerBuildings: 0,
@@ -532,6 +547,7 @@ export const useGameStore = create<GameState & GameActions>()(
       // 新闻系统
       showNewsDialog: false,
       pendingNews: null,
+      newsDialogOpenSource: 'manual',
       newsVersion: 0,
     },
     lastTickResult: null,
@@ -541,6 +557,11 @@ export const useGameStore = create<GameState & GameActions>()(
     // ==================== 初始化 ====================
     initGame: () => {
       const world = initializeWorld();
+      resetBankruptcyResolution();
+      const savedSettings = saveManager.loadSettings();
+      if (savedSettings.bankruptcyStrategy) {
+        bankruptcyResolution.setStrategy(0, savedSettings.bankruptcyStrategy);
+      }
       let lastRecordedPlayerCash = world.companies.cash[0];
       let pendingTradeRevenue = 0;
       let pendingTradeCost = 0;
@@ -570,6 +591,7 @@ export const useGameStore = create<GameState & GameActions>()(
         set((state) => {
           state.ui.pendingNews = report;
           state.ui.showNewsDialog = true;
+          state.ui.newsDialogOpenSource = 'auto-generated';
           state.ui.newsVersion += 1;  // 触发新闻页面刷新
         });
         
@@ -1571,7 +1593,23 @@ export const useGameStore = create<GameState & GameActions>()(
     
     // ==================== 数据获取 ====================
     getWorld: () => worldRef,
-    
+
+    getTotalMoneySupply: () => {
+      if (!worldRef) return { companyCash: 0, householdCash: 0, bankDeposits: 0, total: 0 };
+      let companyCash = 0;
+      for (let i = 0; i < worldRef.companies.count; i++) {
+        companyCash += worldRef.companies.cash[i];
+      }
+      const householdCash = worldRef.households.cash[0];
+      const bankDeposits = getBankingState().totalDeposits;
+      return {
+        companyCash,
+        householdCash,
+        bankDeposits,
+        total: companyCash + householdCash + bankDeposits,
+      };
+    },
+
     getPlayerInventory: () => {
       if (!worldRef) return [];
       
@@ -1753,21 +1791,77 @@ export const useGameStore = create<GameState & GameActions>()(
     },
     
     playerIPO: (offeringShares: number, offeringPrice: number) => {
-      if (!worldRef) return false;
+      if (!worldRef) {
+        return {
+          success: false,
+          reason: 'invalid_price',
+          subscribedShares: 0,
+          suggestedPrice: 0,
+          minPrice: 0,
+          maxPrice: 0,
+          minShares: 0,
+          maxShares: 0,
+          estimatedDemand: 0,
+          shortfallShares: offeringShares,
+          canLaunch: false,
+          message: 'IPO失败：世界未初始化',
+        };
+      }
       
-      const success = initiateIPO(worldRef, 0, offeringShares, offeringPrice);
-      if (success) {
+      const result = initiateIPO(worldRef, 0, offeringShares, offeringPrice);
+      if (result.success) {
         set((state) => {
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
-        get().addNotification('success', `IPO成功！发行${offeringShares}股 @ ¥${offeringPrice}`);
-        return true;
+        get().addNotification('success', result.message);
       } else {
         soundManager.playTradeFail();
-        get().addNotification('error', 'IPO失败：公司已上市');
-        return false;
+        get().addNotification('error', result.message);
       }
+      return result;
+    },
+
+    getBankruptcyEvents: () => {
+      return bankruptcyResolution.getOpenEvents();
+    },
+
+    getBankruptcyStrategy: () => {
+      return bankruptcyResolution.getStrategy(0);
+    },
+
+    updateBankruptcyStrategy: (patch: Partial<BankruptcyStrategySettings>) => {
+      const next = bankruptcyResolution.setStrategy(0, patch);
+      saveManager.saveSettings({
+        ...saveManager.loadSettings(),
+        bankruptcyStrategy: next,
+      });
+      get().addNotification('success', '破产参与策略已更新');
+    },
+
+    placeBankruptcyBid: (
+      eventId: string,
+      assetId: string,
+      amount: number,
+      source: 'manual' | 'strategy' = 'manual',
+    ) => {
+      if (!worldRef) return false;
+
+      const success = bankruptcyResolution.placeBid(worldRef, eventId, assetId, 0, amount, source);
+      if (success) {
+        get().addNotification('success', `破产竞拍出价已提交：¥${amount.toLocaleString()}`);
+      }
+      return success;
+    },
+
+    confirmBankruptcyPurchase: (eventId: string, assetId: string) => {
+      if (!worldRef) return false;
+
+      const success = bankruptcyResolution.confirmPendingPurchase(worldRef, eventId, assetId, 0);
+      if (success) {
+        get().addNotification('success', '破产资产成交已确认');
+      }
+      return success;
     },
     
     // ==================== 收购系统 ====================
@@ -2243,16 +2337,18 @@ export const useGameStore = create<GameState & GameActions>()(
       return checkUnreadNews();
     },
     
-    showNewsPopup: (news: MonthlyNewsReport) => {
+    showNewsPopup: (news: MonthlyNewsReport, source: 'auto-generated' | 'manual' = 'manual') => {
       set((state) => {
         state.ui.pendingNews = news;
         state.ui.showNewsDialog = true;
+        state.ui.newsDialogOpenSource = source;
       });
     },
     
     hideNewsDialog: () => {
       set((state) => {
         state.ui.showNewsDialog = false;
+        state.ui.newsDialogOpenSource = 'manual';
         // 保留pendingNews以便继续查看
       });
     },
@@ -2268,6 +2364,7 @@ export const useGameStore = create<GameState & GameActions>()(
       set((state) => {
         state.ui.currentPage = 'news';
         state.ui.showNewsDialog = false;
+        state.ui.newsDialogOpenSource = 'manual';
       });
     },
     

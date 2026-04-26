@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { bankruptcyResolution } from '@/core/finance/BankruptcyResolution';
 import { saveManager, SaveMetadata, GameSettings } from '@/core/save/SaveManager';
 import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 import { formatGameDate } from '@/core/world/GameWorld';
@@ -162,8 +163,22 @@ export const Settings: React.FC = () => {
   // 保存设置
   const handleSettingChange = (key: keyof GameSettings, value: any) => {
     const newSettings = { ...settings, [key]: value };
+    if (key === 'bankruptcyStrategy' && value) {
+      bankruptcyResolution.setStrategy(0, value);
+    }
     setSettings(newSettings);
     saveManager.saveSettings(newSettings);
+  };
+
+  const bankruptcyStrategy = settings.bankruptcyStrategy ?? bankruptcyResolution.getStrategy(0);
+  const handleBankruptcyStrategyChange = (
+    patch: Partial<NonNullable<GameSettings['bankruptcyStrategy']>>,
+  ) => {
+    const next = {
+      ...bankruptcyStrategy,
+      ...patch,
+    };
+    handleSettingChange('bankruptcyStrategy', next);
   };
 
   // 创建存档
@@ -412,6 +427,83 @@ export const Settings: React.FC = () => {
                 </Select>
               </div>
 
+              <div className="rounded-xl border border-[var(--border-muted)] bg-[var(--bg-muted)]/40 p-4 space-y-4">
+                <div>
+                  <div className="text-[var(--text-primary)] font-medium">⚖️ 破产资产处理</div>
+                  <div className="text-sm text-[var(--text-muted)]">
+                    破产事件会按天推进竞拍、确认成交和重组冷却，不再直接静默清算。
+                  </div>
+                </div>
+
+                <div className={settingsRowClassName}>
+                  <div>
+                    <div className="text-[var(--text-primary)] font-medium">默认参与模式</div>
+                    <div className="text-sm text-[var(--text-muted)]">自动参与会预出价，但成交仍需你手动确认</div>
+                  </div>
+                  <Select
+                    value={bankruptcyStrategy.mode}
+                    onValueChange={(value) => handleBankruptcyStrategyChange({
+                      mode: value as NonNullable<GameSettings['bankruptcyStrategy']>['mode'],
+                    })}
+                  >
+                    <SelectTrigger className={defaultSelectTriggerClassName}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto_participate">自动参与</SelectItem>
+                      <SelectItem value="notify_only">只提示</SelectItem>
+                      <SelectItem value="never_participate">永不参与</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className={settingsRowClassName}>
+                  <div>
+                    <div className="text-[var(--text-primary)] font-medium">单次事件预算上限</div>
+                    <div className="text-sm text-[var(--text-muted)]">超过后不再为该破产事件自动生成预出价</div>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={bankruptcyStrategy.eventBudgetCap}
+                    onChange={(event) => handleBankruptcyStrategyChange({
+                      eventBudgetCap: Number(event.target.value) || 0,
+                    })}
+                    className={defaultSelectTriggerClassName}
+                  />
+                </div>
+
+                <div className={settingsRowClassName}>
+                  <div>
+                    <div className="text-[var(--text-primary)] font-medium">单个资产预算上限</div>
+                    <div className="text-sm text-[var(--text-muted)]">超过该金额时，自动参与不会继续为单个标的加价</div>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={bankruptcyStrategy.assetBudgetCap}
+                    onChange={(event) => handleBankruptcyStrategyChange({
+                      assetBudgetCap: Number(event.target.value) || 0,
+                    })}
+                    className={defaultSelectTriggerClassName}
+                  />
+                </div>
+
+                <div className={settingsRowClassName}>
+                  <div>
+                    <div className="text-[var(--text-primary)] font-medium">自动关注同行业资产</div>
+                    <div className="text-sm text-[var(--text-muted)]">只影响自动参与的候选范围，不会跳过你的确认步骤</div>
+                  </div>
+                  <Switch
+                    checked={bankruptcyStrategy.autoTrackSameIndustry}
+                    onCheckedChange={(checked) => handleBankruptcyStrategyChange({
+                      autoTrackSameIndustry: checked,
+                    })}
+                    variant="game"
+                  />
+                </div>
+              </div>
+
               {/* 自动存档 */}
               <div className={settingsRowClassName}>
                 <div>
@@ -421,6 +513,18 @@ export const Settings: React.FC = () => {
                 <Switch
                   checked={settings.autoSave}
                   onCheckedChange={(checked) => handleSettingChange('autoSave', checked)}
+                  variant="game"
+                />
+              </div>
+
+              <div className={settingsRowClassName}>
+                <div>
+                  <div className="text-[var(--text-primary)] font-medium">商业周刊自动生成</div>
+                  <div className="text-sm text-[var(--text-muted)]">关闭后将不再自动生成新的商业周刊</div>
+                </div>
+                <Switch
+                  checked={settings.newsGenerationEnabled}
+                  onCheckedChange={(checked) => handleSettingChange('newsGenerationEnabled', checked)}
                   variant="game"
                 />
               </div>

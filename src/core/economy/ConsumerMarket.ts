@@ -703,17 +703,30 @@ function executeOrderPurchase(
   }
   
   // 实际可购买量
-  const actualQuantity = Math.min(quantity, o.remainings[orderIdx]);
+  let actualQuantity = Math.min(quantity, o.remainings[orderIdx]);
   if (actualQuantity < 0.01) {
     return { success: false, quantity: 0, cost: 0 };
   }
-  
+
   const price = o.prices[orderIdx];
-  const totalCost = actualQuantity * price;
+  let totalCost = actualQuantity * price;
   const sellCompanyId = o.companyIds[orderIdx];
-  
+
+  // 闭合货币循环：消费者购买从家庭资金池扣款
+  const householdCash = world.households.cash[0];
+  if (totalCost > householdCash) {
+    const affordableQty = Math.floor(householdCash / price * 100) / 100;
+    if (affordableQty < 0.01) {
+      return { success: false, quantity: 0, cost: 0 };
+    }
+    actualQuantity = affordableQty;
+    totalCost = actualQuantity * price;
+  }
+  world.households.cash[0] -= totalCost;
+  world.households.totalConsumptionSpent += totalCost;
+
   // ====== 执行交易 ======
-  
+
   // 1. 卖方获得资金
   c.cash[sellCompanyId] += totalCost;
   

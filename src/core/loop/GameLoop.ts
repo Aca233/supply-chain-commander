@@ -17,11 +17,11 @@ import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
 import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
-import { initializeBankingSystem, updateBankingSystem } from '../finance/BankingSystem';
+import { initializeBankingSystem, updateBankingSystem, getBankingState } from '../finance/BankingSystem';
 import { applyOperatingCosts } from '../finance/OperatingCosts';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
-import { addBuilding } from '../world/WorldInitializer';
+import { bankruptcyResolution } from '../finance/BankruptcyResolution';
 import {
   DEFAULT_TICK_INTERVAL,
   BASE_INTEREST_RATE,
@@ -59,6 +59,7 @@ import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionRe
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
 import { updateMonthlyTracker, resetMonthlyPriceTracker } from '../economy/MonthlyPriceTracker';
 import { forEachRetainedTradeNewestFirst } from '../market/TradeLedger';
+import { saveManager } from '../save/SaveManager';
 
 // 导入新闻系统
 import {
@@ -68,7 +69,6 @@ import {
   generateMonthlyNews,
   captureMonthStartSnapshot,
   trackCompanyBankrupt,
-  trackEconomicEvent,
   MonthlyNewsReport,
 } from '../news';
 
@@ -163,6 +163,9 @@ export class GameLoop {
   private timerId?: number;
   private lastPerfReport: TickPerformanceReport | null = null;
   private aiWorkerInitialized: boolean = false;
+  private lastRateLogTick = -1;
+  private rateLogStartTime = 0;
+  private rateLogTickCount = 0;
   private newsSystemInitialized: boolean = false;
   private readonly recentRetailRevenue = new Float64Array(TICKS_PER_MONTH);
   private readonly recentServiceRevenue = new Float64Array(TICKS_PER_MONTH);
@@ -436,21 +439,12 @@ export class GameLoop {
                         aiSchedulerStats.standardProcessed +
                         aiSchedulerStats.deepProcessed;
     
-    // 8.5. AI自动挂单（确保市场有流动性）
-    // 【流动性优化】提高频率：从每8tick改为每4tick，翻倍挂单频率
-    let aiSellOrders = 0;
-    let aiBuyOrders = 0;
-    if (currentTick % 4 === 1) {  // 从 tick%8===1 改为 tick%4===1，频率翻倍
-      aiSellOrders = autoPostSellOrders(this.world);
-    }
-    // 买单和卖单错峰执行
-    if (currentTick % 4 === 3) {  // 从 tick%8===5 改为 tick%4===3，频率翻倍
-      aiBuyOrders = autoPostBuyOrders(this.world);
-    }
-    
-    // 8.6. AI订单价格自动调整（长期未成交订单降价/涨价）
-    // 【性能优化】错峰执行，避免与其他任务冲突
-    if (currentTick % 12 === 3) {  // 从 tick%12===0 改为 tick%12===3
+    // 8.5. AI自动挂单（每天执行，确保市场有流动性）
+    const aiSellOrders = autoPostSellOrders(this.world);
+    const aiBuyOrders = autoPostBuyOrders(this.world);
+
+    // 8.6. AI订单价格自动调整（每3天执行一次）
+    if (currentTick % 3 === 0) {
       adjustAllAIOrderPrices(this.world);
     }
     endAI();
@@ -539,7 +533,7 @@ export class GameLoop {
     // 16. 价格更新
     const priceResult = updateAllPrices(this.world);
     
-    // 17. 更新期货市场（错峰执行：从tick%24===0改为tick%24===18）
+    // 17. 更新期货市场（每周执行）
     let expiredFuturesContracts = 0;
     if (monthlyPhase === 17) {
       const endFutures = perfMonitor.startMeasure('futures');
@@ -547,7 +541,7 @@ export class GameLoop {
       for (let i = 0; i < this.world.goods.count; i++) {
         spotPrices.set(i, this.world.goods.prices[i]);
       }
-      
+
       // 创建新合约（每月初）
       if (currentTick % TICKS_PER_MONTH === 0) {
         futuresMarket.createMonthlyContracts(currentTick, spotPrices);
@@ -564,8 +558,8 @@ export class GameLoop {
     // 17.5. 需求衰减（每天结束时处理未满足的需求）
     decayUnmetDemand(this.world);
     
-    // 17.6. 商品替代效应（每6tick应用一次，避免过于频繁）
-    if (currentTick % 6 === 0) {
+    // 17.6. 商品替代效应（每2天应用一次）
+    if (currentTick % 2 === 0) {
       applyMarketSubstitution(this.world);
     }
     
@@ -583,62 +577,57 @@ export class GameLoop {
     
     // ==================== 阶段6: 品牌和状态更新 ====================
     
-    // 20. AI股票交易决策
-    // 【性能优化】降低执行频率，从每12tick改为每24tick
-    if (currentTick % 24 === 7) {
+    // 20. AI股票交易决策（每3天一次）
+    if (currentTick % 3 === 0) {
       executeAIStockTrading(this.world);
     }
-    
-    // 21. 更新股票市场（分批处理）
-    // 【性能优化】StockMarket内部已做分批处理（每tick处理1/4股票）
-    // 每4个tick调用一次，确保所有股票都能被更新
-    if (currentTick % 4 === 0) {
-      updateStockMarket(this.world);
-    }
+
+    // 21. 更新股票市场（每天更新）
+    updateStockMarket(this.world);
     
     // 21. 更新收购系统（处理过期要约等）
     updateAcquisitionSystem(this.world);
     
     endFinance();
     
-    // 22. AI附属建筑管理
-    // 【性能优化】错峰执行，避免与Deep决策冲突
+    // 22. AI附属建筑管理（每5天一次）
     let aiSubsidiaryActions = 0;
-    if (currentTick % 24 === 14) {  // 从 tick%24===12 改为 tick%24===14
+    if (currentTick % 5 === 0) {
       const endAISubsidiary = perfMonitor.startMeasure('ai-subsidiary');
       aiSubsidiaryActions = runAISubsidiaryManagement(this.world);
       endAISubsidiary();
     }
-    
+
     // 23. 更新品牌衰减（每天）
     const endState = perfMonitor.startMeasure('state');
     brandManager.processDailyDecay(currentTick);
-    
-    // 23.5 重置服务设施每日统计（错峰执行：从tick%24===0改为tick%24===6）
-    if (currentTick % 24 === 6) {
-      resetDailyServiceStats();
-    }
+
+    // 23.5 重置服务设施每日统计（每天执行）
+    resetDailyServiceStats();
     
     // 23.6 处理建造/拆除队列
     const constructionResult = processConstructionAndDemolitionTick(this.world);
     
     // 24. 更新供应合同状态
     supplyContractManager.updateContractStatus(currentTick);
+
+    // 24.5 推进破产处置流程
+    bankruptcyResolution.advance(this.world, currentTick);
     
-    // 25. 检查AI破产（每100个tick检查一次）
-    if (currentTick % 100 === 0) {
+    // 25. 检查AI破产（每月一次）
+    // 当前日历模型为 1 tick = 1 天，因此 30 tick = 30 天 = 1 个月。
+    if (currentTick % TICKS_PER_MONTH === 0) {
       this.checkAIBankruptcy();
+      this.logMoneySupply();
     }
-    
-    // 26. 战略建材检查（确保关键建材供应链不断裂）
-    // 【P2优化】每50tick运行一次（原100tick），检测订单簿中有大量买单但无供应的建材
+
+    // 26. 战略建材检查（每15天运行一次）
     const strategicMaterialDecisions = runStrategicMaterialCheck(this.world);
-    if (strategicMaterialDecisions > 0 && currentTick % 50 === 0) {
+    if (strategicMaterialDecisions > 0 && currentTick % 15 === 0) {
       console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
     }
-    
-    // 27. 冷门商品检测与自动补充
-    // 每200tick运行一次，检测有需求但无供应的商品并触发AI建造
+
+    // 27. 冷门商品检测与自动补充（每月运行一次）
     const coldGoodsDecisions = buildForColdGoods(this.world);
     if (coldGoodsDecisions > 0) {
       console.log(`[冷门商品 T${currentTick}] 触发了${coldGoodsDecisions}个建造决策`);
@@ -658,24 +647,28 @@ export class GameLoop {
     
     let newsGenerated: MonthlyNewsReport | undefined;
     
+    const shouldProcessMonthlyNews = shouldCaptureSnapshot(currentTick);
+
     // 28. 生成月度新闻（每月1号0点，生成上月新闻）
     // 必须在捕获新快照之前执行，否则上月数据会被覆盖
-    if (shouldGenerateNews(currentTick)) {
-      // 异步生成新闻，不阻塞游戏循环
-      generateMonthlyNews(this.world)
-        .then(report => {
-          if (report) {
-            console.log(`[GameLoop] 月度新闻已生成: ${report.headline.title}`);
-          }
-        })
-        .catch(error => {
-          console.error('[GameLoop] 新闻生成失败:', error);
-        });
-    }
-    
-    // 29. 记录月初快照（每月1号0点）
-    // 必须在生成新闻之后执行，为下个月新闻准备数据
-    if (shouldCaptureSnapshot(currentTick)) {
+    if (shouldProcessMonthlyNews) {
+      const { newsGenerationEnabled } = saveManager.loadSettings();
+
+      if (shouldGenerateNews(currentTick, newsGenerationEnabled)) {
+        // 异步生成新闻，不阻塞游戏循环
+        generateMonthlyNews(this.world)
+          .then(report => {
+            if (report) {
+              console.log(`[GameLoop] 月度新闻已生成: ${report.headline.title}`);
+            }
+          })
+          .catch(error => {
+            console.error('[GameLoop] 新闻生成失败:', error);
+          });
+      }
+
+      // 29. 记录月初快照（每月1号0点）
+      // 必须在生成新闻之后执行，为下个月新闻准备数据
       captureMonthStartSnapshot(this.world);
     }
     
@@ -698,9 +691,21 @@ export class GameLoop {
       this.state.maxTickTime = tickTime;
     }
     
-    // 性能警告（使用性能监控器的警告）
-    if (this.lastPerfReport.warnings.length > 0 && tickTime > this.state.tickInterval * 0.8) {
-      console.warn(`Tick ${this.world.tick} performance:`, this.lastPerfReport.breakdown);
+    // 速率日志
+    this.rateLogTickCount++;
+    if (this.rateLogStartTime === 0) {
+      this.rateLogStartTime = performance.now();
+      this.lastRateLogTick = 1;
+      this.rateLogTickCount = 0;
+      console.log(`[游戏启动] 倍速:${this.state.speed}x | 目标间隔:${this.state.tickInterval}ms | 1tick=1游戏天`);
+    }
+    if (this.rateLogTickCount >= 10) {
+      const now = performance.now();
+      const elapsedSec = (now - this.rateLogStartTime) / 1000;
+      const actualRate = (this.rateLogTickCount / elapsedSec).toFixed(2);
+      console.log(`[速率] ${actualRate} tick/秒 = ${actualRate} 游戏天/秒 | 距上次:${elapsedSec.toFixed(1)}秒 | 倍速:${this.state.speed}x`);
+      this.rateLogStartTime = now;
+      this.rateLogTickCount = 0;
     }
     
     const result: TickResult = {
@@ -864,7 +869,7 @@ export class GameLoop {
     const inflationLag = Math.sin((this.world.tick % cycleLength) / cycleLength * 2 * Math.PI - Math.PI / 4);
     const inflationPosition = (inflationLag + 1) / 2;
     stats.inflation = TARGET_INFLATION + (inflationPosition - 0.5) * 0.04; // 目标2%，波动±2%
-    
+
     // 失业率：与周期相反，衰退期高
     // 失业率滞后于经济周期约1/8周期
     const unemploymentLag = Math.sin((this.world.tick % cycleLength) / cycleLength * 2 * Math.PI + Math.PI / 8);
@@ -885,6 +890,7 @@ export class GameLoop {
     
     for (let i = 1; i < companies.count; i++) { // 跳过玩家公司(id=0)
       if (!companies.isAI[i]) continue;
+      if (bankruptcyResolution.hasActiveEvent(i)) continue;
       
       const cash = companies.cash[i];
       const liabilities = companies.totalLiabilities[i];
@@ -913,99 +919,17 @@ export class GameLoop {
    * 处理公司破产
    */
   private handleBankruptcy(companyId: number): void {
+    if (bankruptcyResolution.hasActiveEvent(companyId)) {
+      return;
+    }
+
     const companyName = this.world.companies.names[companyId];
     console.log(`[破产] 公司 ${companyName} 已破产`);
     
     // 记录破产事件到新闻系统
     trackCompanyBankrupt(this.world.tick, companyId, companyName);
-    
-    // 1. 清算所有建筑（转移给市场/其他公司）
-    for (let i = 0; i < this.world.buildings.count; i++) {
-      if (this.world.buildings.owners[i] === companyId) {
-        // 建筑停止运营
-        this.world.buildings.isActive[i] = 0;
-        
-        // 以折扣价出售给其他公司或市场
-        const buildingValue = 200000; // 固定估值
-        
-        // 找一个有能力收购的公司
-        let buyerId = -1;
-        let maxCash = 0;
-        
-        for (let j = 0; j < this.world.companies.count; j++) {
-          if (j === companyId) continue;
-          if (this.world.companies.cash[j] > maxCash &&
-              this.world.companies.cash[j] > buildingValue * 0.5) {
-            maxCash = this.world.companies.cash[j];
-            buyerId = j;
-          }
-        }
-        
-        if (buyerId >= 0) {
-          // 收购
-          const salePrice = buildingValue * 0.5; // 50%折扣
-          this.world.companies.cash[buyerId] -= salePrice;
-          this.world.companies.cash[companyId] += salePrice;
-          this.world.buildings.owners[i] = buyerId;
-          this.world.buildings.isActive[i] = 1;
-          
-          console.log(`[收购] 公司 ${this.world.companies.names[buyerId]} 收购了建筑 #${i}`);
-        }
-      }
-    }
-    
-    // 2. 清算库存
-    for (let i = 0; i < GOODS_COUNT; i++) {
-      const inventory = this.world.companies.inventories[companyId * GOODS_COUNT + i];
-      if (inventory > 0) {
-        // 折价出售库存
-        const price = this.world.goods.prices[i] * 0.7;
-        this.world.companies.cash[companyId] += inventory * price;
-        this.world.companies.inventories[companyId * GOODS_COUNT + i] = 0;
-      }
-    }
-    
-    // 3. 偿还债务（尽可能多）
-    const cashAfterLiquidation = this.world.companies.cash[companyId];
-    const debtRepayment = Math.min(cashAfterLiquidation, this.world.companies.totalLiabilities[companyId]);
-    this.world.companies.totalLiabilities[companyId] -= debtRepayment;
-    this.world.companies.cash[companyId] -= debtRepayment;
-    
-    // 4. 重组公司（给予新的启动资金和建筑，模拟新公司进入市场）
-    this.restructureCompany(companyId);
-  }
-  
-  /**
-   * 重组破产公司
-   */
-  private restructureCompany(companyId: number): void {
-    const newCash = 5000000 + Math.random() * 5000000; // 500万-1000万新资金
-    
-    this.world.companies.cash[companyId] = newCash;
-    this.world.companies.totalAssets[companyId] = newCash;
-    this.world.companies.totalLiabilities[companyId] = 0;
-    
-    // 给予一个新建筑
-    const buildingTypes = [0, 1, 2, 3, 4, 5, 6];
-    const randomType = buildingTypes[Math.floor(Math.random() * buildingTypes.length)];
-    
-    // 简化：使用配方ID = 建筑类型ID
-    try {
-      addBuilding(this.world, companyId, randomType, randomType);
-    } catch (e) {
-      // 如果失败，至少有现金可以运营
-      console.warn('Failed to add building during restructure:', e);
-    }
-    
-    const companyName = this.world.companies.names[companyId];
-    console.log(`[重组] 公司 ${companyName} 已重组，新资金 ¥${newCash.toLocaleString()}`);
-    
-    // 记录重组事件到新闻系统
-    trackEconomicEvent(
-      this.world.tick,
-      'company_restructure',
-      `${companyName}完成破产重组，获得¥${(newCash / 10000).toFixed(0)}万元新资金`
-    );
+
+    bankruptcyResolution.openEvent(this.world, companyId, 'insolvent', this.world.tick);
   }
   
   /**
@@ -1020,7 +944,6 @@ export class GameLoop {
     // 统计滚动窗口内的成交总额
     const trades = this.world.trades;
     const currentTick = this.world.tick;
-    
     forEachRetainedTradeNewestFirst(this.world, tradeIdx => {
       const tradeTick = trades.ticks[tradeIdx];
       if (tradeTick <= currentTick - windowLength) {
@@ -1051,7 +974,30 @@ export class GameLoop {
     this.world.economyStats.gdp =
       this.world.economyStats.gdp * (1 - smoothingFactor) + annualizedGDP * smoothingFactor;
   }
-  
+
+  /**
+   * 验证货币循环闭合：sum(企业现金) + 家庭现金 + 银行存款 应恒定（仅维护费沉没）
+   */
+  private logMoneySupply(): void {
+    let totalCompanyCash = 0;
+    for (let i = 0; i < this.world.companies.count; i++) {
+      totalCompanyCash += this.world.companies.cash[i];
+    }
+    const householdCash = this.world.households.cash[0];
+    const bankDeposits = getBankingState().totalDeposits;
+    const totalMoneySupply = totalCompanyCash + householdCash + bankDeposits;
+
+    console.log(
+      `[货币供应 T${this.world.tick}] ` +
+      `企业: ¥${(totalCompanyCash / 1e8).toFixed(2)}亿 | ` +
+      `家庭: ¥${(householdCash / 1e8).toFixed(2)}亿 | ` +
+      `银行: ¥${(bankDeposits / 1e8).toFixed(2)}亿 | ` +
+      `总计: ¥${(totalMoneySupply / 1e8).toFixed(2)}亿 | ` +
+      `累计工资: ¥${(this.world.households.totalWagesReceived / 1e8).toFixed(2)}亿 | ` +
+      `累计消费: ¥${(this.world.households.totalConsumptionSpent / 1e8).toFixed(2)}亿`
+    );
+  }
+
   /**
    * 获取性能报告
    */

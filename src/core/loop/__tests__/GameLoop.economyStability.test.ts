@@ -92,7 +92,7 @@ describe('GameLoop opening economy stability', () => {
     let maxNegativeCashCompanies = 0;
 
     try {
-      for (let tick = 0; tick < 15; tick++) {
+      for (let tick = 0; tick < 30; tick++) {
         loop.manualTick();
         maxNegativeCashCompanies = Math.max(
           maxNegativeCashCompanies,
@@ -106,7 +106,11 @@ describe('GameLoop opening economy stability', () => {
     const effectiveCompanyLiquidity =
       sumCash(world.companies.cash, 0) + sumReservedBuyValue(world);
 
-    expect(effectiveCompanyLiquidity).toBeGreaterThan(initialCompanyCash * 0.85);
+    // 闭合货币循环后，总货币供应 = 企业现金 + 预留资金 + 家庭现金
+    // 运营成本中的人工+能源转入家庭池，仅维护费为沉没成本
+    const totalMoneySupply = effectiveCompanyLiquidity + world.households.cash[0];
+
+    expect(totalMoneySupply).toBeGreaterThan(initialCompanyCash * 0.85);
     expect(maxNegativeCashCompanies).toBeLessThanOrEqual(1);
   });
 });

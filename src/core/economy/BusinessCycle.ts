@@ -205,7 +205,7 @@ const ECONOMIC_EVENTS: EconomicEvent[] = [
         { goodsId: 4, demandMultiplier: 1.0, priceMultiplier: 1.5 }, // 原油
         { goodsId: 5, demandMultiplier: 1.0, priceMultiplier: 1.4 }, // 天然气
         { goodsId: 25, demandMultiplier: 0.9, priceMultiplier: 1.3 }, // 燃油
-        { goodsId: 57, demandMultiplier: 1.0, priceMultiplier: 1.25 }, // 电力
+        { goodsId: 66, demandMultiplier: 1.0, priceMultiplier: 1.25 }, // 电力 (GoodsId.ELECTRICITY)
       ],
     },
     probability: 0.0001,

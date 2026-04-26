@@ -4,7 +4,7 @@
  * 使用新设计系统组件重构
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { useMobile } from '@/ui/hooks/useMobile';
@@ -27,7 +27,7 @@ import {
   calculatePlayerPortfolio,
   calculateMarketStats,
 } from '@/core/finance/CompanyProfile';
-import { getMarketState } from '@/core/finance/StockMarket';
+import { getIPOOfferPreview, getMarketState } from '@/core/finance/StockMarket';
 
 // 设计系统组件
 import {
@@ -100,6 +100,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
   // IPO状态
   const [ipoShares, setIpoShares] = useState([400000]);
   const [ipoPrice, setIpoPrice] = useState(10);
+  const [ipoFeedback, setIpoFeedback] = useState<string | null>(null);
   
   // 获取玩家公司股票信息
   const playerStock = getStockInfo(0);
@@ -246,9 +247,28 @@ export const CompetitorsAndInvestment: React.FC = () => {
   
   // 执行IPO
   const executeIPO = () => {
-    playerIPO(ipoShares[0], ipoPrice);
-    setShowIPOModal(false);
+    const result = playerIPO(ipoShares[0], ipoPrice);
+    if (result.success) {
+      setIpoFeedback(null);
+      setShowIPOModal(false);
+      return;
+    }
+
+    setIpoFeedback(result.message);
   };
+
+  const ipoPreview = useMemo(() => {
+    if (!world || playerStock) return null;
+    return getIPOOfferPreview(world, 0, ipoShares[0], ipoPrice);
+  }, [world, playerStock, ipoShares[0], ipoPrice, tick]);
+
+  useEffect(() => {
+    if (!showIPOModal) {
+      setIpoFeedback(null);
+      return;
+    }
+    setIpoFeedback(null);
+  }, [showIPOModal, ipoShares[0], ipoPrice]);
   
   return (
     <div className={`space-y-4 ${isMobile ? 'pb-4' : useOverlayCompanyDetail ? 'p-4' : 'p-6'}`}>
@@ -591,6 +611,8 @@ export const CompetitorsAndInvestment: React.FC = () => {
               onChange={(e) => setIpoPrice(Math.max(1, parseFloat(e.target.value) || 0))}
               min={1}
               step={1}
+              error={ipoFeedback || (!ipoPreview?.canLaunch ? ipoPreview?.message : undefined)}
+              helperText={ipoPreview ? `建议发行价：¥${ipoPreview.minPrice.toFixed(2)} - ¥${ipoPreview.maxPrice.toFixed(2)}，基准价约 ¥${ipoPreview.suggestedPrice.toFixed(2)}` : undefined}
             />
 
             <Card variant="elevated" padding="md">
@@ -622,10 +644,59 @@ export const CompetitorsAndInvestment: React.FC = () => {
                 </div>
               </div>
             </Card>
+
+            {ipoPreview && (
+              <Card
+                variant="default"
+                status={ipoPreview.canLaunch ? 'success' : 'warning'}
+                padding="md"
+              >
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-sm font-medium text-[var(--text-primary)]">发行规则检查</div>
+                    <div className="text-xs text-[var(--text-muted)]">
+                      真实认购和建议定价基于当前市场资金情况动态计算
+                    </div>
+                  </div>
+                  <Badge variant={ipoPreview.canLaunch ? 'success' : 'warning'}>
+                    {ipoPreview.canLaunch ? '可发行' : '需调整'}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">允许发行股数:</span>
+                    <span className="text-[var(--text-primary)] tabular-nums">
+                      {ipoPreview.minShares.toLocaleString()} - {ipoPreview.maxShares.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">建议价格区间:</span>
+                    <span className="text-[var(--text-primary)] tabular-nums">
+                      ¥{ipoPreview.minPrice.toFixed(2)} - ¥{ipoPreview.maxPrice.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">预计真实认购:</span>
+                    <span className="text-[var(--text-primary)] tabular-nums">
+                      {ipoPreview.estimatedDemand.toLocaleString()} / {ipoShares[0].toLocaleString()} 股
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">认购缺口:</span>
+                    <span className={`tabular-nums ${ipoPreview.shortfallShares > 0 ? 'text-[var(--warning)]' : 'text-[var(--success)]'}`}>
+                      {ipoPreview.shortfallShares.toLocaleString()} 股
+                    </span>
+                  </div>
+                </div>
+                <p className={`text-sm ${ipoPreview.canLaunch ? 'text-[var(--success)]' : 'text-[var(--warning)]'}`}>
+                  {ipoPreview.message}
+                </p>
+              </Card>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setShowIPOModal(false)}>取消</Button>
-            <Button variant="gradient" onClick={executeIPO}>确认发行</Button>
+            <Button variant="gradient" onClick={executeIPO} disabled={!ipoPreview?.canLaunch}>确认发行</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

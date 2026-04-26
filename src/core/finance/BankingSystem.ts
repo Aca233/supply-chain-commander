@@ -103,7 +103,7 @@ let bankingState: BankingState = {
   nextLoanId: 1,
   baseInterestRate: 0.05,        // 5%基准利率
   reserveRate: 0.1,
-  totalDeposits: 100000000,      // 1亿初始存款
+  totalDeposits: 1_000_000_000,      // 10亿初始存款（v2价格体系）
   totalLoansOutstanding: 0,
 };
 
@@ -117,7 +117,7 @@ export function initializeBankingSystem(world: GameWorld): void {
     nextLoanId: 1,
     baseInterestRate: world.economyStats.interestRate,
     reserveRate: 0.1,
-    totalDeposits: 100000000,
+    totalDeposits: 1_000_000_000,
     totalLoansOutstanding: 0,
   };
   
@@ -367,10 +367,11 @@ export function applyForLoan(
   profile.availableCredit -= amount;
   profile.totalLoansHistory++;
   
-  // 发放贷款
+  // 发放贷款（从银行存款划转，闭合货币循环）
+  bankingState.totalDeposits -= amount;
   world.companies.cash[borrowerId] += amount;
   bankingState.totalLoansOutstanding += amount;
-  
+
   return { approved: true, loanId: loan.id };
 }
 
@@ -449,17 +450,18 @@ export function makePayment(
   
   // 扣款
   world.companies.cash[loan.borrowerId] -= paymentAmount;
-  
+
   // 分配到本金和利息
   const interestPortion = loan.remainingPrincipal * (loan.interestRate / 12);
   const principalPortion = paymentAmount - interestPortion;
-  
+
   loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPortion);
   loan.totalInterestPaid += interestPortion;
   loan.nextPaymentTick += TICKS_PER_MONTH;
-  
-  // 更新银行总额
+  // 本金回存银行，利息流入家庭资金池（银行利润→家庭，闭合货币循环）
+  bankingState.totalDeposits += principalPortion;
   bankingState.totalLoansOutstanding -= principalPortion;
+  world.households.cash[0] += interestPortion;
   
   // 检查是否还清
   if (loan.remainingPrincipal <= 0) {
@@ -504,9 +506,11 @@ export function prepayLoan(
   
   // 扣款
   world.companies.cash[loan.borrowerId] -= totalPayment;
-  
-  // 结清贷款
+
+  // 结清贷款：本金回存银行，罚金流入家庭资金池
+  bankingState.totalDeposits += loan.remainingPrincipal;
   bankingState.totalLoansOutstanding -= loan.remainingPrincipal;
+  world.households.cash[0] += penalty;
   loan.remainingPrincipal = 0;
   loan.status = 'paid';
   

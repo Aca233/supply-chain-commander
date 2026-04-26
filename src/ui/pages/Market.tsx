@@ -152,7 +152,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
         totalQty += volumes[j];
       }
       const avgPrice = totalQty > 0 ? totalValue / totalQty : close;
-      
+
       data.push({
         time: formatMonthDay(tickTime),
         price: avgPrice,

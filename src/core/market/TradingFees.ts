@@ -133,7 +133,7 @@ export const FEE_CONFIGS: Record<FeeType, FeeConfig> = {
     rate: 0.0005,  // 0.05%
     minFee: 10,
     maxFee: 5000,
-    excludedGoods: [57], // 电力不需要交割
+    excludedGoods: [66], // 电力不需要交割 (GoodsId.ELECTRICITY)
   },
   [FeeType.STAMP]: {
     type: FeeType.STAMP,

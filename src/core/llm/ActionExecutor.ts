@@ -543,17 +543,17 @@ function executeIPO(store: ReturnType<typeof useGameStore.getState>, args: Recor
   const shares = args.shares as number;
   const price = args.price as number;
   
-  const success = store.playerIPO(shares, price);
+  const result = store.playerIPO(shares, price);
   
-  if (success) {
+  if (result.success) {
     return {
       success: true,
-      message: `IPO成功！发行 ${shares.toLocaleString()} 股 @ ¥${price}`,
+      message: result.message,
     };
   } else {
     return {
       success: false,
-      message: 'IPO失败：公司已上市或条件不满足',
+      message: result.message,
     };
   }
 }

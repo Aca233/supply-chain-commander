@@ -52,16 +52,15 @@ export function calculateCompanyOperatingCostPerTick(
     energy += (buildingDef.energyCost * getBuildingEnergyMultiplier(world, buildingId)) / ticksPerDay;
   }
 
-  const cashExpense = maintenance;
-  const nonCashExpense = labor + energy;
+  const cashExpense = maintenance + labor + energy;
 
   return {
     maintenance,
     labor,
     energy,
-    total: cashExpense + nonCashExpense,
+    total: cashExpense,
     cashExpense,
-    nonCashExpense,
+    nonCashExpense: 0,
   };
 }
 
@@ -75,12 +74,15 @@ export function applyOperatingCosts(
     const breakdown = calculateCompanyOperatingCostPerTick(world, companyId, ticksPerDay);
     breakdowns.push(breakdown);
 
-    // Maintenance is modeled as the direct cash sink.
-    // Labor and energy are retained as operating burden metrics, but they are
-    // treated as economy-wide circulation costs instead of deleting cash from
-    // the company pool every tick.
     if (breakdown.cashExpense !== 0) {
       world.companies.cash[companyId] -= breakdown.cashExpense;
+    }
+
+    // Labor and energy flow to households as wages (闭合货币循环)
+    const wagesToHouseholds = breakdown.labor + breakdown.energy;
+    if (wagesToHouseholds > 0) {
+      world.households.cash[0] += wagesToHouseholds;
+      world.households.totalWagesReceived += wagesToHouseholds;
     }
   }
 

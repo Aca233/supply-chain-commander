@@ -5,15 +5,18 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import { TICKS_PER_DAY } from '@/core/constants';
+import { BankruptcyEventStatus, bankruptcyResolution } from '@/core/finance/BankruptcyResolution';
 import { useGameStore } from '@/stores/gameStore';
 import { PriceChart } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { FinancialReportChart, FinancialDataPoint } from '@/ui/components/Charts/FinancialReportChart';
-import { TICKS_PER_DAY } from '@/core/constants';
+import { BankruptcyResolutionPanel } from '@/ui/components/Finance';
 import { LoanType } from '@/core/finance/BankingSystem';
 import { formatGameDate, formatMonthDay, formatMonthDayText } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { shouldUseCompactFinanceLayout } from './responsivePageLayout';
+import { ALL_BUILDINGS } from '@/data/buildings';
 
 // 设计系统组件
 import {
@@ -51,9 +54,25 @@ const LOAN_TYPE_NAMES: Record<LoanType, string> = {
   'long_term': '长期贷款',
 };
 
+const BANKRUPTCY_REASON_LABELS: Record<string, string> = {
+  insolvent: '资不抵债',
+  cash_insolvent: '现金流断裂',
+  debt_default: '债务违约',
+};
+
+const BANKRUPTCY_STATUS_LABELS: Record<BankruptcyEventStatus, string> = {
+  bankruptcy_frozen: '冻结清点中',
+  auction_open: '公开竞拍中',
+  settlement_in_progress: '债务清偿中',
+  delisted: '已退市',
+  restructure_cooldown: '重组冷却中',
+  restructured: '已重组',
+};
+
 export const Finance: React.FC = () => {
   const { isMobile, isTablet, isNarrowDesktop } = useMobile();
   const useCompactDesktop = shouldUseCompactFinanceLayout({ isTablet, isNarrowDesktop });
+  const gameStore = useGameStore();
   const {
     getWorld,
     lastTickResult,
@@ -63,7 +82,17 @@ export const Finance: React.FC = () => {
     getPlayerLoanOptions,
     applyLoan,
     prepayPlayerLoan,
-  } = useGameStore();
+  } = gameStore;
+  const getBankruptcyEvents = gameStore.getBankruptcyEvents ?? (() => []);
+  const getBankruptcyStrategy = gameStore.getBankruptcyStrategy ?? (() => ({
+    mode: 'notify_only' as const,
+    eventBudgetCap: 0,
+    assetBudgetCap: 0,
+    autoTrackSameIndustry: false,
+  }));
+  const updateBankruptcyStrategy = gameStore.updateBankruptcyStrategy ?? (() => undefined);
+  const placeBankruptcyBid = gameStore.placeBankruptcyBid ?? (() => false);
+  const confirmBankruptcyPurchase = gameStore.confirmBankruptcyPurchase ?? (() => false);
   const playerFinancialSnapshot = useGameStore(state => state.playerFinancialSnapshot);
   const financialHistory = useGameStore(state => state.financialHistory);
   const world = getWorld();
@@ -165,6 +194,8 @@ export const Finance: React.FC = () => {
   const cumulativeRevenue = playerFinancialSnapshot.cumulativeRevenue;
   const cumulativeCost = playerFinancialSnapshot.cumulativeCost;
   const cumulativeProfit = playerFinancialSnapshot.cumulativeProfit;
+  const bankruptcyEvents = getBankruptcyEvents();
+  const bankruptcyStrategy = getBankruptcyStrategy();
 
   // 将财务历史转换为FinancialReportChart所需格式（按天聚合）
   const financialReportData: FinancialDataPoint[] = useMemo(() => {
@@ -189,7 +220,7 @@ export const Finance: React.FC = () => {
       .slice(-14); // 最近14天
     
     return sortedDays.map(([dayIndex, data]) => ({
-      period: `Day ${dayIndex + 1}`,
+      period: `第${dayIndex + 1}天`,
       revenue: data.revenue,
       costs: data.costs,
       profit: data.profit,
@@ -280,6 +311,50 @@ export const Finance: React.FC = () => {
   const creditProfile = getPlayerCreditProfile();
   const loanOptions = getPlayerLoanOptions();
   const selectedOption = loanOptions.find(o => o.type === selectedLoanType);
+  const bankruptcyEventViews = bankruptcyEvents.map((event) => ({
+    id: event.id,
+    companyName: world?.companies?.names?.[event.companyId] || `公司 #${event.companyId}`,
+    reasonLabel: BANKRUPTCY_REASON_LABELS[event.reason] || event.reason,
+    statusLabel: BANKRUPTCY_STATUS_LABELS[event.status] || event.status,
+    remainingDays: Math.max(0, Math.ceil((event.expiresTick - tick) / TICKS_PER_DAY)),
+    debtSnapshot: event.debtSnapshot,
+    stockStateLabel: event.delisted ? '已退市' : '停牌中',
+    assets: bankruptcyResolution.getEventAssets(event.id).map((asset) => {
+      const buildingTypeId = asset.buildingId !== undefined
+        ? world?.buildings?.types?.[asset.buildingId]
+        : undefined;
+      const buildingName = ALL_BUILDINGS.find((building) => building.id === buildingTypeId)?.name;
+      const goodsName = asset.goodsId !== undefined
+        ? world?.goods?.names?.[asset.goodsId]
+        : undefined;
+
+      return {
+        id: asset.id,
+        label: asset.assetType === 'building'
+          ? `${buildingName || '建筑'} #${asset.buildingId ?? '?'}`
+          : `${goodsName || '商品'} × ${asset.quantity.toLocaleString()}`,
+        assetType: asset.assetType,
+        reservePrice: asset.reservePrice,
+        currentHighestBid: asset.currentHighestBid,
+        playerBid: asset.bids.find((bid) => bid.bidderId === 0)?.amount ?? 0,
+        state: asset.state,
+        pendingConfirmDays: asset.pendingConfirmUntilTick !== undefined
+          ? Math.max(0, Math.ceil((asset.pendingConfirmUntilTick - tick) / TICKS_PER_DAY))
+          : undefined,
+      };
+    }),
+  }));
+  const bankruptcySection = (
+    <BankruptcyResolutionPanel
+      strategy={bankruptcyStrategy}
+      events={bankruptcyEventViews}
+      onStrategyChange={updateBankruptcyStrategy}
+      onPlaceBid={(eventId, assetId, amount) => {
+        placeBankruptcyBid(eventId, assetId, amount, 'manual');
+      }}
+      onConfirmPendingPurchase={confirmBankruptcyPurchase}
+    />
+  );
 
   // 移动端布局
   if (isMobile) {
@@ -338,6 +413,8 @@ export const Finance: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        {bankruptcySection}
 
         {/* 信用评级 */}
         {creditProfile && (
@@ -472,6 +549,8 @@ export const Finance: React.FC = () => {
         </Card>
       )}
 
+      {bankruptcySection}
+
       {/* 损益表 */}
       <Card variant="elevated">
         <CardHeader>
@@ -484,7 +563,7 @@ export const Finance: React.FC = () => {
               <tr>
                 <th className="text-left p-3 text-[var(--text-muted)] text-sm font-medium">项目</th>
                 <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">当日</th>
-                <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">累计(近100条)</th>
+                <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">累计(近100天)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-muted)]">

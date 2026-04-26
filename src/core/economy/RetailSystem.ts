@@ -1323,13 +1323,21 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
       const cost = actualQty * retail.purchaseCosts[idx];
       retail.dailyCost[retailId] += cost;
       
-      // 资金流入零售商
+      // 资金流入零售商（从家庭资金池扣款，闭合货币循环）
+      const householdBudget = world.households.cash[0];
+      if (spent > householdBudget) {
+        // 家庭资金不足，跳过此笔消费
+        continue;
+      }
+      world.households.cash[0] -= spent;
+      world.households.totalConsumptionSpent += spent;
+
       const ownerId = retail.owners[retailId];
       world.companies.cash[ownerId] += spent;
       if (ownerId === 0) {
         result.playerRevenue += spent;
       }
-      
+
       // 更新市场供给统计
       world.goods.supplies[goodsId] += actualQty;
       
@@ -1521,7 +1529,13 @@ function executeRetailPurchase(
   const cost = actualQty * retail.purchaseCosts[idx];
   retail.dailyCost[retailId] += cost;
   
-  // 资金流入零售商
+  // 资金流入零售商（从家庭资金池扣款，闭合货币循环）
+  if (totalSpent > world.households.cash[0]) {
+    return { quantity: 0, spent: 0, customers: 0 };
+  }
+  world.households.cash[0] -= totalSpent;
+  world.households.totalConsumptionSpent += totalSpent;
+
   const ownerId = retail.owners[retailId];
   world.companies.cash[ownerId] += totalSpent;
   

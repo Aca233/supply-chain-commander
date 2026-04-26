@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
+import { TICKS_PER_DAY } from '@/core/constants';
 import { initializeBuildingProductionMethods, getProductionModifiersForBuilding } from '@/core/production/ProductionMethods';
 
 import { createGameWorld } from '@/core/world/GameWorld';
@@ -43,22 +44,26 @@ describe('OperatingCosts', () => {
     const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
 
     expect(breakdown.maintenance).toBeCloseTo(
-      ironMine.maintenanceCost + steelMill.maintenanceCost,
+      (ironMine.maintenanceCost + steelMill.maintenanceCost) / TICKS_PER_DAY,
     );
     expect(breakdown.labor).toBeCloseTo(
-      ironMine.laborCost + steelMill.laborCost,
+      (ironMine.laborCost + steelMill.laborCost) / TICKS_PER_DAY,
     );
     expect(breakdown.energy).toBeCloseTo(
-      ironMine.energyCost * ironMineEnergyMultiplier +
-      steelMill.energyCost * steelMillEnergyMultiplier,
+      (
+        ironMine.energyCost * ironMineEnergyMultiplier +
+        steelMill.energyCost * steelMillEnergyMultiplier
+      ) / TICKS_PER_DAY,
     );
     expect(breakdown.total).toBeCloseTo(
-      ironMine.maintenanceCost +
-      ironMine.laborCost +
-      ironMine.energyCost * ironMineEnergyMultiplier +
-      steelMill.maintenanceCost +
-      steelMill.laborCost +
-      steelMill.energyCost * steelMillEnergyMultiplier,
+      (
+        ironMine.maintenanceCost +
+        ironMine.laborCost +
+        ironMine.energyCost * ironMineEnergyMultiplier +
+        steelMill.maintenanceCost +
+        steelMill.laborCost +
+        steelMill.energyCost * steelMillEnergyMultiplier
+      ) / TICKS_PER_DAY,
     );
   });
 
@@ -76,11 +81,13 @@ describe('OperatingCosts', () => {
 
     expect(breakdowns[0].total).toBeCloseTo(expectedTotal);
     expect(world.companies.cash[0]).toBeCloseTo(1_000_000 - breakdowns[0].cashExpense);
-    expect(breakdowns[0].cashExpense).toBeCloseTo(breakdowns[0].maintenance);
-    expect(breakdowns[0].nonCashExpense).toBeCloseTo(
-      breakdowns[0].labor + breakdowns[0].energy,
-    );
+    expect(breakdowns[0].cashExpense).toBeCloseTo(breakdowns[0].total);
+    expect(breakdowns[0].nonCashExpense).toBeCloseTo(0);
     expect(world.companies.cash[1]).toBeCloseTo(500_000);
+    // Labor + energy transferred to household pool (闭合货币循环)
+    const expectedHouseholdInflow = breakdowns[0].labor + breakdowns[0].energy;
+    expect(world.households.cash[0]).toBeCloseTo(expectedHouseholdInflow);
+    expect(world.households.totalWagesReceived).toBeCloseTo(expectedHouseholdInflow);
   });
 
   it('applies production method energy multipliers to energy operating costs', () => {
@@ -94,6 +101,6 @@ describe('OperatingCosts', () => {
 
     const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
 
-    expect(breakdown.energy).toBeCloseTo(ironMine.energyCost * 1.12, 5);
+    expect(breakdown.energy).toBeCloseTo((ironMine.energyCost * 1.12) / TICKS_PER_DAY, 5);
   });
 });

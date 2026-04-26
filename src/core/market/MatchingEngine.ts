@@ -119,27 +119,28 @@ function matchOrdersForGoodsOptimized(
     const buyRemaining = o.remainings[buyIdx];
     const sellRemaining = o.remainings[sellIdx];
     const matchQty = Math.min(buyRemaining, sellRemaining);
-    const matchPrice = sellPrice;
+    // 时间优先：成交价取先挂单方的价格
+    const matchPrice = o.createdTicks[buyIdx] < o.createdTicks[sellIdx] ? buyPrice : sellPrice;
     const totalValue = matchQty * matchPrice;
-    
+
     // 执行成交
     const buyInvIdx = buyCompanyId * GOODS_COUNT + goodsId;
     c.inventories[buyInvIdx] += matchQty;
     c.cash[sellCompanyId] += totalValue;
-    
+
     const sellInvIdx = sellCompanyId * GOODS_COUNT + goodsId;
     c.inventoryReserved[sellInvIdx] -= matchQty;
     c.inventories[sellInvIdx] -= matchQty;
-    
+
     const priceDiff = buyPrice - matchPrice;
     if (priceDiff > 0) {
       c.cash[buyCompanyId] += matchQty * priceDiff;
     }
-    
+
     // 更新订单剩余量
     o.remainings[buyIdx] -= matchQty;
     o.remainings[sellIdx] -= matchQty;
-    
+
     const tradeId = recordTrade(world, {
       buyOrderId: buyIdx,
       sellOrderId: sellIdx,
@@ -150,7 +151,7 @@ function matchOrdersForGoodsOptimized(
       price: matchPrice,
       tick: world.tick,
     });
-    
+
     // 复用预分配的Trade对象
     const outIdx = tradesStartIdx + tradesCount;
     if (outIdx < tradesOut.length) {
@@ -255,7 +256,8 @@ function matchOrdersForGoods(
     const buyRemaining = o.remainings[buyIdx];
     const sellRemaining = o.remainings[sellIdx];
     const matchQty = Math.min(buyRemaining, sellRemaining);
-    const matchPrice = sellPrice;
+    // 时间优先：成交价取先挂单方的价格
+    const matchPrice = o.createdTicks[buyIdx] < o.createdTicks[sellIdx] ? buyPrice : sellPrice;
     const totalValue = matchQty * matchPrice;
     
     const buyInvIdx = buyCompanyId * GOODS_COUNT + goodsId;
@@ -597,6 +599,68 @@ export function get24hHighLow(
   });
   
   return found ? { high, low } : null;
+}
+
+/**
+ * 最优买卖价
+ */
+export interface BestBidAsk {
+  bestBid: number | null;
+  bestAsk: number | null;
+  bidAskSpread: number | null;
+  spreadPercent: number | null;
+  midPrice: number | null;
+}
+
+/**
+ * 获取某商品的最优买卖价和价差
+ * 扫描活跃订单簿：bestBid = 最高买价，bestAsk = 最低卖价
+ * 无VWAP时可用midPrice作为价格信号
+ */
+export function getBestBidAsk(world: GameWorld, goodsId: number): BestBidAsk {
+  const o = world.orders;
+  let bestBid = -Infinity;
+  let bestAsk = Infinity;
+
+  for (let i = 0; i < o.maxOrders; i++) {
+    if (!o.isActive[i] || o.goodsIds[i] !== goodsId) continue;
+
+    const price = o.prices[i];
+    if (o.types[i] === 0) {
+      // 买单
+      if (price > bestBid) bestBid = price;
+    } else if (o.types[i] === 1) {
+      // 卖单
+      if (price < bestAsk) bestAsk = price;
+    }
+  }
+
+  const bestBidResult = bestBid === -Infinity ? null : bestBid;
+  const bestAskResult = bestAsk === Infinity ? null : bestAsk;
+
+  let spread: number | null = null;
+  let spreadPercent: number | null = null;
+  let midPrice: number | null = null;
+
+  if (bestBidResult !== null && bestAskResult !== null) {
+    spread = bestAskResult - bestBidResult;
+    midPrice = (bestBidResult + bestAskResult) / 2;
+    if (midPrice > 0) {
+      spreadPercent = spread / midPrice;
+    }
+  } else if (bestBidResult !== null) {
+    midPrice = bestBidResult;
+  } else if (bestAskResult !== null) {
+    midPrice = bestAskResult;
+  }
+
+  return {
+    bestBid: bestBidResult,
+    bestAsk: bestAskResult,
+    bidAskSpread: spread,
+    spreadPercent,
+    midPrice,
+  };
 }
 
 /**

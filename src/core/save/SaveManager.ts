@@ -7,6 +7,11 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT, legacyHourTicksToDayTicks } from '@/core/constants';
+import {
+  BankruptcyResolutionSnapshot,
+  BankruptcyStrategySettings,
+  bankruptcyResolution,
+} from '@/core/finance/BankruptcyResolution';
 import { BUILDINGS_BY_ID, getBuildingProduction, getAvailableOutputModes } from '@/data/buildings';
 import { backfillManualTargetsFromCurrentEfficiency, hydrateProductionControlState } from '@/core/production/ProductionControl';
 
@@ -49,6 +54,7 @@ export interface SerializedWorld {
     isAI: boolean[];
     inventories: number[][];
   };
+  bankruptcy?: BankruptcyResolutionSnapshot;
   currentTick: number;
 }
 
@@ -60,6 +66,8 @@ export interface GameSettings {
   autoSaveInterval: number;  // 自动保存间隔（毫秒）
   maxAutoSaves: number;      // 最大自动存档数量
   language: string;
+  newsGenerationEnabled: boolean;
+  bankruptcyStrategy?: BankruptcyStrategySettings;
 }
 
 export interface SaveData {
@@ -110,6 +118,7 @@ export class SaveManager {
         isAI: [...world.companies.isAI],
         inventories: this.serializeInventories(world),
       },
+      bankruptcy: bankruptcyResolution.getSnapshot(),
       currentTick,
     };
   }
@@ -186,6 +195,8 @@ export class SaveManager {
         world.companies.inventories[i * GOODS_COUNT + j] = inv[j];
       }
     }
+
+    bankruptcyResolution.hydrate(data.bankruptcy);
   }
   
   /**
@@ -386,6 +397,8 @@ export class SaveManager {
           autoSaveInterval: 60000,
           maxAutoSaves: 5,
           language: 'zh-CN',
+          newsGenerationEnabled: true,
+          bankruptcyStrategy: bankruptcyResolution.getStrategy(0),
           ...saved,
         };
       }
@@ -400,6 +413,8 @@ export class SaveManager {
       autoSaveInterval: 60000,
       maxAutoSaves: 5,
       language: 'zh-CN',
+      newsGenerationEnabled: true,
+      bankruptcyStrategy: bankruptcyResolution.getStrategy(0),
     };
   }
   

@@ -9,8 +9,8 @@
 /** 商品种类数（实际88种，预留空间至128） */
 export const GOODS_COUNT = 128;
 
-/** 实际商品数量（用于遍历时的精确计数） */
-export const ACTUAL_GOODS_COUNT = 88;
+/** 实际商品数量（用于遍历时的精确计数，与goods.ts中ALL_GOODS数量一致） */
+export const ACTUAL_GOODS_COUNT = 80;
 
 /** 最大建筑数量（增加以支持更多产业链） */
 export const MAX_BUILDINGS = 3000;
@@ -53,13 +53,13 @@ export const RECIPE_COUNT = 60;
 /** 旧版本中每天的小时数，用于存档/配置兼容转换 */
 export const LEGACY_HOURS_PER_DAY = 24;
 
-/** 每天tick数 */
+/** 每天tick数（1 tick = 1天） */
 export const TICKS_PER_DAY = 1;
 
 /** 每月tick数 */
 export const TICKS_PER_MONTH = 30;
 
-/** 每年tick数 */
+/** 每年tick数（360天/年） */
 export const TICKS_PER_YEAR = TICKS_PER_MONTH * 12;
 
 export function legacyHourTicksToDayTicks(
@@ -79,19 +79,19 @@ export function legacyHourTicksToDayTicks(
   return scaled;
 }
 
-/** 默认tick间隔（毫秒）- 100ms作为1x基础(10 ticks/秒)，8x时为12.5ms */
-export const DEFAULT_TICK_INTERVAL = 100;
+/** 默认tick间隔（毫秒）- 1000ms=1s，1 tick=1天，1年=360秒=6分钟 */
+export const DEFAULT_TICK_INTERVAL = 1000;
 
 // ==================== 经济常量 ====================
 
-/** 初始GDP（游戏币） */
-export const INITIAL_GDP = 10_000_000_000;
+/** 初始GDP（v2价格体系：对齐消费者年收入总和 ~¥100.68T） */
+export const INITIAL_GDP = 100_000_000_000_000;
 
-/** 初始人口 */
-export const INITIAL_POPULATION = 1_000_000;
+/** 初始人口（对齐DemandCurve消费者分层总和 2.1亿） */
+export const INITIAL_POPULATION = 210_000_000;
 
-/** 初始货币供应量 */
-export const INITIAL_MONEY_SUPPLY = 50_000_000_000;
+/** 初始货币供应量（v2价格体系：6x调整） */
+export const INITIAL_MONEY_SUPPLY = 300_000_000_000;
 
 /** 目标通胀率 */
 export const TARGET_INFLATION = 0.02;
@@ -102,20 +102,20 @@ export const BASE_INTEREST_RATE = 0.03;
 // ==================== 价格稳定常量 ====================
 // 平衡性调优 v2.0: 进一步收紧价格边界，限制无成交商品价格变动
 
-/** 单tick最大价格变化 - 降低以减少市场剧烈波动 */
-export const MAX_TICK_PRICE_CHANGE = 0.03;  // 从5%降低到3%，市场更稳定
+/** 单tick最大价格变化 - v2价格体系下收紧至2%，防止高基准价下绝对波动过大 */
+export const MAX_TICK_PRICE_CHANGE = 0.02;  // 2%单tick上限（v2价格体系：¥800基准价下±¥16 vs 旧¥50下±¥2.5）
 
-/** 均值回归速率 - 提高以加速价格恢复 */
-export const MEAN_REVERSION_RATE = 0.003;  // 从0.5%降低到0.3%，减少价格震荡
+/** 均值回归速率 - v2增强以加速价格恢复稳定 */
+export const MEAN_REVERSION_RATE = 0.008;  // 0.8%/tick均值回归（v2增强：基准价提升后需更强回归力）
 
-/** 波动抑制系数 - 略微降低以保持一定活力 */
-export const VOLATILITY_DAMPENING = 0.08;
+/** 波动抑制系数 */
+export const VOLATILITY_DAMPENING = 0.10;
 
-/** 供需数据平滑系数 - 提高以获得更稳定的供需数据 */
-export const SUPPLY_DEMAND_SMOOTHING = 0.4;  // 新数据占40%，历史占60%
+/** 供需数据平滑系数 - v2增强以获得更稳定的供需数据 */
+export const SUPPLY_DEMAND_SMOOTHING = 0.15;  // 每tick衰减15%，半衰期~4.5tick
 
-/** 需求计算平滑系数 - 适度平滑需求波动 */
-export const DEMAND_SMOOTHING_FACTOR = 0.3;  // 新需求占30%，历史需求占70%
+/** 需求计算平滑系数 - v2增强：更多权重给历史需求 */
+export const DEMAND_SMOOTHING_FACTOR = 0.2;  // 新需求占20%，历史需求占80%（更平滑）
 
 /** 价格相对于基准价的最大倍数 - 适度放宽以激励短缺商品生产 */
 export const MAX_PRICE_RATIO = 3.0;  // 从2.5倍提高到3倍，允许高利润激励生产
@@ -134,11 +134,11 @@ export const MAX_SUPPLY_DEMAND_RATIO = 100;  // 最大供需比限制在100:1
 
 // ==================== 玩家初始常量 ====================
 
-/** 玩家初始现金（增加以支持零售业务）*/
-export const PLAYER_INITIAL_CASH = 5_000_000;
+/** 玩家初始现金（v2价格体系：6x调整以匹配新基准价）*/
+export const PLAYER_INITIAL_CASH = 30_000_000;
 
 /** 玩家初始信用额度 */
-export const PLAYER_CREDIT_LIMIT = 500_000;
+export const PLAYER_CREDIT_LIMIT = 5_000_000;
 
 /** 玩家贷款利率 */
 export const PLAYER_CREDIT_RATE = 0.08;
