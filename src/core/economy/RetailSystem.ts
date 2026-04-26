@@ -34,6 +34,7 @@ import {
   RETAIL_MAX_CUSTOMER_RATE,
   RETAIL_PRICE_ADJUST_INTERVAL,
   RETAIL_MAX_TURNOVER_DAYS,
+  TICKS_PER_DAY,
 } from '../constants';
 import { recordTrade, TradeOrderRef } from '../market/TradeLedger';
 
@@ -371,8 +372,8 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
     result.priceAdjustments = adjustRetailPrices(world);
   }
   
-  // 5. 更新声誉（每天0点）
-  if (world.tick % 24 === 0) {
+  // 5. 更新声誉（每天结算一次）
+  if (world.tick % TICKS_PER_DAY === 0) {
     updateReputations(world);
     resetDailyStats(world);
   }

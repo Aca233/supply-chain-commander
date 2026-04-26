@@ -4,7 +4,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY, TICKS_PER_YEAR } from '@/core/constants';
 
 /**
  * 股票信息
@@ -1055,7 +1055,7 @@ function calculateDynamicPrice(world: GameWorld, companyId: number, stock: Stock
   if (ticksSinceUpdate > 0 && isFinite(currentCash) && isFinite(history.lastCash)) {
     const earningsThisPeriod = currentCash - history.lastCash;
     // 年化每股收益
-    const annualizedEarnings = (earningsThisPeriod / ticksSinceUpdate) * (365 * 24);
+    const annualizedEarnings = (earningsThisPeriod / ticksSinceUpdate) * TICKS_PER_YEAR;
     if (isFinite(annualizedEarnings)) {
       stock.earningsPerShare = annualizedEarnings / stock.totalShares;
       
@@ -1096,8 +1096,8 @@ export function updateStockMarket(world: GameWorld): void {
   const startIdx = updatePhase * batchSize;
   const endIdx = Math.min(startIdx + batchSize, stockArray.length);
   
-  // 判断是否是新的一天（每24个tick）
-  const isNewDay = currentTick % 24 === 0;
+  // 判断是否是新的一天
+  const isNewDay = currentTick % TICKS_PER_DAY === 0;
   
   // 只处理当前批次的股票
   for (let i = startIdx; i < endIdx; i++) {

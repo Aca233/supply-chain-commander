@@ -3,6 +3,8 @@
  * 在游戏运行过程中记录重要事件，供月度报告使用
  */
 
+import { tickToDate } from '@/core/world/GameWorld';
+
 import { GameEvent, GameEventType } from './types';
 
 // 事件存储（按月份分组）
@@ -16,11 +18,8 @@ let currentMonthKey = '';
  * 获取月份key
  */
 function getMonthKey(tick: number): string {
-  const day = Math.floor(tick / 24) + 1;
-  const month = Math.floor((day - 1) / 30) + 1;
-  const year = Math.floor((month - 1) / 12) + 1;
-  const monthOfYear = ((month - 1) % 12) + 1;
-  return `${year}-${monthOfYear}`;
+  const date = tickToDate(tick);
+  return `${date.year}-${date.month}`;
 }
 
 /**
