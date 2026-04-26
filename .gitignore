@@ -47,3 +47,4 @@ coverage/
 *.log
 *.tmp
 *.temp
+.worktrees/
