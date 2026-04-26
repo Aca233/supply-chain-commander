@@ -11,7 +11,7 @@
 import { GameWorld, createGameWorld, setInventory } from './GameWorld';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, BuildingId } from '@/data/buildings';
-import { PLAYER_INITIAL_CASH, GOODS_COUNT, MAX_SLOTS } from '../constants';
+import { PLAYER_INITIAL_CASH, INITIAL_MONEY_SUPPLY, GOODS_COUNT, MAX_SLOTS } from '../constants';
 import { getDefaultSlotMethods, getBuildingSlotCount, initializeBuildingProductionMethods } from '../production/ProductionMethods';
 import { initializeBuildingProductionControl } from '../production/ProductionControl';
 import { createBuyOrder, createSellOrder, initOrderPool } from '../market/OrderBook';
@@ -88,7 +88,12 @@ export function initializeWorld(): GameWorld {
   initOrderPool();
   generateInitialMarketOrders(world);
   initializeRetailStores(world);
-  
+
+  // 初始化家庭资金池（闭合货币循环的起点）
+  world.households.cash[0] = INITIAL_MONEY_SUPPLY;
+  world.households.totalWagesReceived = 0;
+  world.households.totalConsumptionSpent = 0;
+
   return world;
 }
 
@@ -196,8 +201,8 @@ function initializeAICompanies(world: GameWorld): void {
     const companyId = c.count;
     
     c.count++;
-    c.cash[companyId] = ai.initialCash;
-    c.totalAssets[companyId] = ai.initialCash;
+    c.cash[companyId] = ai.initialCash * 6;
+    c.totalAssets[companyId] = ai.initialCash * 6;
     c.totalLiabilities[companyId] = 0;
     c.names.push(ai.name);
     c.isPlayer.push(false);

@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   autoSaveInterval: 60000,
   maxAutoSaves: 5,
   language: 'zh-CN',
+  newsGenerationEnabled: true,
 };
 
 // 自定义下拉组件
@@ -516,6 +517,32 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose })
                   className="absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform"
                   style={{
                     transform: settings.autoSave ? 'translateX(24px)' : 'translateX(4px)',
+                  }}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium" style={{ color: isLight ? '#1e293b' : 'white' }}>商业周刊自动生成</div>
+                <div className="text-sm" style={{ color: isLight ? '#64748b' : '#71717a' }}>关闭后将不再自动生成新的商业周刊</div>
+              </div>
+              <button
+                className="w-12 h-7 rounded-full transition-all relative"
+                style={{
+                  backgroundColor: settings.newsGenerationEnabled
+                    ? (isLight ? '#2563eb' : '#3b82f6')
+                    : (isLight ? '#cbd5e1' : 'rgba(255,255,255,0.1)'),
+                }}
+                onClick={() => {
+                  handleSettingChange('newsGenerationEnabled', !settings.newsGenerationEnabled);
+                  soundManager.playClick();
+                }}
+              >
+                <div
+                  className="absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                  style={{
+                    transform: settings.newsGenerationEnabled ? 'translateX(24px)' : 'translateX(4px)',
                   }}
                 />
               </button>

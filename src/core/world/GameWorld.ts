@@ -257,27 +257,37 @@ export interface RecoveredMaterialsPool {
   isCollected: Uint8Array;              // 是否已领取
 }
 
+/** 家庭系统数据（闭合货币循环：消费者资金池） */
+export interface HouseholdSystem {
+  cash: Float64Array;
+  totalWagesReceived: number;
+  totalConsumptionSpent: number;
+}
+
 /** 游戏世界主结构 */
 export interface GameWorld {
   tick: number;
   speed: 1 | 2 | 4 | 8;
   paused: boolean;
-  
+
   goods: GoodsSystem;
   buildings: BuildingsSystem;
   companies: CompaniesSystem;
   orders: OrdersSystem;
   trades: TradesSystem;
-  
+
   // 零售系统（Pop只能在零售建筑消费）
   retail: RetailSystemData;
-  
+
+  // 家庭/消费者系统（闭合货币循环）
+  households: HouseholdSystem;
+
   // 建造/拆除系统
   construction: ConstructionQueueSystem;
   demolition: DemolitionQueueSystem;
   reservedMaterials: ReservedMaterialsPool;
   recoveredMaterials: RecoveredMaterialsPool;
-  
+
   // 经济指标
   economyStats: {
     gdp: number;
@@ -517,6 +527,17 @@ export function createRecoveredMaterialsPool(): RecoveredMaterialsPool {
 }
 
 /**
+ * 创建家庭系统（闭合货币循环）
+ */
+export function createHouseholdSystem(): HouseholdSystem {
+  return {
+    cash: new Float64Array(1),
+    totalWagesReceived: 0,
+    totalConsumptionSpent: 0,
+  };
+}
+
+/**
  * 创建完整的游戏世界
  */
 export function createGameWorld(): GameWorld {
@@ -524,20 +545,21 @@ export function createGameWorld(): GameWorld {
     tick: 0,
     speed: 1,
     paused: true,
-    
+
     goods: createGoodsSystem(),
     buildings: createBuildingsSystem(),
     companies: createCompaniesSystem(),
     orders: createOrdersSystem(),
     trades: createTradesSystem(),
     retail: createRetailSystem(),
-    
+    households: createHouseholdSystem(),
+
     // 建造/拆除系统
     construction: createConstructionQueueSystem(),
     demolition: createDemolitionQueueSystem(),
     reservedMaterials: createReservedMaterialsPool(),
     recoveredMaterials: createRecoveredMaterialsPool(),
-    
+
     economyStats: {
       gdp: 0,
       inflation: 0,
@@ -629,25 +651,23 @@ export function recordPriceHistory(world: GameWorld): void {
 }
 
 /**
- * 计算游戏内日期
+ * 计算游戏内日期（1 tick = 1天）
  */
-export function tickToDate(tick: number): { year: number; month: number; day: number; hour: number } {
-  const day = Math.floor(tick / 24) + 1;
-  const hour = tick % 24;
-  const month = Math.floor((day - 1) / 30) + 1;
+export function tickToDate(tick: number): { year: number; month: number; day: number } {
+  const totalDays = tick + 1; // tick从0开始，第1天=第1tick
+  const month = Math.floor((totalDays - 1) / 30) + 1;
   const year = Math.floor((month - 1) / 12) + 1;
   return {
     year,
     month: ((month - 1) % 12) + 1,
-    day: ((day - 1) % 30) + 1,
-    hour,
+    day: ((totalDays - 1) % 30) + 1,
   };
 }
 
 /**
- * 格式化游戏日期
+ * 格式化游戏日期（1 tick = 1天）
  */
 export function formatGameDate(tick: number): string {
   const date = tickToDate(tick);
-  return `第${date.year}年 ${date.month}月${date.day}日 ${date.hour}:00`;
+  return `第${date.year}年 ${date.month}月${date.day}日`;
 }

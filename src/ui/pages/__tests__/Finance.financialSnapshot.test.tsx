@@ -85,6 +85,10 @@ vi.mock('@/ui/components/Charts/FinancialReportChart', () => ({
   FinancialReportChart: () => React.createElement('div', null, 'FinancialReportChart'),
 }));
 
+vi.mock('@/ui/components/Finance', () => ({
+  BankruptcyResolutionPanel: () => React.createElement('div', null, 'BankruptcyResolutionPanel'),
+}));
+
 vi.mock('@/ui/design-system', () => ({
   Button: ({ children }: { children: React.ReactNode }) => React.createElement('button', null, children),
   Card: ({ children }: { children: React.ReactNode }) => React.createElement('section', null, children),

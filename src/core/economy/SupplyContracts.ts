@@ -161,6 +161,15 @@ export class SupplyContractManager {
   private nextProposalId: number = 1;
   
   private contractsByCompany: Map<number, Set<number>> = new Map();
+
+  reset(): void {
+    this.contracts.clear();
+    this.proposals.clear();
+    this.deliveries.clear();
+    this.contractsByCompany.clear();
+    this.nextContractId = 1;
+    this.nextProposalId = 1;
+  }
   
   /**
    * 创建合同提案
@@ -514,8 +523,8 @@ export class SupplyContractManager {
     const remainingPeriods = contract.totalPeriods - contract.currentPeriod;
     const remainingValue = remainingPeriods * contract.quantityPerPeriod * contract.agreedPrice;
     const totalExpectedValue = contract.totalPeriods * contract.quantityPerPeriod * contract.agreedPrice;
-    const averagePrice = contract.currentPeriod > 0 
-      ? contract.totalValue / contract.totalDelivered 
+    const averagePrice = contract.currentPeriod > 0 && contract.totalDelivered > 0
+      ? contract.totalValue / contract.totalDelivered
       : contract.agreedPrice;
     
     return { totalExpectedValue, remainingValue, averagePrice };
@@ -558,6 +567,32 @@ export class SupplyContractManager {
     }
     
     return { success: true, penalty, depositReturned };
+  }
+
+  terminateCompanyContractsForBankruptcy(
+    companyId: number,
+    currentTick: number,
+  ): Array<{ contractId: number; penalty: number }> {
+    const results: Array<{ contractId: number; penalty: number }> = [];
+    const activeContracts = this.getCompanyContracts(companyId, true);
+
+    for (const contract of activeContracts) {
+      if (contract.status !== ContractStatus.ACTIVE) {
+        continue;
+      }
+
+      const termination = this.terminateContract(contract.id, 'breach', currentTick);
+      if (!termination.success) {
+        continue;
+      }
+
+      results.push({
+        contractId: contract.id,
+        penalty: termination.penalty,
+      });
+    }
+
+    return results;
   }
 }
 

@@ -48,19 +48,24 @@ function triggerNewsCallbacks(report: MonthlyNewsReport): void {
  * 检查是否需要生成新闻（每两个月）
  * 触发月份：1、3、5、7、9、11月
  */
-export function shouldGenerateNews(tick: number): boolean {
+export function shouldGenerateNews(
+  tick: number,
+  newsGenerationEnabled: boolean = true,
+): boolean {
+  if (!newsGenerationEnabled) {
+    return false;
+  }
+
   const date = tickToDate(tick);
   const dayOfMonth = date.day;
-  const hourOfDay = date.hour;
-  
-  // 每两个月的1号0点触发（奇数月：1、3、5、7、9、11）
-  if (dayOfMonth === 1 && hourOfDay === 0 && date.month % 2 === 1) {
-    // 避免重复生成
+
+  // 每两个月的1号触发（奇数月，1 tick = 1天）
+  if (dayOfMonth === 1 && date.month % 2 === 1) {
     if (date.year !== lastGeneratedYear || date.month !== lastGeneratedMonth) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -70,8 +75,8 @@ export function shouldGenerateNews(tick: number): boolean {
  */
 export function shouldCaptureSnapshot(tick: number): boolean {
   const date = tickToDate(tick);
-  // 每两个月的1号0点记录快照（奇数月）
-  return date.day === 1 && date.hour === 0 && date.month % 2 === 1;
+  // 每两个月的1号记录快照（奇数月，1 tick = 1天）
+  return date.day === 1 && date.month % 2 === 1;
 }
 
 /**

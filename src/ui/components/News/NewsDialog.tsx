@@ -27,6 +27,12 @@ const IMPORTANCE_COLORS: Record<NewsImportance, string> = {
   trivia: 'text-gray-400 border-gray-400/30',
 };
 
+export type NewsDialogOpenSource = 'auto-generated' | 'manual';
+
+export function getNewsDialogAutoCloseDelay(source: NewsDialogOpenSource): number | null {
+  return source === 'auto-generated' ? 5000 : null;
+}
+
 function getMonthName(month: number): string {
   const months = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
   return months[month - 1] || `${month}月`;
@@ -35,13 +41,15 @@ function getMonthName(month: number): string {
 interface NewsDialogProps {
   open: boolean;
   news: MonthlyNewsReport | null;
+  openSource: NewsDialogOpenSource;
   onOpenChange: (open: boolean) => void;
   onViewMore: () => void;
 }
 
-export const NewsDialog: React.FC<NewsDialogProps> = ({ open, news, onOpenChange, onViewMore }) => {
+export const NewsDialog: React.FC<NewsDialogProps> = ({ open, news, openSource, onOpenChange, onViewMore }) => {
   const { markCurrentNewsRead } = useGameStore();
   const panelRef = useRef<HTMLDivElement>(null);
+  const autoCloseDelay = getNewsDialogAutoCloseDelay(openSource);
 
   // Escape 键关闭
   useEffect(() => {
@@ -55,6 +63,17 @@ export const NewsDialog: React.FC<NewsDialogProps> = ({ open, news, onOpenChange
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [open, onOpenChange, markCurrentNewsRead]);
+
+  useEffect(() => {
+    if (!open || !news || autoCloseDelay == null) return;
+
+    const timer = window.setTimeout(() => {
+      markCurrentNewsRead();
+      onOpenChange(false);
+    }, autoCloseDelay);
+
+    return () => window.clearTimeout(timer);
+  }, [autoCloseDelay, markCurrentNewsRead, news, onOpenChange, open]);
 
   if (!news || !open) return null;
 

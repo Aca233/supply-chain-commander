@@ -82,6 +82,31 @@ export interface CompanyHistoryData {
   lastUpdateTick: number;
 }
 
+export type IPOFailureReason =
+  | 'already_listed'
+  | 'invalid_price'
+  | 'price_out_of_range'
+  | 'share_count_out_of_range'
+  | 'insufficient_demand';
+
+export interface IPOOfferPreview {
+  suggestedPrice: number;
+  minPrice: number;
+  maxPrice: number;
+  minShares: number;
+  maxShares: number;
+  estimatedDemand: number;
+  shortfallShares: number;
+  canLaunch: boolean;
+  message: string;
+}
+
+export interface IPOResult extends IPOOfferPreview {
+  success: boolean;
+  reason?: IPOFailureReason;
+  subscribedShares: number;
+}
+
 /**
  * 股票市场状态
  */
@@ -112,7 +137,7 @@ export interface StockMarketState {
   }
   
   // 全局股票市场状态
-  let stockMarket: StockMarketState = {
+let stockMarket: StockMarketState = {
   stocks: new Map(),
   orders: [],
   holdings: new Map(),
@@ -126,6 +151,16 @@ export interface StockMarketState {
   companyHistory: new Map(),
   valuationCache: new Map(),
 };
+
+const IPO_MIN_SHARE_RATIO = 0.1;
+const IPO_MAX_SHARE_RATIO = 0.6;
+const IPO_MIN_PRICE_MULTIPLIER = 0.5;
+const IPO_MAX_PRICE_MULTIPLIER = 2;
+
+interface IPOAssessment extends IPOOfferPreview {
+  stock: Stock;
+  subscriptions: Array<{ aiId: number; shares: number; cost: number }>;
+}
 
 /**
  * 初始化股票市场
@@ -759,6 +794,9 @@ function updateMarketIndex(): void {
   let weightedChange = 0;
   
   for (const [_, stock] of stockMarket.stocks) {
+    if (!stock.isListed) {
+      continue;
+    }
     totalMarketCap += stock.marketCap;
     const priceChange = stock.currentPrice - stock.previousClose;
     weightedChange += priceChange * stock.totalShares;
@@ -778,6 +816,69 @@ function updateMarketIndex(): void {
  */
 export function getStock(companyId: number): Stock | null {
   return stockMarket.stocks.get(companyId) || null;
+}
+
+export function haltStock(companyId: number): boolean {
+  const stock = stockMarket.stocks.get(companyId);
+  if (!stock) {
+    return false;
+  }
+
+  stock.isTradable = false;
+  return true;
+}
+
+export function delistStock(
+  world: GameWorld,
+  companyId: number,
+  residualCash: number,
+): { distributedCash: number } {
+  const stock = stockMarket.stocks.get(companyId);
+  if (!stock) {
+    return { distributedCash: 0 };
+  }
+
+  stock.isTradable = false;
+  stock.isListed = false;
+  stock.outstandingShares = 0;
+  stock.marketCap = 0;
+  stock.turnoverRate = 0;
+  stock.volume = 0;
+
+  let distributedCash = 0;
+  const affectedHoldings = Array.from(stockMarket.holdings.entries())
+    .filter(([, holding]) => holding.stockCompanyId === companyId);
+  const externalShareTotal = affectedHoldings.reduce((sum, [, holding]) => {
+    if (holding.ownerCompanyId === companyId || holding.shares <= 0) {
+      return sum;
+    }
+    return sum + holding.shares;
+  }, 0);
+
+  for (const [holdingKey, holding] of affectedHoldings) {
+    if (holding.ownerCompanyId !== companyId && holding.shares > 0 && externalShareTotal > 0) {
+      const payout = residualCash * (holding.shares / externalShareTotal);
+      world.companies.cash[holding.ownerCompanyId] += payout;
+      distributedCash += payout;
+    }
+    stockMarket.holdings.delete(holdingKey);
+  }
+
+  stockMarket.orders = stockMarket.orders.filter((order) => {
+    if (order.stockCompanyId !== companyId) {
+      return true;
+    }
+
+    if (order.type === 'buy') {
+      const remainingQuantity = Math.max(0, order.quantity - order.filledQuantity);
+      const refundPrice = order.limitPrice ?? stock.currentPrice;
+      world.companies.cash[order.companyId] += remainingQuantity * refundPrice;
+    }
+
+    return false;
+  });
+
+  return { distributedCash };
 }
 
 /**
@@ -802,6 +903,126 @@ export function getMarketState(): StockMarketState {
   return stockMarket;
 }
 
+function estimateIPOSubscriptions(
+  world: GameWorld,
+  companyId: number,
+  offeringShares: number,
+  offeringPrice: number,
+): Array<{ aiId: number; shares: number; cost: number }> {
+  const aiCompanyIds: number[] = [];
+  for (let i = 1; i < world.companies.count; i++) {
+    if (i !== companyId && world.companies.isAI[i] && world.companies.cash[i] > offeringPrice * 100) {
+      aiCompanyIds.push(i);
+    }
+  }
+
+  const subscriptions: Array<{ aiId: number; shares: number; cost: number }> = [];
+  let remainingShares = offeringShares;
+
+  if (aiCompanyIds.length === 0) {
+    return subscriptions;
+  }
+
+  const topAIs = aiCompanyIds
+    .sort((a, b) => world.companies.cash[b] - world.companies.cash[a])
+    .slice(0, 10);
+
+  for (const aiId of topAIs) {
+    if (remainingShares <= 0) {
+      break;
+    }
+
+    const maxAffordable = Math.floor(world.companies.cash[aiId] * 0.1 / offeringPrice);
+    const subscribedShares = Math.min(remainingShares, maxAffordable);
+    if (subscribedShares <= 0) {
+      continue;
+    }
+
+    subscriptions.push({
+      aiId,
+      shares: subscribedShares,
+      cost: subscribedShares * offeringPrice,
+    });
+    remainingShares -= subscribedShares;
+  }
+
+  return subscriptions;
+}
+
+function buildIPOAssessment(
+  world: GameWorld,
+  companyId: number,
+  offeringShares: number,
+  offeringPrice: number,
+): IPOAssessment {
+  const stock = createStock(world, companyId);
+  const minShares = Math.floor(stock.totalShares * IPO_MIN_SHARE_RATIO);
+  const maxShares = Math.floor(stock.totalShares * IPO_MAX_SHARE_RATIO);
+  const suggestedPrice = stock.currentPrice;
+  const minPrice = Math.max(1, suggestedPrice * IPO_MIN_PRICE_MULTIPLIER);
+  const maxPrice = Math.max(minPrice, suggestedPrice * IPO_MAX_PRICE_MULTIPLIER);
+
+  const subscriptions = isFinite(offeringPrice) && offeringPrice > 0
+    ? estimateIPOSubscriptions(world, companyId, offeringShares, offeringPrice)
+    : [];
+  const estimatedDemand = subscriptions.reduce((sum, subscription) => sum + subscription.shares, 0);
+  const shortfallShares = Math.max(0, offeringShares - estimatedDemand);
+
+  let reason: IPOFailureReason | undefined;
+  let message = '按当前定价，发行可被真实买家全部认购';
+
+  if (stockMarket.stocks.has(companyId)) {
+    reason = 'already_listed';
+    message = '公司已上市，不能重复发起 IPO';
+  } else if (!Number.isInteger(offeringShares) || offeringShares < minShares || offeringShares > maxShares) {
+    reason = 'share_count_out_of_range';
+    message = `发行股数需在 ${minShares.toLocaleString()} 到 ${maxShares.toLocaleString()} 股之间`;
+  } else if (!isFinite(offeringPrice) || offeringPrice <= 0) {
+    reason = 'invalid_price';
+    message = '发行价必须大于 0';
+  } else if (offeringPrice < minPrice || offeringPrice > maxPrice) {
+    reason = 'price_out_of_range';
+    message = `发行价超出建议区间，建议设在 ¥${minPrice.toFixed(2)} - ¥${maxPrice.toFixed(2)}`;
+  } else if (shortfallShares > 0) {
+    reason = 'insufficient_demand';
+    message = `按当前定价预计仅能认购 ${estimatedDemand.toLocaleString()} / ${offeringShares.toLocaleString()} 股`;
+  }
+
+  return {
+    stock,
+    subscriptions,
+    suggestedPrice,
+    minPrice,
+    maxPrice,
+    minShares,
+    maxShares,
+    estimatedDemand,
+    shortfallShares,
+    canLaunch: reason === undefined,
+    message,
+  };
+}
+
+export function getIPOOfferPreview(
+  world: GameWorld,
+  companyId: number,
+  offeringShares: number,
+  offeringPrice: number,
+): IPOOfferPreview {
+  const assessment = buildIPOAssessment(world, companyId, offeringShares, offeringPrice);
+  return {
+    suggestedPrice: assessment.suggestedPrice,
+    minPrice: assessment.minPrice,
+    maxPrice: assessment.maxPrice,
+    minShares: assessment.minShares,
+    maxShares: assessment.maxShares,
+    estimatedDemand: assessment.estimatedDemand,
+    shortfallShares: assessment.shortfallShares,
+    canLaunch: assessment.canLaunch,
+    message: assessment.message,
+  };
+}
+
 /**
  * 玩家IPO
  */
@@ -810,17 +1031,51 @@ export function initiateIPO(
   companyId: number,
   offeringShares: number,
   offeringPrice: number
-): boolean {
-  if (stockMarket.stocks.has(companyId)) {
-    return false; // 已上市
+): IPOResult {
+  const assessment = buildIPOAssessment(world, companyId, offeringShares, offeringPrice);
+  if (!assessment.canLaunch) {
+    return {
+      success: false,
+      reason: stockMarket.stocks.has(companyId)
+        ? 'already_listed'
+        : !Number.isInteger(offeringShares) || offeringShares < assessment.minShares || offeringShares > assessment.maxShares
+          ? 'share_count_out_of_range'
+          : !isFinite(offeringPrice) || offeringPrice <= 0
+            ? 'invalid_price'
+            : offeringPrice < assessment.minPrice || offeringPrice > assessment.maxPrice
+              ? 'price_out_of_range'
+              : 'insufficient_demand',
+      subscribedShares: assessment.estimatedDemand,
+      suggestedPrice: assessment.suggestedPrice,
+      minPrice: assessment.minPrice,
+      maxPrice: assessment.maxPrice,
+      minShares: assessment.minShares,
+      maxShares: assessment.maxShares,
+      estimatedDemand: assessment.estimatedDemand,
+      shortfallShares: assessment.shortfallShares,
+      canLaunch: false,
+      message: assessment.message,
+    };
   }
-  
-  const stock = createStock(world, companyId);
+
+  const stock = assessment.stock;
+  const subscriptions = assessment.subscriptions;
+  const totalSubscribed = assessment.estimatedDemand;
+
   stock.currentPrice = offeringPrice;
+  stock.openPrice = offeringPrice;
+  stock.highPrice = offeringPrice;
+  stock.lowPrice = offeringPrice;
+  stock.previousClose = offeringPrice;
   stock.outstandingShares = offeringShares;
-  
+  stock.volume = 0;
+  stock.totalVolume = 0;
+  stock.turnoverRate = 0;
+  stock.marketCap = offeringPrice * stock.totalShares;
+  stock.priceToBook = stock.bookValue > 0 ? stock.marketCap / stock.bookValue : 0;
+
   stockMarket.stocks.set(companyId, stock);
-  
+
   // 创建者持有剩余股份
   const selfHolding: Holding = {
     ownerCompanyId: companyId,
@@ -830,66 +1085,49 @@ export function initiateIPO(
     unrealizedGain: 0,
   };
   stockMarket.holdings.set(`${companyId}-${companyId}`, selfHolding);
-  
-  // 让AI公司认购IPO股份
-  const aiCompanyIds: number[] = [];
-  for (let i = 1; i < world.companies.count; i++) {
-    if (world.companies.isAI[i] && world.companies.cash[i] > offeringPrice * 1000) {
-      aiCompanyIds.push(i);
-    }
+
+  for (const { aiId, shares, cost } of subscriptions) {
+    world.companies.cash[aiId] -= cost;
+
+    const holdingKey = `${aiId}-${companyId}`;
+    const holding: Holding = {
+      ownerCompanyId: aiId,
+      stockCompanyId: companyId,
+      shares,
+      avgCost: offeringPrice,
+      unrealizedGain: 0,
+    };
+    stockMarket.holdings.set(holdingKey, holding);
   }
-  
-  let totalSubscribed = 0;
-  
-  if (aiCompanyIds.length > 0) {
-    // 将发行股份分配给有能力认购的AI公司
-    const sharesPerAI = Math.floor(offeringShares / Math.min(aiCompanyIds.length, 10));
-    
-    // 只让前10家最有钱的AI认购
-    const topAIs = aiCompanyIds
-      .sort((a, b) => world.companies.cash[b] - world.companies.cash[a])
-      .slice(0, 10);
-    
-    for (const aiId of topAIs) {
-      // 每家AI最多认购其现金的10%
-      const maxAffordable = Math.floor(world.companies.cash[aiId] * 0.1 / offeringPrice);
-      const subscribedShares = Math.min(sharesPerAI, maxAffordable);
-      
-      if (subscribedShares >= 100) { // 至少认购100股
-        const cost = subscribedShares * offeringPrice;
-        
-        // 扣除AI资金
-        world.companies.cash[aiId] -= cost;
-        
-        // 创建持股记录
-        const holdingKey = `${aiId}-${companyId}`;
-        const holding: Holding = {
-          ownerCompanyId: aiId,
-          stockCompanyId: companyId,
-          shares: subscribedShares,
-          avgCost: offeringPrice,
-          unrealizedGain: 0,
-        };
-        stockMarket.holdings.set(holdingKey, holding);
-        
-        totalSubscribed += subscribedShares;
-        
-        // IPO资金入账给发行公司
-        world.companies.cash[companyId] += cost;
-      }
-    }
-    
-    console.log(`[StockMarket] IPO完成: ${companyId}号公司发行${offeringShares}股，AI认购${totalSubscribed}股`);
-  }
-  
-  // 如果还有未认购的股份，由"机构投资者"认购（模拟，资金直接入账）
-  const remainingShares = offeringShares - totalSubscribed;
-  if (remainingShares > 0) {
-    world.companies.cash[companyId] += remainingShares * offeringPrice;
-    console.log(`[StockMarket] 机构投资者认购剩余${remainingShares}股`);
-  }
-  
-  return true;
+
+  world.companies.cash[companyId] += totalSubscribed * offeringPrice;
+
+  stockMarket.valuationCache.delete(companyId);
+  const postMoneyValuation = calculateValuation(world, companyId);
+  stock.bookValue = postMoneyValuation.bookValue;
+  stock.priceToBook = stock.bookValue > 0 ? stock.marketCap / stock.bookValue : 0;
+  stockMarket.companyHistory.set(companyId, {
+    lastCash: world.companies.cash[companyId],
+    lastNetWorth: postMoneyValuation.bookValue,
+    lastUpdateTick: world.tick,
+  });
+
+  updateMarketIndex();
+  console.log(`[StockMarket] IPO完成: ${companyId}号公司发行${offeringShares}股，AI认购${totalSubscribed}股`);
+
+  return {
+    success: true,
+    subscribedShares: totalSubscribed,
+    suggestedPrice: assessment.suggestedPrice,
+    minPrice: assessment.minPrice,
+    maxPrice: assessment.maxPrice,
+    minShares: assessment.minShares,
+    maxShares: assessment.maxShares,
+    estimatedDemand: assessment.estimatedDemand,
+    shortfallShares: 0,
+    canLaunch: true,
+    message: `IPO成功！发行${offeringShares.toLocaleString()}股 @ ¥${offeringPrice.toFixed(2)}`,
+  };
 }
 
 /**
@@ -1091,7 +1329,8 @@ export function updateStockMarket(world: GameWorld): void {
   // 2. 股价更新 - 分批处理，降低每tick开销
   // 每4个tick更新所有股票，每个tick更新1/4
   const updatePhase = currentTick % 4;
-  const stockArray = Array.from(stockMarket.stocks.entries());
+  const stockArray = Array.from(stockMarket.stocks.entries())
+    .filter(([, stock]) => stock.isListed);
   const batchSize = Math.ceil(stockArray.length / 4);
   const startIdx = updatePhase * batchSize;
   const endIdx = Math.min(startIdx + batchSize, stockArray.length);

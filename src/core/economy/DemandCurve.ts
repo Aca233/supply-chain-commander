@@ -50,7 +50,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 0,
     name: '极低收入层',
     population: 15000000,
-    baseIncome: 2000,
+    baseIncome: 8000,          // v2: 4x（匹配新价格体系）
     incomeVariance: 0.15,
     savingsRate: 0.02,
     pricePreference: 0.95,
@@ -66,7 +66,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 1,
     name: '低收入层',
     population: 25000000,
-    baseIncome: 3500,
+    baseIncome: 14000,         // v2: 4x
     incomeVariance: 0.2,
     savingsRate: 0.05,
     pricePreference: 0.9,
@@ -82,7 +82,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 2,
     name: '中低收入层',
     population: 35000000,
-    baseIncome: 5500,
+    baseIncome: 20000,         // v2: 3.6x
     incomeVariance: 0.22,
     savingsRate: 0.08,
     pricePreference: 0.8,
@@ -98,7 +98,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 3,
     name: '中等偏下层',
     population: 40000000,
-    baseIncome: 8000,
+    baseIncome: 28000,         // v2: 3.5x
     incomeVariance: 0.25,
     savingsRate: 0.10,
     pricePreference: 0.65,
@@ -114,7 +114,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 4,
     name: '中等收入层',
     population: 45000000,
-    baseIncome: 12000,
+    baseIncome: 40000,         // v2: 3.3x
     incomeVariance: 0.28,
     savingsRate: 0.15,
     pricePreference: 0.5,
@@ -130,7 +130,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 5,
     name: '中高收入层',
     population: 30000000,
-    baseIncome: 20000,
+    baseIncome: 60000,         // v2: 3x
     incomeVariance: 0.32,
     savingsRate: 0.22,
     pricePreference: 0.35,
@@ -146,7 +146,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 6,
     name: '高收入层',
     population: 15000000,
-    baseIncome: 40000,
+    baseIncome: 100000,        // v2: 2.5x
     incomeVariance: 0.38,
     savingsRate: 0.30,
     pricePreference: 0.2,
@@ -162,7 +162,7 @@ export const CONSUMER_TIERS: ConsumerTier[] = [
     id: 7,
     name: '富裕阶层',
     population: 5000000,
-    baseIncome: 100000,
+    baseIncome: 200000,        // v2: 2x
     incomeVariance: 0.45,
     savingsRate: 0.40,
     pricePreference: 0.05,
@@ -652,8 +652,8 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
       : 10000;  // 供给极低时的保底值
     
     // 约束2: 基于商品价格的合理消费上限
-    // 昂贵商品需求量应该更低
-    const priceBasedMax = 100000 * (100 / Math.max(10, goods.basePrice));
+    // 昂贵商品需求量应该更低（v2价格体系：以¥800为基准参考价）
+    const priceBasedMax = 100000 * (800 / Math.max(10, goods.basePrice));
     
     // 约束3: 绝对上限 - 单个消费品每tick需求不超过50万
     const absoluteMax = 500000;
@@ -952,8 +952,7 @@ export function decayUnmetDemand(world: GameWorld): void {
       world.goods.demands[i] = satisfiedDemand + unsatisfiedDemand * DECAY_RATE;
     }
 
-    // 供给平滑衰减（从0.7改为0.85，避免供给数据短期剧烈下降）
-    world.goods.supplies[i] *= 0.85;
+    // 供给平滑衰减已移至PriceEngine统一处理，此处仅衰减需求
   }
 
   // 调试日志

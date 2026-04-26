@@ -74,6 +74,7 @@ const App: React.FC = () => {
   const sidebarCollapsed = ui.sidebarCollapsed;
   const showNewsDialog = ui.showNewsDialog;
   const pendingNews = ui.pendingNews;
+  const newsDialogOpenSource = ui.newsDialogOpenSource;
   
   // 移动端检测
   const { isMobile, isTablet, isNarrowDesktop } = useMobile();
@@ -319,6 +320,7 @@ const App: React.FC = () => {
     <NewsDialog
       open={showNewsDialog}
       news={pendingNews}
+      openSource={newsDialogOpenSource}
       onOpenChange={hideNewsDialog}
       onViewMore={navigateToNews}
     />

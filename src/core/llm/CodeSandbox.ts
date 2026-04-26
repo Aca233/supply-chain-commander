@@ -867,11 +867,11 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
      */
     doIPO(offeringShares: number, offeringPrice: number, companyId: number = 0): boolean {
       const result = initiateIPO(world, companyId, offeringShares, offeringPrice);
-      if (result) {
-        logs.push(`🎊 IPO成功！发行${offeringShares}股 @ ¥${offeringPrice}`);
+      if (result.success) {
+        logs.push(`🎊 ${result.message}`);
         return true;
       }
-      logs.push(`❌ IPO失败，公司可能已上市`);
+      logs.push(`❌ ${result.message}`);
       return false;
     },
     

@@ -68,6 +68,9 @@ const StockQuoteCard: React.FC<{
   if (!stock) return null;
 
   const priceUp = stock.priceChange >= 0;
+  const tradable = stock.isListed && stock.isTradable;
+  const statusLabel = tradable ? '交易中' : stock.isListed ? '停牌' : '已退市';
+  const statusVariant = tradable ? 'success' : stock.isListed ? 'warning' : 'outline';
 
   return (
     <Card
@@ -85,6 +88,9 @@ const StockQuoteCard: React.FC<{
             </span>
             <Badge variant="outline" size="sm">
               {profile.personalityName}
+            </Badge>
+            <Badge variant={statusVariant} size="sm">
+              {statusLabel}
             </Badge>
           </div>
           <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate max-w-[120px]">
@@ -119,6 +125,9 @@ const StockDetailPanel: React.FC<{
   if (!stock) return null;
 
   const priceUp = stock.priceChange >= 0;
+  const tradable = stock.isListed && stock.isTradable;
+  const statusLabel = tradable ? '交易中' : stock.isListed ? '停牌' : '已退市';
+  const statusVariant = tradable ? 'success' : stock.isListed ? 'warning' : 'outline';
 
   // 生成模拟价格历史数据（后续可替换为真实历史数据）
   const priceHistory = useMemo(() => {
@@ -146,6 +155,9 @@ const StockDetailPanel: React.FC<{
             </span>
             <Badge variant={priceUp ? 'success' : 'error'} glow>
               {priceUp ? '↑' : '↓'} {formatPercent(stock.priceChangePercent)}
+            </Badge>
+            <Badge variant={statusVariant} size="sm">
+              {statusLabel}
             </Badge>
           </div>
           <p className="text-sm text-[var(--text-muted)] mt-1">{profile.name}</p>
@@ -233,6 +245,7 @@ const StockDetailPanel: React.FC<{
           variant="primary"
           className="flex-1 bg-[var(--success)] hover:bg-[#16a34a]"
           onClick={() => onTrade('buy')}
+          disabled={!tradable}
         >
           📈 买入
         </Button>
@@ -240,10 +253,17 @@ const StockDetailPanel: React.FC<{
           variant="primary"
           className="flex-1 bg-[var(--error)] hover:bg-[#dc2626]"
           onClick={() => onTrade('sell')}
+          disabled={!tradable}
         >
           📉 卖出
         </Button>
       </div>
+
+      {!tradable && (
+        <p className="text-xs text-[var(--warning)]">
+          {stock.isListed ? '该股票当前处于停牌状态，暂不可交易。' : '该股票已退市，无法继续买卖。'}
+        </p>
+      )}
     </div>
   );
 };
@@ -710,7 +730,7 @@ export const StockMarketPanel: React.FC = () => {
   const companies = useMemo(() => {
     const profiles = getAICompanyProfiles();
     return profiles
-      .filter(p => p.stock?.isListed)
+      .filter(p => p.stock)
       .filter(p => 
         searchTerm === '' ||
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -847,7 +867,7 @@ export const StockMarketPanel: React.FC = () => {
         {/* 左侧：股票列表 */}
         <div className="xl:col-span-1 space-y-3 max-h-[600px] overflow-y-auto">
           <h3 className="text-sm font-medium text-[var(--text-muted)] sticky top-0 bg-[var(--bg-base)] py-2">
-            上市公司 ({companies.length})
+            股票列表 ({companies.length})
           </h3>
           {companies.map((profile) => (
             <StockQuoteCard

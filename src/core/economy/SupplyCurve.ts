@@ -90,7 +90,7 @@ export function calculateCostStructure(
   }
   
   // 能源成本（可变）
-  const energyPrice = world.goods.prices[57] || 0.5; // 电力价格
+  const energyPrice = world.goods.prices[66] || 0.5; // 电力价格 (GoodsId.ELECTRICITY)
   const energyRequired = buildingDef.powerConsumption || 10;
   const energyCost = energyRequired * energyPrice * 0.001 * quantity;
   

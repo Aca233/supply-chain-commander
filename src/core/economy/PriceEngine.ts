@@ -174,14 +174,13 @@ for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
     
     g.prices[i] = newPrice;
     
-    // 平滑供需数据
+    // 平滑供给数据（需求由updateWorldDemands平滑处理，此处不再重复）
     g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-    g.demands[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-    
+
     result.updatedCount++;
     continue;
   }
-    
+
     // === 有成交时的正常价格计算 ===
     const totalVolume = supply + demand;
     // 【P0修复】供需比上限，防止需求计算溢出
@@ -208,7 +207,7 @@ for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
     
     if (vwap > 0 && volume24h > 0) {
       const vwapPull = (vwap - currentPrice) / currentPrice * 0.15;
-      const vwapWeight = Math.min(0.5, 0.2 + Math.log10(volume24h + 1) * 0.1);
+      const vwapWeight = Math.min(0.85, 0.2 + Math.log10(volume24h + 1) * 0.1);
       targetChange = targetChange * (1 - vwapWeight) + vwapPull * vwapWeight;
     }
     
@@ -231,9 +230,9 @@ for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
     
     g.prices[i] = newPrice;
     
+    // 平滑供给数据（需求由updateWorldDemands平滑处理，此处不再重复）
     g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-    g.demands[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-    
+
     result.updatedCount++;
   }
   

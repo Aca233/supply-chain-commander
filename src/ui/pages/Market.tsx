@@ -117,7 +117,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       const basePrice = selectedGoods?.basePrice || world.goods.prices[selectedGoodsId];
       if (basePrice > 0) {
         const date = tickToDate(tick);
-        const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
+        const timeStr = `${date.month}/${date.day}`;
         return [{
           time: timeStr,
           price: basePrice,
@@ -156,7 +156,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       const avgPrice = totalQty > 0 ? totalValue / totalQty : close;
       
       const date = tickToDate(tickTime);
-      const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
+      const timeStr = `${date.month}/${date.day}`;
       
       data.push({
         time: timeStr,
@@ -731,7 +731,7 @@ export const Market: React.FC = () => {
     
     return recentDays.map(dayIndex => {
       const data = dayDataMap.get(dayIndex)!;
-      const date = tickToDate(dayIndex * 24);
+      const date = tickToDate(dayIndex);
       return {
         time: `${date.year}/${date.month}/${date.day}`,
         open: data.open,

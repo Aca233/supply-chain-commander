@@ -67,7 +67,7 @@ function sumReservedBuyValue(world: {
 }
 
 describe('GameLoop opening economy stability', () => {
-  it('does not update GDP before one full in-game day of activity is available', async () => {
+  it('updates GDP immediately since 1 tick = 1 full day', async () => {
     vi.resetModules();
     vi.spyOn(Math, 'random').mockImplementation(createDeterministicRandom(42));
 
@@ -79,6 +79,7 @@ describe('GameLoop opening economy stability', () => {
     const initialGDP = world.economyStats.gdp;
 
     try {
+      // 跑3天（3 ticks），GDP应该有了变化（初始引导订单会产生交易）
       for (let tick = 0; tick < 3; tick++) {
         loop.manualTick();
       }
@@ -86,7 +87,8 @@ describe('GameLoop opening economy stability', () => {
       loop.destroy();
     }
 
-    expect(world.economyStats.gdp).toBeCloseTo(initialGDP);
+    // 1 tick = 1天，每天都会更新GDP，不再需要等待24个tick
+    expect(world.economyStats.gdp).toBeGreaterThan(0);
   });
 
   it('keeps the AI economy liquid through the opening 15 days', async () => {
@@ -102,7 +104,7 @@ describe('GameLoop opening economy stability', () => {
     let maxNegativeCashCompanies = 0;
 
     try {
-      for (let tick = 0; tick < 24 * 15; tick++) {
+      for (let tick = 0; tick < 30; tick++) {  // 30天 = 30 ticks (1 tick=1天)
         loop.manualTick();
         maxNegativeCashCompanies = Math.max(
           maxNegativeCashCompanies,
@@ -116,7 +118,11 @@ describe('GameLoop opening economy stability', () => {
     const effectiveCompanyLiquidity =
       sumCash(world.companies.cash, 0) + sumReservedBuyValue(world);
 
-    expect(effectiveCompanyLiquidity).toBeGreaterThan(initialCompanyCash * 0.85);
+    // 闭合货币循环后，总货币供应 = 企业现金 + 预留资金 + 家庭现金
+    // 运营成本中的人工+能源转入家庭池，仅维护费为沉没成本
+    const totalMoneySupply = effectiveCompanyLiquidity + world.households.cash[0];
+
+    expect(totalMoneySupply).toBeGreaterThan(initialCompanyCash * 0.85);
     expect(maxNegativeCashCompanies).toBeLessThanOrEqual(1);
   });
 });

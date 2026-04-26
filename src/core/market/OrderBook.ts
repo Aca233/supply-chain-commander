@@ -235,6 +235,7 @@ export function resetOrderPool(): void {
   orderPool = new OrderPool(MAX_ORDERS);
   companyGoodsIndex = new CompanyGoodsOrderIndex();
   activeOrderIndices.clear();  // 清空活跃订单索引
+  getOrderBookIndex().clearAll();  // 清空撮合索引，避免残留脏数据
   orderPoolInitialized = true;
 }
 
@@ -844,6 +845,47 @@ export function cancelOrder(
   orderPool?.release(orderIdx);
   
   return true;
+}
+
+export function cancelCompanyOrders(
+  world: GameWorld,
+  companyId: number,
+): {
+  orderIndices: number[];
+  refundedCash: number;
+  returnedInventory: number;
+} {
+  const o = world.orders;
+  const orderIndices: number[] = [];
+  let refundedCash = 0;
+  let returnedInventory = 0;
+
+  for (const orderIdx of activeOrderIndices) {
+    if (!o.isActive[orderIdx]) {
+      continue;
+    }
+    if (o.companyIds[orderIdx] !== companyId) {
+      continue;
+    }
+
+    orderIndices.push(orderIdx);
+    const remaining = o.remainings[orderIdx];
+    if (o.types[orderIdx] === 0) {
+      refundedCash += remaining * o.prices[orderIdx];
+    } else {
+      returnedInventory += remaining;
+    }
+  }
+
+  for (const orderIdx of orderIndices) {
+    cancelOrder(world, orderIdx);
+  }
+
+  return {
+    orderIndices,
+    refundedCash,
+    returnedInventory,
+  };
 }
 
 /**

@@ -285,7 +285,7 @@ export function useDashboardData(): DashboardData {
     return financialHistory.slice(-100).map(point => {
       const date = tickToDate(point.tick);
       return {
-        time: `${date.month}/${date.day} ${date.hour}:00`,
+        time: `${date.month}/${date.day}`,
         tick: point.tick,
         cash: point.cash,
         revenue: point.revenue,
@@ -616,7 +616,7 @@ export function useDashboardData(): DashboardData {
           description: `${isSell ? '卖出' : '买入'} ${goodsName} x${trade.quantity.toFixed(0)} @ ¥${trade.price.toFixed(2)}`,
           value: trade.value,
           tick: trade.tick,
-          time: `${date.hour}:00`,
+          time: `${date.month}/${date.day}`,
         });
       }
     }
