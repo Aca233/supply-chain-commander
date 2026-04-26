@@ -11,7 +11,13 @@
 import { GameWorld, createGameWorld, setInventory } from './GameWorld';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, BuildingId } from '@/data/buildings';
-import { PLAYER_INITIAL_CASH, GOODS_COUNT, MAX_SLOTS } from '../constants';
+import {
+  BASE_INTEREST_RATE,
+  GOODS_COUNT,
+  MAX_SLOTS,
+  PLAYER_INITIAL_CASH,
+  TARGET_INFLATION,
+} from '../constants';
 import { getDefaultSlotMethods, getBuildingSlotCount, initializeBuildingProductionMethods } from '../production/ProductionMethods';
 import { initializeBuildingProductionControl } from '../production/ProductionControl';
 import { createBuyOrder, createSellOrder, initOrderPool } from '../market/OrderBook';
@@ -294,11 +300,11 @@ function initializeMarketState(world: GameWorld): void {
   // GDP uses live activity after the first full in-game day.
   // Starting from zero avoids the opening “flash crash” caused by a placeholder value.
   world.economyStats.gdp = 0;
-  world.economyStats.inflation = 0;
+  world.economyStats.inflation = TARGET_INFLATION;
   world.economyStats.unemployment = 0.05;
-  world.economyStats.interestRate = 0.03;
+  world.economyStats.interestRate = BASE_INTEREST_RATE;
   world.economyStats.cyclePhase = 'expansion';
-  world.economyStats.cyclePosition = 0.5;
+  world.economyStats.cyclePosition = 0.38;
 }
 
 /**

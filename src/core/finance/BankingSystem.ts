@@ -4,7 +4,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT } from '@/core/constants';
+import { BASE_INTEREST_RATE, GOODS_COUNT, INITIAL_MONEY_SUPPLY } from '@/core/constants';
 
 /**
  * 贷款类型
@@ -101,9 +101,9 @@ let bankingState: BankingState = {
   loans: new Map(),
   creditProfiles: new Map(),
   nextLoanId: 1,
-  baseInterestRate: 0.05,        // 5%基准利率
+  baseInterestRate: BASE_INTEREST_RATE,
   reserveRate: 0.1,
-  totalDeposits: 100000000,      // 1亿初始存款
+  totalDeposits: INITIAL_MONEY_SUPPLY,
   totalLoansOutstanding: 0,
 };
 
@@ -117,7 +117,7 @@ export function initializeBankingSystem(world: GameWorld): void {
     nextLoanId: 1,
     baseInterestRate: world.economyStats.interestRate,
     reserveRate: 0.1,
-    totalDeposits: 100000000,
+    totalDeposits: INITIAL_MONEY_SUPPLY,
     totalLoansOutstanding: 0,
   };
   

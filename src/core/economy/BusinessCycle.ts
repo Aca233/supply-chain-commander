@@ -5,7 +5,12 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { ALL_GOODS } from '@/data/goods';
-import { GOODS_COUNT } from '@/core/constants';
+import {
+  BASE_INTEREST_RATE,
+  BUSINESS_CYCLE_LENGTH,
+  INITIAL_GDP,
+  TARGET_INFLATION,
+} from '@/core/constants';
 
 /**
  * 经济周期阶段
@@ -59,8 +64,8 @@ export interface EconomicEvent {
  * 经济周期配置
  */
 const CYCLE_CONFIG = {
-  baseCycleLength: 2880,          // 基础周期长度（约120天）
-  cycleLengthVariance: 720,       // 周期长度变异（±30天）
+  baseCycleLength: BUSINESS_CYCLE_LENGTH,   // 约 5 年完整周期
+  cycleLengthVariance: BUSINESS_CYCLE_LENGTH * 0.2,
   
   // 各阶段默认参数
   phases: {
@@ -327,12 +332,12 @@ let eventCooldowns: Map<number, number> = new Map();
  */
 export function initializeBusinessCycle(world: GameWorld): void {
   world.economyStats = {
-    gdp: 10000000000, // 100亿初始GDP
-    inflation: 0.02,
+    gdp: INITIAL_GDP,
+    inflation: TARGET_INFLATION,
     unemployment: 0.05,
-    interestRate: 0.03,
+    interestRate: BASE_INTEREST_RATE,
     cyclePhase: 'expansion',
-    cyclePosition: 0.3,
+    cyclePosition: 0.38,
   };
   
   activeEvents = [];

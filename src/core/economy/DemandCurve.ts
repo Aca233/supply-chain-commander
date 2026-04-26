@@ -43,135 +43,135 @@ export interface DemandResult {
 
 /**
  * 消费者分层数据
- * 8个收入层级的精细化消费者结构
+ * 中国 2019 全国缩略模型的 8 个收入层级
  */
 export const CONSUMER_TIERS: ConsumerTier[] = [
   {
     id: 0,
     name: '极低收入层',
-    population: 15000000,
-    baseIncome: 2000,
-    incomeVariance: 0.15,
-    savingsRate: 0.02,
-    pricePreference: 0.95,
-    qualityPreference: 0.05,
+    population: 260000000,
+    baseIncome: 1500,
+    incomeVariance: 0.12,
+    savingsRate: 0.01,
+    pricePreference: 0.97,
+    qualityPreference: 0.03,
     budgetShares: new Map([
-      ['raw', 0.08],
-      ['basic', 0.25],
+      ['raw', 0.12],
+      ['basic', 0.34],
       ['intermediate', 0.02],
-      ['final', 0.65],
+      ['final', 0.52],
     ]),
   },
   {
     id: 1,
     name: '低收入层',
-    population: 25000000,
-    baseIncome: 3500,
-    incomeVariance: 0.2,
-    savingsRate: 0.05,
-    pricePreference: 0.9,
-    qualityPreference: 0.1,
+    population: 280000000,
+    baseIncome: 2500,
+    incomeVariance: 0.15,
+    savingsRate: 0.03,
+    pricePreference: 0.93,
+    qualityPreference: 0.07,
     budgetShares: new Map([
-      ['raw', 0.06],
-      ['basic', 0.22],
-      ['intermediate', 0.04],
-      ['final', 0.68],
+      ['raw', 0.10],
+      ['basic', 0.32],
+      ['intermediate', 0.03],
+      ['final', 0.55],
     ]),
   },
   {
     id: 2,
     name: '中低收入层',
-    population: 35000000,
-    baseIncome: 5500,
-    incomeVariance: 0.22,
-    savingsRate: 0.08,
-    pricePreference: 0.8,
-    qualityPreference: 0.2,
+    population: 290000000,
+    baseIncome: 4000,
+    incomeVariance: 0.18,
+    savingsRate: 0.06,
+    pricePreference: 0.85,
+    qualityPreference: 0.15,
     budgetShares: new Map([
-      ['raw', 0.04],
-      ['basic', 0.18],
-      ['intermediate', 0.06],
-      ['final', 0.72],
+      ['raw', 0.08],
+      ['basic', 0.28],
+      ['intermediate', 0.05],
+      ['final', 0.59],
     ]),
   },
   {
     id: 3,
-    name: '中等偏下层',
-    population: 40000000,
-    baseIncome: 8000,
-    incomeVariance: 0.25,
+    name: '普通工薪层',
+    population: 250000000,
+    baseIncome: 6500,
+    incomeVariance: 0.22,
     savingsRate: 0.10,
-    pricePreference: 0.65,
-    qualityPreference: 0.35,
+    pricePreference: 0.72,
+    qualityPreference: 0.28,
     budgetShares: new Map([
-      ['raw', 0.03],
-      ['basic', 0.14],
+      ['raw', 0.05],
+      ['basic', 0.22],
       ['intermediate', 0.08],
-      ['final', 0.75],
+      ['final', 0.65],
     ]),
   },
   {
     id: 4,
     name: '中等收入层',
-    population: 45000000,
-    baseIncome: 12000,
-    incomeVariance: 0.28,
-    savingsRate: 0.15,
-    pricePreference: 0.5,
-    qualityPreference: 0.5,
+    population: 150000000,
+    baseIncome: 10000,
+    incomeVariance: 0.26,
+    savingsRate: 0.16,
+    pricePreference: 0.58,
+    qualityPreference: 0.42,
     budgetShares: new Map([
-      ['raw', 0.02],
-      ['basic', 0.10],
+      ['raw', 0.03],
+      ['basic', 0.16],
       ['intermediate', 0.10],
-      ['final', 0.78],
+      ['final', 0.71],
     ]),
   },
   {
     id: 5,
     name: '中高收入层',
-    population: 30000000,
-    baseIncome: 20000,
-    incomeVariance: 0.32,
+    population: 90000000,
+    baseIncome: 16000,
+    incomeVariance: 0.30,
     savingsRate: 0.22,
-    pricePreference: 0.35,
-    qualityPreference: 0.65,
+    pricePreference: 0.42,
+    qualityPreference: 0.58,
     budgetShares: new Map([
-      ['raw', 0.01],
-      ['basic', 0.06],
-      ['intermediate', 0.11],
-      ['final', 0.82],
+      ['raw', 0.02],
+      ['basic', 0.11],
+      ['intermediate', 0.13],
+      ['final', 0.74],
     ]),
   },
   {
     id: 6,
     name: '高收入层',
-    population: 15000000,
-    baseIncome: 40000,
-    incomeVariance: 0.38,
+    population: 50000000,
+    baseIncome: 30000,
+    incomeVariance: 0.36,
     savingsRate: 0.30,
-    pricePreference: 0.2,
-    qualityPreference: 0.8,
+    pricePreference: 0.25,
+    qualityPreference: 0.75,
     budgetShares: new Map([
-      ['raw', 0.01],
-      ['basic', 0.04],
-      ['intermediate', 0.08],
-      ['final', 0.87],
+      ['raw', 0.015],
+      ['basic', 0.08],
+      ['intermediate', 0.16],
+      ['final', 0.745],
     ]),
   },
   {
     id: 7,
     name: '富裕阶层',
-    population: 5000000,
-    baseIncome: 100000,
+    population: 30000000,
+    baseIncome: 80000,
     incomeVariance: 0.45,
-    savingsRate: 0.40,
-    pricePreference: 0.05,
-    qualityPreference: 0.95,
+    savingsRate: 0.42,
+    pricePreference: 0.08,
+    qualityPreference: 0.92,
     budgetShares: new Map([
-      ['raw', 0.005],
-      ['basic', 0.02],
-      ['intermediate', 0.05],
-      ['final', 0.925],
+      ['raw', 0.01],
+      ['basic', 0.05],
+      ['intermediate', 0.18],
+      ['final', 0.76],
     ]),
   },
 ];
@@ -305,127 +305,67 @@ export function calculateTierDemand(
  * 4. 根据商品类别设置合理的默认值
  */
 function getPerCapitaConsumption(goods: GoodsDefinition, tier: ConsumerTier): number {
-  // 基础消费率表（单位/月/人）- 全面提高约2倍
-  // 注意：这些是标准化的消费单位，与商品定义中的单位对应
+  // 基础消费率表（单位/月/人）
+  // 仅保留与当前 goods.ts 真实 key 对应的居民消费品，按中国 2019 口径做缩略。
   const baseRates: Record<string, number> = {
-    // === 原材料（主要是企业间交易，个人消费极低）===
-    'grain': 1.0,            // 粮食：每人每月1.0单位（从0.5提高）
-    'ore': 0.002,            // 矿石：几乎不直接消费
-    'timber': 0.02,          // 木材：少量DIY需求
-    'coal': 0.04,            // 煤炭：取暖需求
-    'cotton': 0.01,          // 棉花：不直接消费
-    'oil': 0.2,              // 原油：不直接消费
-    'rubber': 0.002,         // 橡胶：不直接消费
-    
-    // === 基础加工品 ===
-    'steel': 0.02,           // 钢材：建筑装修需求
-    'plastic': 0.1,          // 塑料：日用品需求
-    'textiles': 0.2,         // 纺织品：家居需求
-    'glass': 0.04,           // 玻璃：家装需求
-    'chemicals': 0.02,       // 化学品：清洁用品等
-    'paper': 1.0,            // 纸张：办公和生活需求
-    'cement': 0.02,          // 水泥：装修需求
-    
-    // === 中间产品 ===
-    'components': 0.02,      // 电子元件：DIY需求
-    'machinery': 0.002,      // 机械：几乎不直接消费
-    'semiconductors': 0.002, // 半导体：不直接消费
-    'batteries': 0.1,        // 电池：各类设备需求
-    
-    // === 最终消费品（提高约2倍）===
-    'food': 6.0,             // 食品：每人每月6份（从3提高）
-    'beverages': 10.0,       // 饮料：每人每月10瓶（从5提高）
-    'clothing': 0.6,         // 服装：每人每月0.6件（从0.3提高）
-    'processed-food': 4.0,   // 加工食品：每人每月4份（从2提高）
-    'fuel': 20,              // 燃油：每人每月20升（从10提高）
-    'electricity': 100,      // 电力：每人每月100度（从50提高）
-    
-    // === 耐用消费品（提高约2倍）===
-    'smartphone': 0.04,      // 手机：每人每月0.04台（从0.02提高）
-    'premium-phone': 0.016,  // 高端手机：从0.008提高
-    'budget-phone': 0.06,    // 平价手机：从0.03提高
-    'computer': 0.02,        // 电脑：从0.01提高
-    'appliances': 0.01,      // 家电：从0.005提高
-    'furniture': 0.006,      // 家具：从0.003提高
-    'car': 0.002,            // 汽车：从0.001提高
-    'electric-car': 0.0016,  // 电动车：从0.0008提高
-    
-    // === 奢侈品（提高约2倍）===
-    'luxury-goods': 0.001,   // 奢侈品：从0.0005提高
-    'jewelry': 0.0004,       // 珠宝：从0.0002提高
-    
-    // === 新兴产品（提高约2倍）===
-    'drone': 0.0006,         // 无人机：从0.0003提高
-    'ev-battery': 0.0004,    // 电动车电池：从0.0002提高
-    'solar-panel': 0.0002,   // 太阳能板：从0.0001提高
-    
-    // === 新增日化和其他消费品 ===
-    'cosmetics': 0.3,        // 化妆品
-    'skincare': 0.4,         // 护肤品
-    'detergent': 0.5,        // 洗涤用品
-    'shampoo': 0.3,          // 洗发护发
-    'toothpaste': 0.2,       // 口腔护理
-    'snacks': 1.0,           // 零食
-    'organic-food': 0.5,     // 有机食品
-    'pet-food': 0.3,         // 宠物食品
-    'meat': 2.0,             // 肉类
-    'dairy': 1.5,            // 乳制品
-    'frozen-food': 0.8,      // 冷冻食品
-    'canned-food': 0.6,      // 罐头食品
-    'vegetables': 3.0,       // 蔬菜
-    'fruits': 2.5,           // 水果
-    'fish': 0.8,             // 水产
-    'beer': 2.0,             // 啤酒
-    'wine': 0.3,             // 葡萄酒
-    'spirits': 0.15,         // 烈酒
-    'tea-product': 0.4,      // 茶饮
-    'coffee-product': 0.5,   // 咖啡
-    'candy': 0.8,            // 糖果
-    'cigarettes': 0.5,       // 烟草
-    'books': 0.2,            // 图书
-    'magazines': 0.3,        // 杂志
-    'toy': 0.1,              // 玩具
-    'video-game': 0.05,      // 电子游戏
-    'sports-equipment': 0.02,// 运动器材
-    'shoes': 0.15,           // 鞋类
-    'wool-clothing': 0.08,   // 毛织品
-    'leather-goods': 0.03,   // 皮具
-    'sanitary-ware': 0.005,  // 卫浴设备
-    'tableware': 0.02,       // 餐具
-    'decoration': 0.01,      // 装饰材料
-    'bicycle': 0.005,        // 自行车
-    'motorcycle': 0.001,     // 摩托车
-    'electric-scooter': 0.002,// 电动滑板车
-    'router': 0.01,          // 路由器
-    'tablet': 0.015,         // 平板电脑
-    'smartwatch': 0.02,      // 智能手表
-    'vr-device': 0.005,      // VR设备
-    'smart-robot': 0.001,    // 智能机器人
-    'grape': 1.0,            // 葡萄
-    'sugar': 0.5,            // 糖
-    'edible-oil': 0.3,       // 食用油
-    'flour': 0.8,            // 面粉
+    // 农产品与基础食品
+    grain: 0.9,
+    seafood: 0.18,
+    meat: 0.7,
+    dairy: 0.6,
+    processed_food: 1.8,
+    frozen_food: 0.2,
+    canned_food: 0.12,
+    beverages: 4.5,
+    snacks: 0.45,
+    food: 3.2,
+    organic_food: 0.06,
+    pet_food: 0.04,
+
+    // 能源与居住消费
+    fuel: 5.0,
+    electricity: 65,
+
+    // 日常耐用品
+    smartphone: 0.006,
+    computer: 0.0015,
+    appliances: 0.0025,
+    furniture: 0.0015,
+    clothing: 0.12,
+    drone: 0.00004,
+
+    // 交通工具
+    car: 0.0012,
+    electric_car: 0.00002,
+    luxury_car: 0.000015,
+
+    // 医疗与可选消费
+    generic_drug: 0.08,
+    patent_drug: 0.01,
+    otc_drug: 0.06,
+    jewelry: 0.00008,
+    luxury_watch: 0.00003,
+    designer_clothing: 0.0012,
   };
   
-  // 获取基础消费率，根据商品类别设置合理默认值（提高默认值）
+  // 获取基础消费率，根据商品类别设置保守默认值。
   let baseRate = baseRates[goods.key];
   if (baseRate === undefined) {
-    // 根据商品类别设置默认值（全部提高约2倍）
     switch (goods.category) {
       case 'raw':
-        baseRate = 0.02;    // 原材料默认极低（从0.01提高）
+        baseRate = 0.01;
         break;
       case 'basic':
-        baseRate = 0.1;     // 基础品默认低（从0.05提高）
+        baseRate = 0.05;
         break;
       case 'intermediate':
-        baseRate = 0.04;    // 中间品默认低（从0.02提高）
+        baseRate = 0.02;
         break;
       case 'final':
-        baseRate = goods.isConsumerGood ? 1.0 : 0.04;  // 消费品默认中等（从0.5/0.02提高）
+        baseRate = goods.isConsumerGood ? 0.3 : 0.02;
         break;
       default:
-        baseRate = 0.02;
+        baseRate = 0.01;
     }
   }
   

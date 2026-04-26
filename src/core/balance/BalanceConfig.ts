@@ -6,6 +6,43 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
+import {
+  AI_BATCH_SIZE,
+  AI_BUY_ORDER_EXPIRY,
+  AI_DECISION_INTERVAL,
+  AI_SELL_ORDER_EXPIRY,
+  BASE_INTEREST_RATE,
+  BUILDING_MATERIAL_ORDER_EXPIRY,
+  BUSINESS_CYCLE_AMPLITUDE,
+  CONSTRUCTION_CANCEL_REFUND_RATE,
+  DEMOLITION_CASH_RECOVERY_RATE,
+  DEMOLITION_LEVEL_DEPRECIATION,
+  DEMOLITION_MATERIAL_RECOVERY_RATE,
+  DEMOLITION_YEAR_DEPRECIATION,
+  INITIAL_GDP,
+  INITIAL_POPULATION,
+  MAX_CONCURRENT_CONSTRUCTIONS,
+  MAX_CONSTRUCTION_QUEUE,
+  MAX_PRICE_RATIO,
+  MAX_TICK_PRICE_CHANGE,
+  MEAN_REVERSION_RATE,
+  MIN_PRICE_RATIO,
+  NO_TRADE_REVERSION_MULTIPLIER,
+  PLAYER_CREDIT_LIMIT,
+  PLAYER_CREDIT_RATE,
+  PLAYER_INITIAL_CASH,
+  PLAYER_INITIAL_REPUTATION,
+  RETAIL_MAX_CUSTOMER_RATE,
+  RETAIL_MAX_TURNOVER_DAYS,
+  RETAIL_PRICE_ADJUST_INTERVAL,
+  RETAIL_RESTOCK_THRESHOLD,
+  RETAIL_TARGET_STOCK_LEVEL,
+  SUPPLY_DEMAND_SMOOTHING,
+  TARGET_INFLATION,
+  URGENT_ORDER_EXPIRY,
+  VOLATILITY_DAMPENING,
+} from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /** 价格系统配置 */
@@ -82,55 +119,55 @@ export type PresetName = 'default' | 'stable' | 'volatile' | 'easy' | 'hard';
 // ==================== 默认配置 ====================
 
 const DEFAULT_PRICE_CONFIG: PriceConfig = {
-  maxTickPriceChange: 0.10,
-  meanReversionRate: 0.002,
-  supplyDemandSmoothing: 0.3,
-  maxPriceRatio: 5.0,
-  minPriceRatio: 0.5,  // 【产业链平衡修复】从0.2提高到0.5，防止原材料价格崩溃
-  volatilityDampening: 0.1,
-  noTradeReversionMultiplier: 5.0,
+  maxTickPriceChange: MAX_TICK_PRICE_CHANGE,
+  meanReversionRate: MEAN_REVERSION_RATE,
+  supplyDemandSmoothing: SUPPLY_DEMAND_SMOOTHING,
+  maxPriceRatio: MAX_PRICE_RATIO,
+  minPriceRatio: MIN_PRICE_RATIO,
+  volatilityDampening: VOLATILITY_DAMPENING,
+  noTradeReversionMultiplier: NO_TRADE_REVERSION_MULTIPLIER,
 };
 
 const DEFAULT_AI_CONFIG: AIConfig = {
-  decisionInterval: 6,
-  batchSize: 10,
-  buyOrderExpiry: 200,
-  sellOrderExpiry: 300,
-  urgentOrderExpiry: 50,
-  buildingMaterialOrderExpiry: 600,
+  decisionInterval: AI_DECISION_INTERVAL,
+  batchSize: AI_BATCH_SIZE,
+  buyOrderExpiry: AI_BUY_ORDER_EXPIRY,
+  sellOrderExpiry: AI_SELL_ORDER_EXPIRY,
+  urgentOrderExpiry: URGENT_ORDER_EXPIRY,
+  buildingMaterialOrderExpiry: BUILDING_MATERIAL_ORDER_EXPIRY,
 };
 
 const DEFAULT_PLAYER_CONFIG: PlayerConfig = {
-  initialCash: 5_000_000,
-  creditLimit: 500_000,
-  creditRate: 0.08,
-  initialReputation: 50,
+  initialCash: PLAYER_INITIAL_CASH,
+  creditLimit: PLAYER_CREDIT_LIMIT,
+  creditRate: PLAYER_CREDIT_RATE,
+  initialReputation: PLAYER_INITIAL_REPUTATION,
 };
 
 const DEFAULT_ECONOMY_CONFIG: EconomyConfig = {
-  initialGDP: 10_000_000_000,
-  initialPopulation: 1_000_000,
-  targetInflation: 0.02,
-  baseInterestRate: 0.03,
-  businessCycleAmplitude: 0.1,
+  initialGDP: INITIAL_GDP,
+  initialPopulation: INITIAL_POPULATION,
+  targetInflation: TARGET_INFLATION,
+  baseInterestRate: BASE_INTEREST_RATE,
+  businessCycleAmplitude: BUSINESS_CYCLE_AMPLITUDE,
 };
 
 const DEFAULT_RETAIL_CONFIG: RetailConfig = {
-  restockThreshold: 0.3,
-  targetStockLevel: 0.9,
-  maxCustomerRate: 0.25,
-  priceAdjustInterval: 24,
-  maxTurnoverDays: 30,
+  restockThreshold: RETAIL_RESTOCK_THRESHOLD,
+  targetStockLevel: RETAIL_TARGET_STOCK_LEVEL,
+  maxCustomerRate: RETAIL_MAX_CUSTOMER_RATE,
+  priceAdjustInterval: RETAIL_PRICE_ADJUST_INTERVAL,
+  maxTurnoverDays: RETAIL_MAX_TURNOVER_DAYS,
 };
 
 const DEFAULT_CONSTRUCTION_CONFIG: ConstructionConfig = {
-  maxQueue: 10,
-  maxConcurrent: 3,
-  cancelRefundRate: 0.8,
-  levelDepreciation: 0.05,
-  yearDepreciation: 0.02,
-  materialRecoveryRate: 0.5,
-  cashRecoveryRate: 0.3,
+  maxQueue: MAX_CONSTRUCTION_QUEUE,
+  maxConcurrent: MAX_CONCURRENT_CONSTRUCTIONS,
+  cancelRefundRate: CONSTRUCTION_CANCEL_REFUND_RATE,
+  levelDepreciation: DEMOLITION_LEVEL_DEPRECIATION,
+  yearDepreciation: DEMOLITION_YEAR_DEPRECIATION,
+  materialRecoveryRate: DEMOLITION_MATERIAL_RECOVERY_RATE,
+  cashRecoveryRate: DEMOLITION_CASH_RECOVERY_RATE,
 };
 
 const DEFAULT_CONFIG: BalanceConfiguration = {
@@ -473,14 +510,14 @@ export const AI_CONFIG_META: ConfigFieldMeta[] = [
 
 export const PLAYER_CONFIG_META: ConfigFieldMeta[] = [
   { key: 'initialCash', label: '初始现金', description: '玩家开始游戏时的现金', min: 1_000_000, max: 50_000_000, step: 500_000, format: 'currency' },
-  { key: 'creditLimit', label: '信用额度', description: '玩家可获得的最大贷款额度', min: 100_000, max: 10_000_000, step: 100_000, format: 'currency' },
+  { key: 'creditLimit', label: '信用额度', description: '玩家可获得的最大贷款额度', min: 100_000, max: 50_000_000, step: 100_000, format: 'currency' },
   { key: 'creditRate', label: '贷款利率', description: '玩家贷款的年化利率', min: 0.01, max: 0.2, step: 0.01, format: 'percent' },
   { key: 'initialReputation', label: '初始声望', description: '玩家开始游戏时的声望值', min: 0, max: 100, step: 5, format: 'number' },
 ];
 
 export const ECONOMY_CONFIG_META: ConfigFieldMeta[] = [
-  { key: 'initialGDP', label: '初始GDP', description: '游戏开始时的经济规模', min: 1_000_000_000, max: 100_000_000_000, step: 1_000_000_000, format: 'currency' },
-  { key: 'initialPopulation', label: '初始人口', description: '游戏开始时的人口数量', min: 100_000, max: 10_000_000, step: 100_000, format: 'number' },
+  { key: 'initialGDP', label: '初始GDP', description: '游戏开始时的经济规模', min: 1_000_000_000, max: 150_000_000_000_000, step: 100_000_000_000, format: 'currency' },
+  { key: 'initialPopulation', label: '初始人口', description: '游戏开始时的人口数量', min: 100_000, max: 2_000_000_000, step: 1_000_000, format: 'number' },
   { key: 'targetInflation', label: '目标通胀率', description: '央行目标通胀率', min: 0, max: 0.1, step: 0.005, format: 'percent' },
   { key: 'baseInterestRate', label: '基准利率', description: '央行基准利率', min: 0, max: 0.15, step: 0.005, format: 'percent' },
   { key: 'businessCycleAmplitude', label: '经济周期振幅', description: '经济周期波动的幅度', min: 0.05, max: 0.3, step: 0.01, format: 'percent' },
