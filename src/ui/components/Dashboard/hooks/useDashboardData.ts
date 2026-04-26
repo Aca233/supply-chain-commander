@@ -6,9 +6,9 @@
 import { useMemo, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getActiveOrderIndices } from '@/core/market/OrderBook';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
-import { tickToDate } from '@/core/world/GameWorld';
+import { formatMonthDay } from '@/core/world/GameWorld';
 import { getStock } from '@/core/finance/StockMarket';
 import { ControlLevel } from '@/core/finance/CompanyProfile';
 
@@ -261,7 +261,7 @@ export function useDashboardData(): DashboardData {
     };
 
     // 每隔一定tick更新参考点
-    if (!prevDataRef.current || tick - prevDataRef.current.tick >= 24) {
+    if (!prevDataRef.current || tick - prevDataRef.current.tick >= TICKS_PER_DAY) {
       const changes: KPIChanges = {
         netWorth: prevDataRef.current ? (current.netWorth - prevDataRef.current.netWorth) / Math.max(Math.abs(prevDataRef.current.netWorth), 1) : 0,
         cash: prevDataRef.current ? (current.cash - prevDataRef.current.cash) / Math.max(Math.abs(prevDataRef.current.cash), 1) : 0,
@@ -283,9 +283,8 @@ export function useDashboardData(): DashboardData {
   // ==================== 财务趋势 ====================
   const financialTrends = useMemo((): FinancialTrendPoint[] => {
     return financialHistory.slice(-100).map(point => {
-      const date = tickToDate(point.tick);
       return {
-        time: `${date.month}/${date.day} ${date.hour}:00`,
+        time: formatMonthDay(point.tick),
         tick: point.tick,
         cash: point.cash,
         revenue: point.revenue,
@@ -325,7 +324,7 @@ export function useDashboardData(): DashboardData {
         for (const output of b.status.outputLevels) {
           const current = outputByGoods.get(output.goodsId) || 0;
           // amount 是累计产出，转换为估算的每tick产出率
-          outputByGoods.set(output.goodsId, current + output.amount / 24);
+          outputByGoods.set(output.goodsId, current + output.amount / TICKS_PER_DAY);
         }
       }
 
@@ -607,7 +606,6 @@ export function useDashboardData(): DashboardData {
       if (trade.sellCompanyId === 0 || trade.buyCompanyId === 0) {
         const isSell = trade.sellCompanyId === 0;
         const goodsName = world.goods.names[trade.goodsId] || `商品#${trade.goodsId}`;
-        const date = tickToDate(trade.tick);
         
         activities.push({
           id: activityId++,
@@ -616,7 +614,7 @@ export function useDashboardData(): DashboardData {
           description: `${isSell ? '卖出' : '买入'} ${goodsName} x${trade.quantity.toFixed(0)} @ ¥${trade.price.toFixed(2)}`,
           value: trade.value,
           tick: trade.tick,
-          time: `${date.hour}:00`,
+          time: formatMonthDay(trade.tick),
         });
       }
     }

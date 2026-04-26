@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { SaveMetadata, saveManager, GameSettings } from '@/core/save/SaveManager';
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/ui/design-system';
+import { formatRelativeTime } from '@/ui/utils/format';
 
 // ==================== 类型定义 ====================
 
@@ -37,12 +38,7 @@ function formatDate(timestamp: number): string {
 }
 
 function formatPlayTime(ticks: number): string {
-  const hours = Math.floor(ticks / (24 * 60));
-  const days = Math.floor(hours / 24);
-  if (days > 0) {
-    return `${days}天 ${hours % 24}小时`;
-  }
-  return `${hours}小时`;
+  return formatRelativeTime(ticks);
 }
 
 function formatMoney(value: number): string {

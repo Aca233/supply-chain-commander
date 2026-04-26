@@ -31,6 +31,7 @@ import {
   DialogBody,
   DialogFooter,
 } from '@/ui/design-system';
+import { formatRelativeTime } from '@/ui/utils/format';
 
 interface TechTreePanelProps {
   companyId?: number;
@@ -69,10 +70,7 @@ export const TechTreePanel: React.FC<TechTreePanelProps> = ({ companyId = 0 }) =
   };
 
   const formatTime = (ticks: number) => {
-    if (ticks >= 24) {
-      return `${(ticks / 24).toFixed(1)}天`;
-    }
-    return `${ticks}小时`;
+    return formatRelativeTime(ticks);
   };
 
   const formatMoney = (value: number) => {
@@ -329,10 +327,7 @@ const TechResearchDialog: React.FC<TechResearchDialogProps> = ({
   };
 
   const formatTime = (ticks: number) => {
-    if (ticks >= 24) {
-      return `${(ticks / 24).toFixed(1)}天`;
-    }
-    return `${ticks}小时`;
+    return formatRelativeTime(ticks);
   };
 
   return (

@@ -9,8 +9,9 @@ import { useGameStore } from '@/stores/gameStore';
 import { PriceChart } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { FinancialReportChart, FinancialDataPoint } from '@/ui/components/Charts/FinancialReportChart';
+import { TICKS_PER_DAY } from '@/core/constants';
 import { LoanType } from '@/core/finance/BankingSystem';
-import { formatGameDate, tickToDate } from '@/core/world/GameWorld';
+import { formatGameDate, formatMonthDay, formatMonthDayText } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { shouldUseCompactFinanceLayout } from './responsivePageLayout';
 
@@ -146,14 +147,12 @@ export const Finance: React.FC = () => {
     const recentHistory = financialHistory.slice(-100);
 
     if (recentHistory.length === 0) {
-      const now = tickToDate(tick);
-      return [{ time: `${now.month}/${now.day} ${now.hour}:00`, price: playerCash }];
+      return [{ time: formatMonthDay(tick), price: playerCash }];
     }
 
     return recentHistory.map(point => {
-      const t = tickToDate(point.tick);
       return {
-        time: `${t.month}/${t.day} ${t.hour}:00`,
+        time: formatMonthDay(point.tick),
         price: point.cash,
       };
     });
@@ -175,7 +174,7 @@ export const Finance: React.FC = () => {
     const dayMap = new Map<number, { revenue: number; costs: number; profit: number }>();
     
     for (const point of financialHistory) {
-      const dayIndex = Math.floor(point.tick / 24); // 24 ticks = 1 day
+      const dayIndex = Math.floor(point.tick / TICKS_PER_DAY);
       const existing = dayMap.get(dayIndex) || { revenue: 0, costs: 0, profit: 0 };
       dayMap.set(dayIndex, {
         revenue: existing.revenue + point.revenue,
@@ -485,7 +484,7 @@ export const Finance: React.FC = () => {
               <tr>
                 <th className="text-left p-3 text-[var(--text-muted)] text-sm font-medium">项目</th>
                 <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">当日</th>
-                <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">累计(近100小时)</th>
+                <th className="text-right p-3 text-[var(--text-muted)] text-sm font-medium">累计(近100条)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-muted)]">
@@ -544,8 +543,7 @@ export const Finance: React.FC = () => {
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {recentTrades.slice(0, 20).map((trade, idx) => {
                 const goods = world?.goods.names[trade.goodsId] || `商品#${trade.goodsId}`;
-                const tradeTime = tickToDate(trade.tick);
-                const timeStr = `${tradeTime.month}月${tradeTime.day}日 ${tradeTime.hour}:00`;
+                const timeStr = formatMonthDayText(trade.tick);
                 return (
                   <div key={idx} className="flex items-center justify-between py-2 border-b border-[var(--border-muted)] last:border-0">
                     <div className="flex items-center gap-3">

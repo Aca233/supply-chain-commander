@@ -29,6 +29,7 @@ import {
   DialogBody,
   DialogFooter,
 } from '@/ui/design-system';
+import { formatRelativeTime } from '@/ui/utils/format';
 
 interface ContractListPanelProps {
   companyId?: number;
@@ -68,11 +69,7 @@ export const ContractListPanel: React.FC<ContractListPanelProps> = ({ companyId 
   };
 
   const formatTime = (ticks: number) => {
-    const hours = ticks;
-    if (hours >= 24) {
-      return `${(hours / 24).toFixed(1)}天`;
-    }
-    return `${hours}小时`;
+    return formatRelativeTime(ticks);
   };
 
   const getStatusConfig = (status: ContractStatus) => {

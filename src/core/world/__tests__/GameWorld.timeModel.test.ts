@@ -7,7 +7,7 @@ import {
   TICKS_PER_YEAR,
   legacyHourTicksToDayTicks,
 } from '@/core/constants';
-import { formatGameDate, tickToDate } from '../GameWorld';
+import { formatGameDate, formatMonthDay, formatMonthDayText, tickToDate } from '../GameWorld';
 
 describe('GameWorld day-based time model', () => {
   it('defines one tick as one day while preserving the legacy hour conversion helper', () => {
@@ -22,5 +22,11 @@ describe('GameWorld day-based time model', () => {
     expect(tickToDate(0)).toEqual({ year: 1, month: 1, day: 1 });
     expect(tickToDate(30)).toEqual({ year: 1, month: 2, day: 1 });
     expect(formatGameDate(359)).toBe('第1年 12月30日');
+  });
+
+  it('provides short day-based labels for charts and lists', () => {
+    expect(formatMonthDay(0)).toBe('1/1');
+    expect(formatMonthDay(60)).toBe('3/1');
+    expect(formatMonthDayText(359)).toBe('12月30日');
   });
 });

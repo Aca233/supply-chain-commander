@@ -647,6 +647,22 @@ export function tickToDate(tick: number): { year: number; month: number; day: nu
 }
 
 /**
+ * 格式化月/日短标签
+ */
+export function formatMonthDay(tick: number): string {
+  const date = tickToDate(tick);
+  return `${date.month}/${date.day}`;
+}
+
+/**
+ * 格式化月/日中文标签
+ */
+export function formatMonthDayText(tick: number): string {
+  const date = tickToDate(tick);
+  return `${date.month}月${date.day}日`;
+}
+
+/**
  * 格式化游戏日期
  */
 export function formatGameDate(tick: number): string {

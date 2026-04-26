@@ -5,6 +5,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { TICKS_PER_DAY } from '@/core/constants';
 import { useGameStore } from '@/stores/gameStore';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/ui/design-system/components/Dialog';
 import { Button } from '@/ui/design-system/components/Button';
@@ -485,7 +486,7 @@ export const AchievementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return 0; // 需要追踪系统
       case 'speedRunMillion':
         // 100天内达到百万资产
-        const gameDays = Math.floor(tick / 24);
+        const gameDays = Math.floor(tick / TICKS_PER_DAY);
         if (gameDays <= 100 && (playerCash + playerAssets) >= 1000000) {
           return 1;
         }
@@ -493,7 +494,7 @@ export const AchievementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       case 'perfectTrade':
         return 0; // 需要追踪系统
       case 'gameDays':
-        return Math.floor(tick / 24);
+        return Math.floor(tick / TICKS_PER_DAY);
       case 'tutorialComplete':
         const tutorialProgress = localStorage.getItem('scc_tutorial');
         if (tutorialProgress) {

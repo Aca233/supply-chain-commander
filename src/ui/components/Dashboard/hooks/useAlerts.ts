@@ -7,7 +7,8 @@ import { useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { ALL_GOODS } from '@/data/goods';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
+import { formatRelativeTime } from '@/ui/utils/format';
 
 export type AlertLevel = 'critical' | 'warning' | 'info';
 export type AlertCategory = 'production' | 'market' | 'finance' | 'inventory' | 'investment';
@@ -70,13 +71,13 @@ export function useAlerts(): UseAlertsResult {
     const loans = getPlayerLoans();
     for (const loan of loans) {
       const ticksRemaining = loan.maturityTick - tick;
-      if (ticksRemaining > 0 && ticksRemaining <= 24) {
+      if (ticksRemaining > 0 && ticksRemaining <= TICKS_PER_DAY) {
         result.push({
           id: `alert-${alertId++}`,
           level: 'warning',
           category: 'finance',
           title: '贷款即将到期',
-          description: `贷款 ¥${loan.remainingPrincipal.toFixed(0)} 将在 ${ticksRemaining} tick 后到期`,
+          description: `贷款 ¥${loan.remainingPrincipal.toFixed(0)} 将在 ${formatRelativeTime(ticksRemaining)}后到期`,
           actionLabel: '查看贷款',
           actionView: 'finance',
           timestamp: tick,

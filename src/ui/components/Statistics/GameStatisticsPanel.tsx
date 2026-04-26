@@ -4,10 +4,12 @@
  */
 
 import React, { useMemo } from 'react';
+import { TICKS_PER_DAY, TICKS_PER_YEAR } from '@/core/constants';
 import { useGameStore } from '@/stores/gameStore';
 import { Card, CardHeader, CardTitle, CardContent, Badge, ProgressBar } from '@/ui/design-system';
 import { GOODS_BY_ID } from '@/data/goods';
 import { BUILDINGS_BY_ID } from '@/data/buildings';
+import { formatRelativeTime } from '@/ui/utils/format';
 
 // ==================== 类型定义 ====================
 
@@ -51,18 +53,7 @@ function formatMoney(value: number): string {
 }
 
 function formatTime(ticks: number): string {
-  const hours = ticks;
-  const days = Math.floor(hours / 24);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(months / 12);
-  
-  if (years > 0) {
-    return `${years}年 ${months % 12}月 ${days % 30}天`;
-  } else if (months > 0) {
-    return `${months}月 ${days % 30}天`;
-  } else {
-    return `${days}天 ${hours % 24}小时`;
-  }
+  return formatRelativeTime(ticks);
 }
 
 // ==================== 统计项组件 ====================
@@ -218,9 +209,9 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
         title: '坚持不懈',
         description: '游戏时间达到100天',
         icon: '📅',
-        progress: Math.floor(tick / 24),
+        progress: Math.floor(tick / TICKS_PER_DAY),
         target: 100,
-        achieved: tick >= 2400,
+        achieved: tick >= 100 * TICKS_PER_DAY,
       },
       {
         id: 'ten_million',
@@ -245,9 +236,9 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
         title: '周年纪念',
         description: '游戏时间达到1年',
         icon: '🎂',
-        progress: Math.floor(tick / 24),
-        target: 365,
-        achieved: tick >= 8760,
+        progress: Math.floor(tick / TICKS_PER_DAY),
+        target: TICKS_PER_YEAR,
+        achieved: tick >= TICKS_PER_YEAR,
       },
     ];
   }, [playerFinancialSnapshot.netWorth, world, tick, playerBuildings]);
@@ -273,7 +264,7 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
           <CardTitle className="flex items-center gap-2">
             📊 游戏统计
             <Badge variant="primary" size="sm">
-              Day {Math.floor(tick / 24) + 1}
+              Day {Math.floor(tick / TICKS_PER_DAY) + 1}
             </Badge>
           </CardTitle>
         </CardHeader>

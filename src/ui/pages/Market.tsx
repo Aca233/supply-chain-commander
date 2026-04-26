@@ -9,12 +9,12 @@ import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS, GoodsDefinition, GOODS_BY_CATEGORY, GOODS_BY_INDUSTRY } from '@/data/goods';
 import { ALL_BUILDINGS } from '@/data/buildings';
 import { getProductionsProducingGoods, getProductionsUsingGoods } from '@/ui/utils/supplyChainUtils';
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { PriceChart, PriceDataPoint } from '@/ui/components/Charts/PriceChart';
 import { MarketShareChart } from '@/ui/components/Charts/MarketShareChart';
 import { SupplyDemandChart, SupplyDemandData } from '@/ui/components/Charts/SupplyDemandChart';
 import { CandlestickChart, OHLCData } from '@/ui/components/Charts/CandlestickChart';
-import { tickToDate, GameWorld } from '@/core/world/GameWorld';
+import { formatMonthDay, tickToDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
@@ -116,10 +116,8 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
     if (tickDataMap.size === 0) {
       const basePrice = selectedGoods?.basePrice || world.goods.prices[selectedGoodsId];
       if (basePrice > 0) {
-        const date = tickToDate(tick);
-        const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
         return [{
-          time: timeStr,
+          time: formatMonthDay(tick),
           price: basePrice,
           open: basePrice,
           high: basePrice,
@@ -155,11 +153,8 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       }
       const avgPrice = totalQty > 0 ? totalValue / totalQty : close;
       
-      const date = tickToDate(tickTime);
-      const timeStr = `${date.month}/${date.day} ${date.hour}:00`;
-      
       data.push({
-        time: timeStr,
+        time: formatMonthDay(tickTime),
         price: avgPrice,
         open,
         high,
@@ -670,7 +665,7 @@ export const Market: React.FC = () => {
     const t = world.trades;
     const maxTrades = t.maxTrades;
     
-    // 按天聚合交易数据 (24 tick = 1 day)
+    // 按天聚合交易数据
     const dayDataMap = new Map<number, {
       open: number;
       high: number;
@@ -691,7 +686,7 @@ export const Market: React.FC = () => {
         const tradeQty = t.quantities[tradeIdx];
         
         if (tradePrice > 0 && tradeQty > 0) {
-          const dayIndex = Math.floor(tradeTick / 24);
+          const dayIndex = Math.floor(tradeTick / TICKS_PER_DAY);
           
           let data = dayDataMap.get(dayIndex);
           if (!data) {
@@ -731,7 +726,7 @@ export const Market: React.FC = () => {
     
     return recentDays.map(dayIndex => {
       const data = dayDataMap.get(dayIndex)!;
-      const date = tickToDate(dayIndex * 24);
+      const date = tickToDate(dayIndex * TICKS_PER_DAY);
       return {
         time: `${date.year}/${date.month}/${date.day}`,
         open: data.open,
