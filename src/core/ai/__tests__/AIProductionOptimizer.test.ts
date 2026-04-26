@@ -8,7 +8,11 @@ import { BuildingId } from '@/data/buildings';
 import { ALL_GOODS, GoodsId } from '@/data/goods';
 
 import { AI_PERSONALITIES } from '../AIPersonality';
-import { clearOptimizationCache, runProductionOptimization } from '../AIProductionOptimizer';
+import {
+  analyzeMarketCondition,
+  clearOptimizationCache,
+  runProductionOptimization,
+} from '../AIProductionOptimizer';
 
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -79,5 +83,18 @@ describe('AIProductionOptimizer output mode switching', () => {
     runProductionOptimization(world, 1, AI_PERSONALITIES.pioneer);
 
     expect(world.buildings.outputModeIds[buildingId]).toBe(5);
+  });
+
+  it('calculates inventory days with the current ticks-per-day model', () => {
+    const world = createGameWorld();
+    seedStableMarket(world);
+
+    world.goods.supplies[GoodsId.FOOD] = 10;
+    world.goods.demands[GoodsId.FOOD] = 0.5;
+    world.goods.prices[GoodsId.FOOD] = ALL_GOODS.find((goods) => goods.id === GoodsId.FOOD)!.basePrice;
+
+    const market = analyzeMarketCondition(world, GoodsId.FOOD);
+
+    expect(market.inventoryDays).toBeCloseTo(20, 5);
   });
 });

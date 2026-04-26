@@ -10,7 +10,7 @@
 import { GameWorld } from '../world/GameWorld';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
-import { GOODS_COUNT } from '../constants';
+import { GOODS_COUNT, TICKS_PER_DAY } from '../constants';
 import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder, getActiveOrderIndices } from '../market/OrderBook';
 import { getBaseMaterials, getUpgradeMaterials, getBuildingConstructionConfig } from '@/data/buildingMaterials';
 import { getCompanyConstructionQueue } from '../construction/ConstructionTick';
@@ -244,11 +244,11 @@ function executeAutoSell(
     const production = getBuildingProduction(buildingTypeId, outputModeId);
     if (!production) continue;
     
-    // 计算每种输入材料的每日需求（每tick消耗 × 24tick/天）
+    // 计算每种输入材料的每日需求（每tick消耗 × 当前每天tick数）
     const efficiency = b.efficiencies[buildingId] || 1;
     for (const input of production.inputs) {
       const current = productionInputNeeds.get(input.goodsId) || 0;
-      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
+      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * TICKS_PER_DAY);
     }
   }
   
@@ -451,7 +451,7 @@ function executeTakeBuyOrders(
     const efficiency = b.efficiencies[buildingId] || 1;
     for (const input of production.inputs) {
       const current = productionInputNeeds.get(input.goodsId) || 0;
-      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * 24);
+      productionInputNeeds.set(input.goodsId, current + input.amount * efficiency * TICKS_PER_DAY);
     }
   }
   

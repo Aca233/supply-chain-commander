@@ -59,6 +59,32 @@ const INDUSTRY_CONFIG: Record<string, { name: string; color: string }> = {
 
 type ClassifyMode = 'category' | 'industry';
 
+export function buildSupplyDemandData({
+  world,
+  selectedGoodsId,
+  selectedGoods,
+  currentPrice,
+}: {
+  world: Pick<GameWorld, 'goods'>;
+  selectedGoodsId: number;
+  selectedGoods: Pick<GoodsDefinition, 'name' | 'basePrice'>;
+  currentPrice: number;
+}): SupplyDemandData {
+  const supply = world.goods.supplies?.[selectedGoodsId] ?? 0;
+  const demand = world.goods.demands?.[selectedGoodsId] ?? 0;
+
+  return {
+    goodsId: selectedGoodsId.toString(),
+    goodsName: selectedGoods.name,
+    currentPrice,
+    basePrice: selectedGoods.basePrice,
+    supply,
+    demand,
+    equilibriumPrice: currentPrice,
+    priceHistory: [],
+  };
+}
+
 // ==================== 优化的价格图表组件 ====================
 interface MemoizedPriceChartProps {
   world: GameWorld | null;
@@ -604,59 +630,14 @@ export const Market: React.FC = () => {
   // 供需数据计算
   const supplyDemandData = useMemo((): SupplyDemandData | null => {
     if (!world || !selectedGoods) return null;
-    
-    // 计算总供给和总需求（从订单簿）
-    let totalSupply = 0;
-    let totalDemand = 0;
-    
-    for (let i = 0; i < world.orders.maxOrders; i++) {
-      if (world.orders.isActive[i] && world.orders.goodsIds[i] === selectedGoodsId) {
-        const qty = world.orders.remainings[i];
-        
-        if (world.orders.types[i] === 0) {
-          // 买单 - 需求
-          totalDemand += qty;
-        } else {
-          // 卖单 - 供给
-          totalSupply += qty;
-        }
-      }
-    }
-    
-    // 如果没有订单数据，使用模拟数据
-    if (totalSupply === 0 && totalDemand === 0) {
-      totalSupply = 100;
-      totalDemand = 100;
-    }
-    
-    // 计算价格历史（从交易记录）
-    const priceHistory: { price: number; supply: number; demand: number }[] = [];
-    const t = world.trades;
-    const maxTrades = t.maxTrades;
-    const historyLimit = Math.min(t.count, 100);
-    
-    for (let i = 0; i < historyLimit; i++) {
-      const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
-      if (t.goodsIds[tradeIdx] === selectedGoodsId) {
-        priceHistory.push({
-          price: t.prices[tradeIdx],
-          supply: totalSupply * (0.8 + Math.random() * 0.4), // 模拟波动
-          demand: totalDemand * (0.8 + Math.random() * 0.4),
-        });
-      }
-    }
-    
-    return {
-      goodsId: selectedGoodsId.toString(),
-      goodsName: selectedGoods.name,
-      currentPrice: currentPrice,
-      basePrice: selectedGoods.basePrice,
-      supply: totalSupply,
-      demand: totalDemand,
-      equilibriumPrice: currentPrice,
-      priceHistory: priceHistory.slice(0, 20).reverse(),
-    };
-  }, [world, selectedGoodsId, selectedGoods, currentPrice, ordersActiveCount, tradesCount]);
+
+    return buildSupplyDemandData({
+      world,
+      selectedGoodsId,
+      selectedGoods,
+      currentPrice,
+    });
+  }, [world, selectedGoodsId, selectedGoods, currentPrice, tick]);
 
   // K线数据计算
   const candlestickData = useMemo((): OHLCData[] => {

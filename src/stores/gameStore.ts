@@ -136,7 +136,7 @@ import {
   startDemolition as startDemolitionTask,
 } from '@/core/construction/ConstructionTick';
 import { ConstructionStatus, DemolitionStatus } from '@/core/world/GameWorld';
-import { GOODS_COUNT, MAX_SLOTS } from '@/core/constants';
+import { GOODS_COUNT, MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
 import {
   getRetailStoreDetails,
   getPlayerRetailStores,
@@ -513,7 +513,7 @@ let lastUIUpdateTick = 0;
 const UI_UPDATE_INTERVAL = 1; // 每tick更新UI（1 tick=1天，每1秒刷新）
 
 // 财务历史数据更新间隔
-const HISTORY_UPDATE_INTERVAL = 4; // 每4个tick记录一次历史数据
+const HISTORY_UPDATE_INTERVAL = TICKS_PER_DAY; // 按天记录财务历史，和当前时间模型保持一致
 
 // 建筑计数缓存
 let cachedPlayerBuildingCount = 0;

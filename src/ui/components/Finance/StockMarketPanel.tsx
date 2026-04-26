@@ -54,6 +54,14 @@ function formatVolume(value: number): string {
   return value.toFixed(0);
 }
 
+export function buildStockPriceHistory(stock: Pick<StockView, 'previousClose' | 'openPrice' | 'currentPrice'>) {
+  return [
+    { time: '昨收', price: stock.previousClose },
+    { time: '开盘', price: stock.openPrice },
+    { time: '最新', price: stock.currentPrice },
+  ];
+}
+
 // ============ 子组件 ============
 
 /**
@@ -129,20 +137,10 @@ const StockDetailPanel: React.FC<{
   const statusLabel = tradable ? '交易中' : stock.isListed ? '停牌' : '已退市';
   const statusVariant = tradable ? 'success' : stock.isListed ? 'warning' : 'outline';
 
-  // 生成模拟价格历史数据（后续可替换为真实历史数据）
+  // 使用真实摘要字段构建确定性的会话序列，避免随机波动误导 UI
   const priceHistory = useMemo(() => {
-    const data = [];
-    const basePrice = stock.previousClose || stock.currentPrice;
-    for (let i = 23; i >= 0; i--) {
-      const variance = (Math.random() - 0.5) * basePrice * 0.02;
-      const price = i === 0 ? stock.currentPrice : basePrice + variance;
-      data.push({
-        time: `${String(24 - i).padStart(2, '0')}:00`,
-        price: Math.max(0.01, price),
-      });
-    }
-    return data;
-  }, [stock.currentPrice, stock.previousClose]);
+    return buildStockPriceHistory(stock);
+  }, [stock.currentPrice, stock.openPrice, stock.previousClose]);
 
   return (
     <div className="space-y-4">

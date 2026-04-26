@@ -33,4 +33,21 @@ describe('RetailSystem day-based cadence', () => {
     expect(world.retail.dailyCost[retailId]).toBe(0);
     expect(world.retail.totalCustomers[retailId]).toBe(0);
   });
+
+  it('adjusts retail prices on each simulated day tick', () => {
+    const world = initializeWorld();
+    const retailId = 0;
+    const priceIdx = retailId * GOODS_COUNT + GoodsId.FOOD;
+    const startingMarkup = world.retail.markups[priceIdx];
+
+    world.retail.inventoryCapacities[priceIdx] = 100;
+    world.retail.inventories[priceIdx] = 100;
+    world.retail.dailySales[priceIdx] = 0;
+
+    world.tick = 1;
+    const result = updateRetailSystem(world);
+
+    expect(result.priceAdjustments).toBeGreaterThan(0);
+    expect(world.retail.markups[priceIdx]).toBeLessThan(startingMarkup);
+  });
 });

@@ -32,6 +32,8 @@ import {
   AI_BUY_ORDER_EXPIRY,
   AI_SELL_ORDER_EXPIRY,
   BUILDING_MATERIAL_ORDER_EXPIRY,
+  TICKS_PER_DAY,
+  TICKS_PER_MONTH,
 } from '@/core/constants';
 import { getOrderBookView, cancelOrder, hasExistingOrderForCompanyGoods, getActiveOrderIndices } from '@/core/market/OrderBook';
 import { calculateOptimalQuantity, calculateCostStructure } from '@/core/economy/SupplyCurve';
@@ -70,6 +72,12 @@ import {
   evaluatePersonalityGoalGap,
   getBuildingTypeWeight
 } from './AIPersonality';
+import {
+  createMarketSupportGuardState,
+  markMarketSupportTriggered,
+  shouldTriggerMarketSupport,
+  type MarketSupportGuardState,
+} from './MarketSupportGuard';
 
 // ==================== 导入6大AI智能模块 ====================
 
@@ -719,7 +727,7 @@ export function generatePricingDecisions(
     }
     
     // 库存积压时优先降价
-    const inventoryDays = inventory / (demand / 24 || 1);
+    const inventoryDays = inventory / (demand / TICKS_PER_DAY || 1);
     if (inventoryDays > 30) {
       suggestedPrice = Math.min(suggestedPrice, currentPrice * 0.9);
       action = 'clearance_sale';
@@ -781,7 +789,7 @@ function generateTakeSellOrderDecisions(
     for (const input of production.inputs) {
       const currentNeed = materialNeeds.get(input.goodsId) || 0;
       const efficiency = world.buildings.efficiencies[i] || 1;
-      materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * 24);
+      materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * TICKS_PER_DAY);
     }
   }
   
@@ -895,7 +903,7 @@ function generateTakeBuyOrderDecisions(
     
     // 计算库存天数（用于决定卖出积极程度）
     const demand = world.goods.demands[goodsId];
-    const inventoryDays = demand > 0 ? inventory / (demand / 24) : 999;
+    const inventoryDays = demand > 0 ? inventory / (demand / TICKS_PER_DAY) : 999;
     
     // 计算可接受的最低价格（根据库存积压程度）
     let minAcceptablePrice: number;
@@ -1004,7 +1012,7 @@ export function generateTradingDecisions(
     const demand = world.goods.demands[i];
     
     // 计算库存天数
-    const inventoryDays = demand > 0 ? inventory / (demand / 24) : 999;
+    const inventoryDays = demand > 0 ? inventory / (demand / TICKS_PER_DAY) : 999;
     
     // 更宽松的价格接受条件（因为需要提供市场流动性）
     // 1. 正常情况下接受市场价>=基准价50%
@@ -1450,7 +1458,7 @@ function findMaterialShortages(
     
     for (const input of production.inputs) {
       const current = materialNeeds.get(input.goodsId) || 0;
-      materialNeeds.set(input.goodsId, current + input.amount * 24);
+      materialNeeds.set(input.goodsId, current + input.amount * TICKS_PER_DAY);
     }
   }
   
@@ -1812,10 +1820,10 @@ function calculateSupplyChainDemand(world: GameWorld): Map<number, number> {
     
     const efficiency = world.buildings.efficiencies[i] || 1;
     
-    // 累计原材料需求（每日需求 = 每tick需求 × 24）
+    // 累计原材料需求（每日需求 = 每tick需求 × TICKS_PER_DAY）
     for (const input of production.inputs) {
       const current = demand.get(input.goodsId) || 0;
-      demand.set(input.goodsId, current + input.amount * efficiency * 24);
+      demand.set(input.goodsId, current + input.amount * efficiency * TICKS_PER_DAY);
     }
   }
   
@@ -3458,9 +3466,9 @@ function estimateDailyOutput(world: GameWorld, companyId: number, goodsId: numbe
     // 检查该生产配置是否产出目标商品
     for (const output of production.outputs) {
       if (output.goodsId === goodsId) {
-        // 基础产量 × 效率 × 24tick/天
+        // 基础产量 × 效率 × TICKS_PER_DAY
         const efficiency = b.efficiencies[i] || 1;
-        dailyOutput += output.amount * efficiency * 24;
+        dailyOutput += output.amount * efficiency * TICKS_PER_DAY;
       }
     }
   }
@@ -3527,7 +3535,7 @@ export function autoPostBuyOrders(world: GameWorld): number {
       for (const input of production.inputs) {
         const currentNeed = materialNeeds.get(input.goodsId) || 0;
         const efficiency = b.efficiencies[i] || 1;
-        materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * 24);
+      materialNeeds.set(input.goodsId, currentNeed + input.amount * efficiency * TICKS_PER_DAY);
       }
     }
     
@@ -3785,7 +3793,7 @@ function evaluateSubsidiaries(
       if (production && production.outputs) {
         for (const output of production.outputs) {
           const price = world.goods.prices[output.goodsId];
-          expectedBenefit += output.amount * price * (effects.outputMultiplier - 1) * 24 * 30; // 月收益
+          expectedBenefit += output.amount * price * (effects.outputMultiplier - 1) * TICKS_PER_MONTH; // 月收益
         }
       }
     }
@@ -4237,6 +4245,41 @@ export function runStrategicMaterialCheck(world: GameWorld): number {
 
 // ==================== 零供应商品强制建造机制 ====================
 
+const marketSupportStateByWorld = new WeakMap<GameWorld, MarketSupportGuardState>();
+
+function getMarketSupportState(world: GameWorld): MarketSupportGuardState {
+  let state = marketSupportStateByWorld.get(world);
+  if (!state) {
+    state = createMarketSupportGuardState();
+    marketSupportStateByWorld.set(world, state);
+  }
+
+  return state;
+}
+
+function hasPendingConstructionForGoods(world: GameWorld, goodsId: number): boolean {
+  const queue = world.construction;
+
+  for (let queueId = 0; queueId < queue.count; queueId++) {
+    if (!queue.isActive[queueId]) continue;
+    if (queue.existingBuildingIds[queueId] >= 0) continue;
+
+    const buildingTypeId = queue.buildingTypeIds[queueId];
+    const outputModeId = queue.outputModeIds[queueId];
+    const production = getBuildingProduction(buildingTypeId, outputModeId);
+
+    if (production?.outputs.some(output => output.goodsId === goodsId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasMarketSupportCashBuffer(cash: number, cost: number, multiplier: number): boolean {
+  return cash > Math.max(cost * multiplier, 100_000_000);
+}
+
 /**
  * 【P2修复】零供应商品检测
  *
@@ -4366,6 +4409,7 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
     return 0;
   }
   
+  const guard = getMarketSupportState(world);
   const zeroSupplyGoods = detectZeroSupplyGoods(world);
   
   if (zeroSupplyGoods.length === 0) {
@@ -4391,34 +4435,50 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
     
     const config = AI_COMPANIES.find(cfg => cfg.id === companyId);
     if (config?.personality === 'pioneer') {
-      if (c.cash[companyId] > 100000) {
+      if (hasMarketSupportCashBuffer(c.cash[companyId], 0, 1)) {
         pioneerCompanies.push(companyId);
       }
-    } else if (c.cash[companyId] > 500000) {
+    } else if (hasMarketSupportCashBuffer(c.cash[companyId], 0, 1)) {
       wealthyCompanies.push(companyId);
     }
   }
   
   // 为每个零供应商品分配建造任务
-  for (const zeroGoods of zeroSupplyGoods.slice(0, 8)) { // 每次最多处理8个（从5提升）
+  for (const zeroGoods of zeroSupplyGoods.slice(0, 4)) {
     const { goodsId, buildingTypeId, outputModeId, buildingCost } = zeroGoods;
     
     if (buildingTypeId < 0 || outputModeId < 0) continue;
+
+    if (
+      !shouldTriggerMarketSupport(guard, {
+        kind: 'zeroSupply',
+        goodsId,
+        tick: world.tick,
+        shortageDetected: true,
+        hasDemand: world.goods.demands[goodsId] > 0,
+        hasActiveProducer: world.goods.supplies[goodsId] > 0,
+        hasInFlightCapacity: hasPendingConstructionForGoods(world, goodsId),
+        requiredStreak: 2,
+        cooldownTicks: 90,
+      })
+    ) {
+      continue;
+    }
     
     // 优先选择pioneer公司
     let selectedCompanyId = -1;
     
     for (const companyId of pioneerCompanies) {
-      if (c.cash[companyId] >= buildingCost * 1.2) {
-        selectedCompanyId = companyId;
-        break;
-      }
+        if (hasMarketSupportCashBuffer(c.cash[companyId], buildingCost, 3)) {
+          selectedCompanyId = companyId;
+          break;
+        }
     }
     
     // 如果没有pioneer公司能负担，选择富裕公司
     if (selectedCompanyId < 0) {
       for (const companyId of wealthyCompanies) {
-        if (c.cash[companyId] >= buildingCost * 1.5) {
+        if (hasMarketSupportCashBuffer(c.cash[companyId], buildingCost, 4)) {
           selectedCompanyId = companyId;
           break;
         }
@@ -4443,12 +4503,13 @@ export function forceBuildzeroSupplyGoods(world: GameWorld): number {
         reason: 'zero_supply_forced',
         dependencyCount: zeroGoods.dependencyCount,
       },
-      priority: 20, // 极高优先级
-      expectedProfit: buildingCost * 0.5,
-      confidence: 0.95,
+      priority: 16,
+      expectedProfit: buildingCost * 0.2,
+      confidence: 0.7,
     };
     
     if (executeDecision(world, decision)) {
+      markMarketSupportTriggered(guard, 'zeroSupply', goodsId, world.tick);
       triggeredBuilds++;
       console.log(`[零供应强制建造 T${world.tick}] 公司${c.names[selectedCompanyId]}建造${building.name}生产${zeroGoods.name}`);
       
@@ -4605,6 +4666,7 @@ export function buildForColdGoods(world: GameWorld): number {
     return 0;
   }
   
+  const guard = getMarketSupportState(world);
   // 检测冷门商品
   const coldGoods = detectColdGoods(world);
   
@@ -4623,7 +4685,23 @@ export function buildForColdGoods(world: GameWorld): number {
   const c = world.companies;
   
   // 为每个冷门商品找一个合适的AI公司来建造
-  for (const cold of coldGoods.slice(0, 5)) { // 每次最多处理5个冷门商品（从3提升）
+  for (const cold of coldGoods.slice(0, 3)) {
+    if (
+      !shouldTriggerMarketSupport(guard, {
+        kind: 'coldGoods',
+        goodsId: cold.goodsId,
+        tick: world.tick,
+        shortageDetected: cold.marketSupply < 100 && cold.producerCount <= 1,
+        hasDemand: Math.max(cold.orderBookDemand, world.goods.demands[cold.goodsId]) > 0,
+        hasActiveProducer: cold.producerCount > 0,
+        hasInFlightCapacity: hasPendingConstructionForGoods(world, cold.goodsId),
+        requiredStreak: 2,
+        cooldownTicks: 120,
+      })
+    ) {
+      continue;
+    }
+
     // 找能生产该商品的建筑
     const buildingInfo = findBuildingForGoods(cold.goodsId);
     if (!buildingInfo) {
@@ -4649,7 +4727,7 @@ export function buildForColdGoods(world: GameWorld): number {
       if (!c.isAI[companyId]) continue;
       
       const cash = c.cash[companyId];
-      if (cash < building.buildCost * 1.5) continue; // 资金不足
+      if (!hasMarketSupportCashBuffer(cash, building.buildCost, 4)) continue;
       
       // 计算适合程度
       let score = 0;
@@ -4712,13 +4790,14 @@ export function buildForColdGoods(world: GameWorld): number {
           orderBookDemand: cold.orderBookDemand,
           producerCount: cold.producerCount,
         },
-        priority: 14 + cold.urgencyScore / 20, // 14-19 高优先级
-        expectedProfit: building.buildCost * 0.4, // 预期利润较高因为市场急需
-        confidence: 0.85,
+        priority: 12 + cold.urgencyScore / 25,
+        expectedProfit: building.buildCost * 0.25,
+        confidence: 0.75,
       };
       
       // 执行决策
       if (executeDecision(world, decision)) {
+        markMarketSupportTriggered(guard, 'coldGoods', cold.goodsId, world.tick);
         triggeredDecisions++;
         console.log(`[冷门商品建造 T${world.tick}] 公司${c.names[bestCompanyId]}将建造${building.name}生产${cold.name}`);
       }

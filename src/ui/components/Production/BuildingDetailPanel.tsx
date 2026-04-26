@@ -12,7 +12,10 @@ import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { SubsidiaryPanel } from './SubsidiaryPanel';
 import { UpgradeConfirmDialog } from './BuildingUpgradePanel';
-import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
+import {
+  calculateBuildingDailyAmount,
+  calculateBuildingFinancialEstimate,
+} from './BuildingFinancialEstimate';
 import { getBuildingConstructionConfig, isHazardousBuilding, MaterialRequirement } from '@/data/buildingMaterials';
 
 // 设计系统组件
@@ -91,7 +94,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
         const required = input.amount;
         const percentage = Math.min(1, current / required);
         const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
-        const dailyNeed = (input.amount / ticksRequired) * 24 * efficiency;
+        const dailyNeed = calculateBuildingDailyAmount(input.amount, ticksRequired, efficiency);
 
         inputs.push({
           goodsId: input.goodsId,
@@ -116,7 +119,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       for (let j = 0; j < production.outputs.length; j++) {
         const output = production.outputs[j];
         const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
-        const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
+        const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
         const buffer = world.buildings.outputBuffers[buildingIndex * 8 + j];
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
 

@@ -5,6 +5,7 @@
 
 import React, { useMemo } from 'react';
 import { TICKS_PER_DAY, TICKS_PER_YEAR } from '@/core/constants';
+import { GameWorld } from '@/core/world/GameWorld';
 import { useGameStore } from '@/stores/gameStore';
 import { Card, CardHeader, CardTitle, CardContent, Badge, ProgressBar } from '@/ui/design-system';
 import { GOODS_BY_ID } from '@/data/goods';
@@ -54,6 +55,34 @@ function formatMoney(value: number): string {
 
 function formatTime(ticks: number): string {
   return formatRelativeTime(ticks);
+}
+
+function calculateRecordedTradeVolume(world: GameWorld): number {
+  const trades = (world as GameWorld & {
+    trades?: {
+      count?: number;
+      maxTrades?: number;
+      quantities?: ArrayLike<number>;
+    };
+  }).trades;
+
+  if (!trades?.quantities) {
+    return 0;
+  }
+
+  const quantityLength = trades.quantities.length ?? 0;
+  const tradeCount = Math.min(
+    trades.count ?? 0,
+    trades.maxTrades ?? quantityLength,
+    quantityLength,
+  );
+
+  let totalVolume = 0;
+  for (let i = 0; i < tradeCount; i++) {
+    totalVolume += trades.quantities[i] || 0;
+  }
+
+  return totalVolume;
 }
 
 // ==================== 统计项组件 ====================
@@ -153,8 +182,7 @@ export const GameStatisticsPanel: React.FC<GameStatisticsPanelProps> = ({
     const companyProfiles = getAllCompanyProfiles();
     const aiCompanies = companyProfiles.filter(c => c.id !== 0).length;
 
-    // 市场总交易量（模拟）
-    const totalVolume = tick * 1000 + Math.random() * 10000;
+    const totalVolume = calculateRecordedTradeVolume(world);
 
     return {
       general: [

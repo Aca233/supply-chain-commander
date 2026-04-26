@@ -11,7 +11,10 @@ import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { CompactResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
 import { BuildingProductionControlInline } from './BuildingProductionControlInline';
-import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
+import {
+  calculateBuildingDailyAmount,
+  calculateBuildingFinancialEstimate,
+} from './BuildingFinancialEstimate';
 
 // 设计系统组件
 import { Card, Badge, Button, ProgressBar } from '@/ui/design-system';
@@ -122,7 +125,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
     if (production && production.outputs) {
       for (const output of production.outputs) {
         const goods = ALL_GOODS.find(g => g.id === output.goodsId);
-        const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
+        const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
         
         outputs.push({

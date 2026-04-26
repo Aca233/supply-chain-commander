@@ -122,6 +122,6 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥24K/日');
+    expect(html).toContain('¥700/日');
   });
 });

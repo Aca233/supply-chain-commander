@@ -7,7 +7,10 @@ import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
-import { calculateBuildingFinancialEstimate } from './BuildingFinancialEstimate';
+import {
+  calculateBuildingDailyAmount,
+  calculateBuildingFinancialEstimate,
+} from './BuildingFinancialEstimate';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -63,7 +66,7 @@ export const ProductionOverview: React.FC = () => {
             for (const output of production.outputs) {
               const goods = ALL_GOODS.find(g => g.id === output.goodsId);
               if (goods) {
-                const dailyAmount = (output.amount / ticksRequired) * 24 * efficiency;
+                const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
                 const price = world.goods.prices[output.goodsId] || goods.basePrice;
                 totalOutput += dailyAmount * price;
                 outputEstimates.push({ dailyAmount, price });

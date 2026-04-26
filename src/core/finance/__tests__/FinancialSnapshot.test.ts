@@ -51,17 +51,17 @@ describe('FinancialSnapshot', () => {
   it('derives daily and cumulative financial values from financial history instead of raw trades', () => {
     const snapshot = calculatePlayerFinancialSnapshot({
       world: createWorld(),
-      currentTick: 28,
+      currentTick: 3,
       financialHistory: [
-        { tick: 8, revenue: 100, cost: 80, profit: 20, cash: 4_920 },
-        { tick: 16, revenue: 300, cost: 150, profit: 150, cash: 5_070 },
-        { tick: 28, revenue: 90, cost: 140, profit: -50, cash: 5_020 },
+        { tick: 1, revenue: 100, cost: 80, profit: 20, cash: 4_920 },
+        { tick: 2, revenue: 300, cost: 150, profit: 150, cash: 5_070 },
+        { tick: 3, revenue: 90, cost: 140, profit: -50, cash: 5_020 },
       ],
     });
 
-    expect(snapshot.dailyRevenue).toBe(490);
-    expect(snapshot.dailyCost).toBe(370);
-    expect(snapshot.dailyProfit).toBe(120);
+    expect(snapshot.dailyRevenue).toBe(90);
+    expect(snapshot.dailyCost).toBe(140);
+    expect(snapshot.dailyProfit).toBe(-50);
     expect(snapshot.cumulativeRevenue).toBe(490);
     expect(snapshot.cumulativeCost).toBe(370);
     expect(snapshot.cumulativeProfit).toBe(120);

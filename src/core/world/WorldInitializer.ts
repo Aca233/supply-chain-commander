@@ -535,7 +535,7 @@ function initializeRetailStores(world: GameWorld): void {
   // 只为玩家创建初始便利店
   const playerRetailBuildingId = addRetailBuilding(world, 0, BuildingId.CONVENIENCE_STORE);
   if (playerRetailBuildingId >= 0) {
-    registerRetailStore(world, playerRetailBuildingId, true);
+    registerRetailStore(world, playerRetailBuildingId, { initialInventoryRatio: 0 });
   }
   
   console.log(`[初始化] 创建了 ${world.retail.count} 家零售店`);

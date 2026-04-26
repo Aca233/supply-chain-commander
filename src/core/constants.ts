@@ -222,7 +222,7 @@ export const RETAIL_TARGET_STOCK_LEVEL = 0.9;
 export const RETAIL_MAX_CUSTOMER_RATE = 0.25;  // 从0.15提高到0.25，增加消费速度
 
 /** 零售价格调整周期（tick） */
-export const RETAIL_PRICE_ADJUST_INTERVAL = 24;
+export const RETAIL_PRICE_ADJUST_INTERVAL = TICKS_PER_DAY;
 
 /** 最大库存周转天数（超过则降价） */
 export const RETAIL_MAX_TURNOVER_DAYS = 30;

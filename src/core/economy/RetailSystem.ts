@@ -71,7 +71,7 @@ interface StoreAttractivenessCache {
 const attractivenessCache: StoreAttractivenessCache = {
   cache: new Map(),
   lastUpdate: -1000,
-  updateInterval: 24,  // 每24tick更新一次
+  updateInterval: TICKS_PER_DAY,
 };
 
 /** 消费批次控制 */
@@ -251,13 +251,21 @@ export function initRetailSystem(world: GameWorld): void {
   console.log(`[RetailSystem] 初始化完成，共 ${world.retail.count} 家零售店`);
 }
 
+interface RegisterRetailStoreOptions {
+  initialInventoryRatio?: number;
+}
+
 /**
  * 注册新零售店
  * @param world 游戏世界
  * @param buildingId 建筑ID
- * @param isNewlyBuilt 是否是新建的（玩家建造的），新建的不给初始库存
+ * @param optionsOrIsNewlyBuilt 显式初始库存配置；旧布尔参数仅保留兼容，不再隐式灌满库存
  */
-export function registerRetailStore(world: GameWorld, buildingId: number, isNewlyBuilt: boolean = false): number {
+export function registerRetailStore(
+  world: GameWorld,
+  buildingId: number,
+  optionsOrIsNewlyBuilt: RegisterRetailStoreOptions | boolean = {},
+): number {
   const retail = world.retail;
   const b = world.buildings;
   
@@ -276,6 +284,9 @@ export function registerRetailStore(world: GameWorld, buildingId: number, isNewl
   
   const retailId = retail.count++;
   const ownerId = b.owners[buildingId];
+  const options: RegisterRetailStoreOptions =
+    typeof optionsOrIsNewlyBuilt === 'object' ? optionsOrIsNewlyBuilt : {};
+  const initialInventoryRatio = Math.max(0, Math.min(1, options.initialInventoryRatio ?? 0));
   
   const retailTypeIndex = getRetailTypeIndex(buildingType);
   if (retailTypeIndex < 0) {
@@ -311,17 +322,10 @@ export function registerRetailStore(world: GameWorld, buildingId: number, isNewl
     // 设置初始进货成本（基准价）
     retail.purchaseCosts[idx] = basePrice;
     
-    // 初始库存：
-    // - 新建的（玩家建造）: 0库存，需要进货
-    // - 世界初始化时（AI店铺）: 给予100%初始库存
-    if (isNewlyBuilt) {
-      retail.inventories[idx] = 0;
-    } else {
-      retail.inventories[idx] = retail.inventoryCapacities[idx] * 1.0;
-    }
+    retail.inventories[idx] = retail.inventoryCapacities[idx] * initialInventoryRatio;
   }
   
-  console.log(`[RetailSystem] 注册零售店 #${retailId} (建筑${buildingId}, 所有者${ownerId}, 新建=${isNewlyBuilt})`);
+  console.log(`[RetailSystem] 注册零售店 #${retailId} (建筑${buildingId}, 所有者${ownerId}, 初始库存=${initialInventoryRatio})`);
   
   return retailId;
 }
@@ -1600,10 +1604,16 @@ function adjustRetailPrices(world: GameWorld): number {
       
       retail.markups[idx] = newMarkup;
       
-      // 更新零售价格
+      // 更新零售价格：优先以真实进货成本为锚，缺失时使用实时市场价，再退回基准价
       const goods = ALL_GOODS.find(g => g.id === goodsId);
       const basePrice = goods?.basePrice || 100;
-      retail.retailPrices[idx] = basePrice * (1 + newMarkup);
+      const marketPrice = world.goods.prices[goodsId] || 0;
+      const priceAnchor = retail.purchaseCosts[idx] > 0
+        ? retail.purchaseCosts[idx]
+        : marketPrice > 0
+          ? marketPrice
+          : basePrice;
+      retail.retailPrices[idx] = priceAnchor * (1 + newMarkup);
     }
   }
   

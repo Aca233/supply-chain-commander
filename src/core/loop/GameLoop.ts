@@ -58,7 +58,6 @@ import { updateRetailSystem, RetailTickResult, processWholesaleSupply, Wholesale
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
 import { updateMonthlyTracker, resetMonthlyPriceTracker } from '../economy/MonthlyPriceTracker';
-import { forEachRetainedTradeNewestFirst } from '../market/TradeLedger';
 import { saveManager } from '../save/SaveManager';
 
 // 导入新闻系统
@@ -167,6 +166,7 @@ export class GameLoop {
   private rateLogStartTime = 0;
   private rateLogTickCount = 0;
   private newsSystemInitialized: boolean = false;
+  private readonly recentDirectMarketFinalDemand = new Float64Array(TICKS_PER_MONTH);
   private readonly recentRetailRevenue = new Float64Array(TICKS_PER_MONTH);
   private readonly recentServiceRevenue = new Float64Array(TICKS_PER_MONTH);
   
@@ -475,6 +475,7 @@ export class GameLoop {
     endService();
 
     const dailyActivitySlot = (currentTick - 1) % TICKS_PER_MONTH;
+    this.recentDirectMarketFinalDemand[dailyActivitySlot] = consumerPurchases.totalSpent ?? 0;
     this.recentRetailRevenue[dailyActivitySlot] = retailResult.totalRevenue ?? 0;
     this.recentServiceRevenue[dailyActivitySlot] = serviceConsumption.totalRevenue ?? 0;
     
@@ -939,24 +940,12 @@ export class GameLoop {
     // Use a rolling day window under the day model so GDP updates every tick
     // without exploding the annualization factor when each tick is already a day.
     const windowLength = Math.max(TICKS_PER_DAY, Math.min(TICKS_PER_MONTH, this.world.tick));
-    let windowRevenue = 0;
-    
-    // 统计滚动窗口内的成交总额
-    const trades = this.world.trades;
     const currentTick = this.world.tick;
-    forEachRetainedTradeNewestFirst(this.world, tradeIdx => {
-      const tradeTick = trades.ticks[tradeIdx];
-      if (tradeTick <= currentTick - windowLength) {
-        return false;
-      }
-
-      if (tradeTick > currentTick - windowLength && tradeTick <= currentTick) {
-        windowRevenue += trades.quantities[tradeIdx] * trades.prices[tradeIdx];
-      }
-    });
+    let windowRevenue = 0;
 
     for (let offset = 0; offset < windowLength; offset++) {
       const slot = (currentTick - 1 - offset + TICKS_PER_MONTH) % TICKS_PER_MONTH;
+      windowRevenue += this.recentDirectMarketFinalDemand[slot];
       windowRevenue += this.recentRetailRevenue[slot];
       windowRevenue += this.recentServiceRevenue[slot];
     }

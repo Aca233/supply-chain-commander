@@ -5,6 +5,7 @@
  * v4.0更新：使用建筑production配置替代RECIPES
  */
 
+import { TICKS_PER_DAY } from '@/core/constants';
 import { ALL_GOODS, GoodsDefinition, GOODS_BY_ID, GOODS_BY_INDUSTRY } from '@/data/goods';
 import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_ID, getBuildingProduction, BuildingProductionConfig } from '@/data/buildings';
 
@@ -523,7 +524,7 @@ export function calculateProductionPlan(
     if (building) {
       const outputPerTick = production.outputs.find(o => o.goodsId === targetGoodsId)?.amount || 1;
       const ticksNeeded = Math.ceil(targetAmount / outputPerTick);
-      const buildingsNeeded = Math.ceil(ticksNeeded / 24); // 假设每天24 ticks
+      const buildingsNeeded = Math.max(1, Math.ceil(ticksNeeded / TICKS_PER_DAY));
       buildingCounts.set(building.id, buildingsNeeded);
     }
   }

@@ -557,6 +557,13 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
   // 不再重置需求为0，而是使用滑动平均
   // 使用统一的平滑系数（来自constants.ts）
   const smoothingFactor = DEMAND_SMOOTHING_FACTOR;
+
+  // 非消费品需求由派生需求和机构需求逐tick重建，避免初始化占位值长期污染市场。
+  for (const goods of ALL_GOODS) {
+    if (!goods.isConsumerGood) {
+      world.goods.demands[goods.id] = 0;
+    }
+  }
   
   // 计算每种消费品的需求
   for (const goods of CONSUMER_GOODS) {
@@ -802,7 +809,7 @@ function addInstitutionalDemand(world: GameWorld, derivedDemands: Float32Array):
       
       // 同时直接更新世界需求（确保需求立即生效）
       const currentDemand = world.goods.demands[goodsId];
-      world.goods.demands[goodsId] = Math.max(currentDemand, tickDemand * 24);
+      world.goods.demands[goodsId] = Math.max(currentDemand, dailyDemand);
     }
   }
 }

@@ -11,7 +11,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, MAX_SLOTS, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, MAX_SLOTS, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
 import {
   ALL_BUILDINGS,
@@ -143,8 +143,8 @@ export function analyzeMarketCondition(
   // 价格偏离
   const priceDeviation = (price - basePrice) / basePrice;
   
-  // 库存天数（假设日消耗=需求/24）
-  const dailyConsumption = demand / 24;
+  // 库存天数（基于当前时间模型计算日消耗）
+  const dailyConsumption = demand / TICKS_PER_DAY;
   const inventoryDays = dailyConsumption > 0 ? supply / dailyConsumption : 999;
   
   // 需求趋势（简化：使用价格变化推断）

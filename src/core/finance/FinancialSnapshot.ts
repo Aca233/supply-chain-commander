@@ -1,4 +1,4 @@
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { GameWorld } from '@/core/world/GameWorld';
 
 const BUILDING_BOOK_VALUE = 500_000;
@@ -138,9 +138,9 @@ export function calculatePlayerFinancialSnapshot({
 
   return {
     ...assets,
-    dailyRevenue: sumHistoryWindow(financialHistory, currentTick, 24, 'revenue'),
-    dailyCost: sumHistoryWindow(financialHistory, currentTick, 24, 'cost'),
-    dailyProfit: sumHistoryWindow(financialHistory, currentTick, 24, 'profit'),
+    dailyRevenue: sumHistoryWindow(financialHistory, currentTick, TICKS_PER_DAY, 'revenue'),
+    dailyCost: sumHistoryWindow(financialHistory, currentTick, TICKS_PER_DAY, 'cost'),
+    dailyProfit: sumHistoryWindow(financialHistory, currentTick, TICKS_PER_DAY, 'profit'),
     cumulativeRevenue,
     cumulativeCost,
     cumulativeProfit: cumulativeRevenue - cumulativeCost,
