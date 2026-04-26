@@ -1,5 +1,5 @@
 import { BUILDINGS_BY_ID } from '@/data/buildings';
-import { MAX_SLOTS } from '@/core/constants';
+import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
 import { getBuildingSlotCount, getProductionModifiersForBuilding } from '@/core/production/ProductionMethods';
 
 import { GameWorld } from '../world/GameWorld';
@@ -13,7 +13,7 @@ export interface OperatingCostBreakdown {
   nonCashExpense: number;
 }
 
-const DEFAULT_TICKS_PER_DAY = 24;
+const DEFAULT_TICKS_PER_DAY = TICKS_PER_DAY;
 
 function getBuildingEnergyMultiplier(world: GameWorld, buildingId: number): number {
   const buildingTypeId = world.buildings.types[buildingId];

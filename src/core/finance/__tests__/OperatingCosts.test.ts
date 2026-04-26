@@ -43,26 +43,22 @@ describe('OperatingCosts', () => {
     const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
 
     expect(breakdown.maintenance).toBeCloseTo(
-      (ironMine.maintenanceCost + steelMill.maintenanceCost) / 24,
+      ironMine.maintenanceCost + steelMill.maintenanceCost,
     );
     expect(breakdown.labor).toBeCloseTo(
-      (ironMine.laborCost + steelMill.laborCost) / 24,
+      ironMine.laborCost + steelMill.laborCost,
     );
     expect(breakdown.energy).toBeCloseTo(
-      (
-        ironMine.energyCost * ironMineEnergyMultiplier +
-        steelMill.energyCost * steelMillEnergyMultiplier
-      ) / 24,
+      ironMine.energyCost * ironMineEnergyMultiplier +
+      steelMill.energyCost * steelMillEnergyMultiplier,
     );
     expect(breakdown.total).toBeCloseTo(
-      (
-        ironMine.maintenanceCost +
-        ironMine.laborCost +
-        ironMine.energyCost * ironMineEnergyMultiplier +
-        steelMill.maintenanceCost +
-        steelMill.laborCost +
-        steelMill.energyCost * steelMillEnergyMultiplier
-      ) / 24,
+      ironMine.maintenanceCost +
+      ironMine.laborCost +
+      ironMine.energyCost * ironMineEnergyMultiplier +
+      steelMill.maintenanceCost +
+      steelMill.laborCost +
+      steelMill.energyCost * steelMillEnergyMultiplier,
     );
   });
 
@@ -98,6 +94,6 @@ describe('OperatingCosts', () => {
 
     const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
 
-    expect(breakdown.energy).toBeCloseTo((ironMine.energyCost * 1.12) / 24, 5);
+    expect(breakdown.energy).toBeCloseTo(ironMine.energyCost * 1.12, 5);
   });
 });

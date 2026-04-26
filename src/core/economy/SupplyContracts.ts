@@ -3,6 +3,8 @@
  * 允许公司签订长期供货/采购协议
  */
 
+import { TICKS_PER_DAY } from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -193,7 +195,7 @@ export class SupplyContractManager {
       depositAmount: proposedPrice * quantityPerPeriod * 0.1,
       status: 'pending',
       createdTick: currentTick,
-      expiryTick: currentTick + 7 * 24,  // 7天有效期
+      expiryTick: currentTick + 7 * TICKS_PER_DAY,
       negotiationRound: 1,
     };
     
@@ -229,7 +231,7 @@ export class SupplyContractManager {
       pricingMode: proposal.pricingMode,
       agreedPrice: proposal.proposedPrice,
       startTick: currentTick,
-      endTick: currentTick + proposal.periodDays * proposal.totalPeriods * 24,
+      endTick: currentTick + proposal.periodDays * proposal.totalPeriods * TICKS_PER_DAY,
       status: ContractStatus.ACTIVE,
       currentPeriod: 0,
       totalDelivered: 0,
@@ -264,7 +266,7 @@ export class SupplyContractManager {
     const records: DeliveryRecord[] = [];
     
     for (let period = 0; period < contract.totalPeriods; period++) {
-      const scheduledTick = contract.startTick + (period + 1) * contract.periodDays * 24;
+      const scheduledTick = contract.startTick + (period + 1) * contract.periodDays * TICKS_PER_DAY;
       
       records.push({
         contractId: contract.id,
@@ -312,7 +314,7 @@ export class SupplyContractManager {
     
     // 找到当前期次
     const currentRecord = records.find(r => 
-      r.status === 'scheduled' && currentTick >= r.scheduledTick - contract.gracePeriodDays * 24
+      r.status === 'scheduled' && currentTick >= r.scheduledTick - contract.gracePeriodDays * TICKS_PER_DAY
     );
     
     if (!currentRecord) {
@@ -376,7 +378,7 @@ export class SupplyContractManager {
       for (const record of records) {
         if (record.status !== 'scheduled') continue;
         
-        const overdueThreshold = record.scheduledTick + contract.gracePeriodDays * 24;
+        const overdueThreshold = record.scheduledTick + contract.gracePeriodDays * TICKS_PER_DAY;
         
         if (currentTick > overdueThreshold) {
           record.status = 'missed';
@@ -494,7 +496,7 @@ export class SupplyContractManager {
       
       for (const record of records) {
         if (record.status !== 'scheduled') continue;
-        if (record.scheduledTick - currentTick <= daysAhead * 24) {
+        if (record.scheduledTick - currentTick <= daysAhead * TICKS_PER_DAY) {
           upcoming.push(record);
         }
       }

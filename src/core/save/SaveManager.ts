@@ -6,7 +6,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, legacyHourTicksToDayTicks } from '@/core/constants';
 import { BUILDINGS_BY_ID, getBuildingProduction, getAvailableOutputModes } from '@/data/buildings';
 import { backfillManualTargetsFromCurrentEfficiency, hydrateProductionControlState } from '@/core/production/ProductionControl';
 
@@ -23,6 +23,7 @@ export interface SaveMetadata {
 }
 
 export interface SerializedWorld {
+  timeModel?: 'hour' | 'day';
   goods: {
     count: number;
     prices: number[];
@@ -73,9 +74,19 @@ const CURRENT_VERSION = '1.0.0';
 
 export class SaveManager {
   private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+
+  private normalizeLoadedTick(
+    currentTick: number,
+    timeModel: 'hour' | 'day' = 'hour',
+  ): number {
+    return timeModel === 'day'
+      ? currentTick
+      : legacyHourTicksToDayTicks(currentTick, 'floor');
+  }
   
   serializeWorld(world: GameWorld, currentTick: number): SerializedWorld {
     return {
+      timeModel: 'day',
       goods: {
         count: world.goods.count,
         prices: Array.from(world.goods.prices),
@@ -117,7 +128,7 @@ export class SaveManager {
   
   deserializeWorld(data: SerializedWorld, world: GameWorld): void {
     // 恢复游戏tick（修复日期重置问题）
-    world.tick = data.currentTick;
+    world.tick = this.normalizeLoadedTick(data.currentTick, data.timeModel ?? 'hour');
     
     world.goods.count = data.goods.count;
     world.goods.prices.set(data.goods.prices);

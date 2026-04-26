@@ -5,6 +5,7 @@
 
 import { GoodsId } from './goods';
 import { BuildingId } from './buildings';
+import { legacyHourTicksToDayTicks } from '@/core/constants';
 
 /** 材料需求定义 */
 export interface MaterialRequirement {
@@ -987,7 +988,8 @@ export function isHazardousBuilding(buildingTypeId: number): boolean {
 }
 
 export function getBuildTime(buildingTypeId: number): number {
-  return BUILDING_CONSTRUCTION_CONFIGS.get(buildingTypeId)?.buildTime ?? 24;
+  const legacyBuildTime = BUILDING_CONSTRUCTION_CONFIGS.get(buildingTypeId)?.buildTime ?? 24;
+  return legacyHourTicksToDayTicks(legacyBuildTime, 'ceil');
 }
 
 export function calculateMaterialsValue(

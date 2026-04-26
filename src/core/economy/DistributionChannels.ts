@@ -3,6 +3,8 @@
  * 模拟多层次的商品分销网络
  */
 
+import { TICKS_PER_DAY } from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -335,7 +337,7 @@ export class DistributionManager {
       totalValue,
       status: ChannelOrderStatus.PENDING,
       createdTick: currentTick,
-      deliveryTick: currentTick + config.leadTime * 24,
+      deliveryTick: currentTick + config.leadTime * TICKS_PER_DAY,
       commission,
       netRevenue,
     };
@@ -363,7 +365,7 @@ export class DistributionManager {
         // 设置付款时间
         const relationship = this.relationships.get(order.relationshipId);
         if (relationship) {
-          order.paymentTick = currentTick + relationship.paymentTermDays * 24;
+          order.paymentTick = currentTick + relationship.paymentTermDays * TICKS_PER_DAY;
         }
         
         delivered.push(order);
@@ -393,7 +395,7 @@ export class DistributionManager {
             paid.push(order);
           } else {
             // 延迟付款
-            order.paymentTick = currentTick + 7 * 24;
+            order.paymentTick = currentTick + 7 * TICKS_PER_DAY;
             relationship.paymentReliability = Math.max(0, relationship.paymentReliability - 5);
           }
         }

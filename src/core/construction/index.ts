@@ -80,6 +80,8 @@ export {
 
 // ==================== 辅助函数 ====================
 
+import { TICKS_PER_MONTH } from '@/core/constants';
+
 // 导入工厂函数用于初始化
 import {
   createConstructionQueueSystem as _createConstructionQueueSystem,
@@ -125,19 +127,18 @@ export function initializeConstructionSystem(options?: {
  * 格式化建造/拆除时间为可读字符串
  */
 export function formatConstructionTime(ticks: number): string {
-  // 假设 1 tick = 1 小时
-  if (ticks < 24) {
-    return `${ticks}小时`;
+  if (ticks < TICKS_PER_MONTH) {
+    return `${ticks}天`;
   }
-  
-  const days = Math.floor(ticks / 24);
-  const hours = ticks % 24;
-  
-  if (hours === 0) {
-    return `${days}天`;
+
+  const months = Math.floor(ticks / TICKS_PER_MONTH);
+  const days = ticks % TICKS_PER_MONTH;
+
+  if (days === 0) {
+    return `${months}个月`;
   }
-  
-  return `${days}天${hours}小时`;
+
+  return `${months}个月${days}天`;
 }
 
 /**

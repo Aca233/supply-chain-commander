@@ -3,6 +3,8 @@
  * 模拟商品随时间的自然损耗和保质期管理
  */
 
+import { TICKS_PER_DAY, TICKS_PER_MONTH } from '@/core/constants';
+
 // ==================== 类型定义 ====================
 
 /**
@@ -195,7 +197,7 @@ export class InventoryDecayManager {
     currentTick: number
   ): InventoryBatch {
     const config = SHELF_LIFE_CONFIG_MAP.get(goodsId);
-    const shelfLifeTicks = config ? config.shelfLifeDays * 24 : -1;
+    const shelfLifeTicks = config ? config.shelfLifeDays * TICKS_PER_DAY : -1;
     
     const batch: InventoryBatch = {
       id: this.nextBatchId++,
@@ -259,7 +261,7 @@ export class InventoryDecayManager {
     const events: DecayEvent[] = [];
     
     // 只在每天结算一次损耗
-    if (currentTick % 24 !== 0) return events;
+    if (currentTick % TICKS_PER_DAY !== 0) return events;
     
     for (const [batchId, batch] of this.batches) {
       if (batch.quantity <= 0) continue;
@@ -415,7 +417,7 @@ export class InventoryDecayManager {
    * 获取即将过期的库存警告
    */
   getExpiryWarnings(companyId: number, currentTick: number, warningDays: number = 7): InventoryBatch[] {
-    const warningTicks = warningDays * 24;
+    const warningTicks = warningDays * TICKS_PER_DAY;
     const batches = Array.from(this.batchesByCompany.get(companyId) ?? [])
       .map(id => this.batches.get(id))
       .filter((b): b is InventoryBatch => 
@@ -461,7 +463,7 @@ export class InventoryDecayManager {
   /**
    * 获取损耗历史
    */
-  getDecayHistory(companyId: number, ticksBack: number = 24 * 7): DecayEvent[] {
+  getDecayHistory(companyId: number, ticksBack: number = TICKS_PER_DAY * 7): DecayEvent[] {
     const minTick = Math.max(0, this.decayHistory.length > 0 
       ? this.decayHistory[this.decayHistory.length - 1].tick - ticksBack 
       : 0);
@@ -509,16 +511,13 @@ export function formatRemainingShelfLife(expiryTick: number, currentTick: number
   const remainingTicks = expiryTick - currentTick;
   if (remainingTicks <= 0) return '已过期';
   
-  const days = Math.floor(remainingTicks / 24);
-  const hours = remainingTicks % 24;
+  const days = Math.floor(remainingTicks / TICKS_PER_DAY);
   
-  if (days > 30) {
-    return `${Math.floor(days / 30)}个月`;
-  } else if (days > 0) {
-    return `${days}天`;
-  } else {
-    return `${hours}小时`;
+  if (days >= TICKS_PER_MONTH) {
+    return `${Math.floor(days / TICKS_PER_MONTH)}个月`;
   }
+
+  return `${days}天`;
 }
 
 /**

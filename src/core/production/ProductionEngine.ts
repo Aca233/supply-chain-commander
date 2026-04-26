@@ -19,7 +19,15 @@ import {
   OutputMode,
   ProductionIO
 } from '@/data/buildings';
-import { MAX_INPUTS, MAX_OUTPUTS, MAX_SLOTS, GOODS_COUNT } from '../constants';
+import {
+  MAX_INPUTS,
+  MAX_OUTPUTS,
+  MAX_SLOTS,
+  GOODS_COUNT,
+  legacyHourTicksToDayTicks,
+  LEGACY_HOURS_PER_DAY,
+  TICKS_PER_DAY,
+} from '../constants';
 import {
   calculateProductionModifiers,
   ProductionModifiers,
@@ -85,6 +93,11 @@ function createCacheFromConfig(
   laborRequired: number,
   energyRequired: number
 ): ProductionCache {
+  const normalizedTicksRequired = Math.max(
+    1 / LEGACY_HOURS_PER_DAY,
+    legacyHourTicksToDayTicks(ticksRequired, 'none'),
+  );
+
   return {
     inputCount: inputs.length,
     outputCount: outputs.length,
@@ -92,9 +105,9 @@ function createCacheFromConfig(
     inputAmounts: inputs.map(i => i.amount),
     outputGoods: outputs.map(o => o.goodsId),
     outputAmounts: outputs.map(o => o.amount),
-    ticksRequired,
-    laborRequired: laborRequired / ticksRequired, // 每tick需求
-    energyRequired: energyRequired / ticksRequired,
+    ticksRequired: normalizedTicksRequired,
+    laborRequired: laborRequired / normalizedTicksRequired, // 每tick需求
+    energyRequired: energyRequired / normalizedTicksRequired,
   };
 }
 
@@ -705,7 +718,7 @@ export function calculateTheoreticalOutput(
   
   return cache.outputGoods.map((goodsId, i) => ({
     goodsId,
-    amount: (cache.outputAmounts[i] / cache.ticksRequired) * 24 * efficiencyMultiplier, // 日产量
+    amount: (cache.outputAmounts[i] / cache.ticksRequired) * TICKS_PER_DAY * efficiencyMultiplier,
   }));
 }
 
@@ -722,7 +735,7 @@ export function calculateDailyConsumption(
   
   return cache.inputGoods.map((goodsId, i) => ({
     goodsId,
-    amount: (cache.inputAmounts[i] / cache.ticksRequired) * 24 * efficiency,
+    amount: (cache.inputAmounts[i] / cache.ticksRequired) * TICKS_PER_DAY * efficiency,
   }));
 }
 
@@ -750,7 +763,7 @@ export function autoFeedBuildings(world: GameWorld): void {
       const currentBuffer = b.inputBuffers[inputOffset + j];
       
       // 目标：保持7天的库存
-      const targetBuffer = cache.inputAmounts[j] * 7 / cache.ticksRequired * 24;
+      const targetBuffer = cache.inputAmounts[j] * 7 / cache.ticksRequired * TICKS_PER_DAY;
       
       if (currentBuffer < targetBuffer) {
         const needed = targetBuffer - currentBuffer;
