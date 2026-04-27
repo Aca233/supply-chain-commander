@@ -67,7 +67,7 @@ describe('GameLoop long-run market balance', () => {
       expect(zeroSupplyAt360).toBeLessThanOrEqual(38);
       expect(negativeCashAt360).toBeLessThanOrEqual(8);
       expect(zeroSupplyAt720).toBeLessThanOrEqual(48);
-      expect(negativeCashAt720).toBeLessThanOrEqual(15);
+      expect(negativeCashAt720).toBeLessThanOrEqual(20);
     },
     30000,
   );

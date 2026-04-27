@@ -106,8 +106,8 @@ function createCacheFromConfig(
     outputGoods: outputs.map(o => o.goodsId),
     outputAmounts: outputs.map(o => o.amount),
     ticksRequired: normalizedTicksRequired,
-    laborRequired: laborRequired / normalizedTicksRequired, // 每tick需求
-    energyRequired: energyRequired / normalizedTicksRequired,
+    laborRequired,
+    energyRequired,
   };
 }
 
