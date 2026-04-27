@@ -66,6 +66,23 @@ function createWorld() {
   };
 }
 
+function createWorldWithTwoPlayerBuildings() {
+  const world = createWorld();
+  return {
+    ...world,
+    buildings: {
+      ...world.buildings,
+      count: 2,
+      owners: new Uint16Array([0, 0]),
+      isActive: new Uint8Array([1, 0]),
+      efficiencies: new Float32Array([1, 1]),
+      outputModeIds: new Uint8Array([0, 0]),
+      types: new Uint8Array([1, 1]),
+      inputBuffers: new Float32Array(16),
+    },
+  };
+}
+
 describe('ProductionOverview time model', () => {
   beforeEach(() => {
     useGameStoreMock.mockReset();
@@ -83,5 +100,18 @@ describe('ProductionOverview time model', () => {
 
     expect(html).toContain('日产能:¥1.0K');
     expect(html).toContain('日预估利润:¥700');
+  });
+
+  it('derives total building count from the current world instead of cached store count', () => {
+    useGameStoreMock.mockReturnValue({
+      getWorld: () => createWorldWithTwoPlayerBuildings(),
+      playerCash: 1_000_000,
+      playerBuildings: 99,
+      tick: 1,
+    });
+
+    const html = renderToStaticMarkup(React.createElement(ProductionOverview));
+
+    expect(html).toContain('运营建筑:1/2');
   });
 });

@@ -17,6 +17,7 @@ import { formatGameDate, formatMonthDay, formatMonthDayText } from '@/core/world
 import { useMobile } from '@/ui/hooks/useMobile';
 import { shouldUseCompactFinanceLayout } from './responsivePageLayout';
 import { ALL_BUILDINGS } from '@/data/buildings';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 设计系统组件
 import {
@@ -244,9 +245,7 @@ export const Finance: React.FC = () => {
   const formatValue = (value: number, format: FinancialMetric['format']) => {
     switch (format) {
       case 'currency':
-        if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-        if (value >= 1000) return `¥${(value / 1000).toFixed(2)}K`;
-        return `¥${value.toFixed(2)}`;
+        return formatCurrency(value);
       case 'percent':
         return `${(value * 100).toFixed(1)}%`;
       case 'number':
@@ -265,13 +264,13 @@ export const Finance: React.FC = () => {
       key: 'principal',
       title: '本金',
       align: 'right',
-      render: (value) => `¥${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      render: (value) => formatCurrency(value),
     },
     {
       key: 'remainingPrincipal',
       title: '剩余',
       align: 'right',
-      render: (value) => `¥${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      render: (value) => formatCurrency(value),
     },
     {
       key: 'interestRate',
@@ -285,7 +284,7 @@ export const Finance: React.FC = () => {
       align: 'right',
       render: (value) => (
         <span className="text-[var(--warning)]">
-          ¥{value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          {formatCurrency(value)}
         </span>
       ),
     },
@@ -399,16 +398,16 @@ export const Finance: React.FC = () => {
           <CardContent className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-foreground-muted">销售收入</span>
-              <span className="text-success">¥{totalRevenue.toLocaleString()}</span>
+              <span className="text-success">{formatCurrency(totalRevenue)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-foreground-muted">采购成本</span>
-              <span className="text-error">-¥{totalCost.toLocaleString()}</span>
+              <span className="text-error">{formatCurrency(-totalCost)}</span>
             </div>
             <div className="flex justify-between text-sm font-bold pt-2 border-t border-border">
               <span>净利润</span>
               <span className={netProfit >= 0 ? 'text-success' : 'text-error'}>
-                {netProfit >= 0 ? '¥' : '-¥'}{Math.abs(netProfit).toLocaleString()}
+                {formatCurrency(netProfit)}
               </span>
             </div>
           </CardContent>
@@ -438,7 +437,7 @@ export const Finance: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="text-sm font-medium text-success">
-                  ¥{creditProfile.availableCredit.toLocaleString()}
+                  {formatCurrency(creditProfile.availableCredit)}
                 </p>
                 <p className="text-xs text-foreground-muted">可用额度</p>
               </div>
@@ -461,10 +460,10 @@ export const Finance: React.FC = () => {
                   <div key={loan.id} className="p-2 rounded-lg bg-background-muted">
                     <div className="flex justify-between text-sm">
                       <span>{LOAN_TYPE_NAMES[loan.type as LoanType]}</span>
-                      <span className="font-medium">¥{loan.remainingPrincipal.toLocaleString()}</span>
+                      <span className="font-medium">{formatCurrency(loan.remainingPrincipal)}</span>
                     </div>
                     <div className="flex justify-between text-xs text-foreground-muted mt-1">
-                      <span>月供: ¥{loan.monthlyPayment.toLocaleString()}</span>
+                      <span>月供: {formatCurrency(loan.monthlyPayment)}</span>
                       <Button size="xs" variant="ghost" onClick={() => prepayPlayerLoan(loan.id)}>还款</Button>
                     </div>
                   </div>
@@ -570,34 +569,34 @@ export const Finance: React.FC = () => {
               <tr className="hover:bg-[var(--bg-muted)]">
                 <td className="p-3 text-[var(--text-primary)] font-medium">销售收入</td>
                 <td className="p-3 text-right text-[var(--success)] tabular-nums">
-                  ¥{totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(totalRevenue)}
                 </td>
                 <td className="p-3 text-right text-[var(--success)] tabular-nums">
-                  ¥{cumulativeRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(cumulativeRevenue)}
                 </td>
               </tr>
               <tr className="hover:bg-[var(--bg-muted)]">
                 <td className="p-3 text-[var(--text-primary)] font-medium">采购成本</td>
                 <td className="p-3 text-right text-[var(--error)] tabular-nums">
-                  -¥{totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(-totalCost)}
                 </td>
                 <td className="p-3 text-right text-[var(--error)] tabular-nums">
-                  -¥{cumulativeCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(-cumulativeCost)}
                 </td>
               </tr>
               <tr className="hover:bg-[var(--bg-muted)]">
                 <td className="p-3 text-[var(--text-muted)] pl-6">库存价值</td>
                 <td className="p-3 text-right text-[var(--text-secondary)] tabular-nums" colSpan={2}>
-                  ¥{inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(inventoryValue)}
                 </td>
               </tr>
               <tr className="bg-[var(--bg-muted)]">
                 <td className="p-3 text-[var(--text-primary)] font-bold">净利润</td>
                 <td className={`p-3 text-right font-bold tabular-nums ${netProfit >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                  {netProfit >= 0 ? '¥' : '-¥'}{Math.abs(netProfit).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(netProfit)}
                 </td>
                 <td className={`p-3 text-right font-bold tabular-nums ${cumulativeProfit >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                  {cumulativeProfit >= 0 ? '¥' : '-¥'}{Math.abs(cumulativeProfit).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  {formatCurrency(cumulativeProfit)}
                 </td>
               </tr>
             </tbody>
@@ -634,7 +633,7 @@ export const Finance: React.FC = () => {
                     </div>
                     <div className="text-right tabular-nums">
                       <span className="text-[var(--text-primary)]">
-                        ¥{trade.price.toFixed(2)} × {trade.quantity.toFixed(0)}
+                        {formatCurrency(trade.price)} × {trade.quantity.toFixed(0)}
                       </span>
                     </div>
                   </div>
@@ -678,7 +677,7 @@ export const Finance: React.FC = () => {
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-[var(--success)]">
-                  ¥{creditProfile.availableCredit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    {formatCurrency(creditProfile.availableCredit)}
                 </div>
                 <p className="text-sm text-[var(--text-muted)]">可用额度</p>
               </div>
@@ -728,7 +727,7 @@ export const Finance: React.FC = () => {
                             利率: {(option.interestRate * 100).toFixed(1)}% | 期限: {option.termDays}天
                           </p>
                           <p className="text-xs text-[var(--success)] mt-1">
-                            最高 ¥{option.maxAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            最高 {formatCurrency(option.maxAmount)}
                           </p>
                         </Card>
                       ))}
@@ -744,7 +743,7 @@ export const Finance: React.FC = () => {
                     step={10000}
                     label="贷款金额"
                     showValue
-                    formatValue={(v) => `¥${v.toLocaleString()}`}
+                    formatValue={(v) => formatCurrency(v)}
                     variant="game"
                     color="brand"
                   />
@@ -787,7 +786,7 @@ export const Finance: React.FC = () => {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">借款金额：</span>
-                              <span className="text-[var(--text-primary)] font-medium">¥{amount.toLocaleString()}</span>
+                    <span className="text-[var(--text-primary)] font-medium">{formatCurrency(amount)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">年利率：</span>
@@ -795,7 +794,7 @@ export const Finance: React.FC = () => {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">每月还款：</span>
-                              <span className="text-[var(--warning)] font-medium">¥{monthlyPayment.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    <span className="text-[var(--warning)] font-medium">{formatCurrency(monthlyPayment)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">还款期限：</span>
@@ -803,11 +802,11 @@ export const Finance: React.FC = () => {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">利息总额：</span>
-                              <span className="text-[var(--error)]">¥{totalInterest.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    <span className="text-[var(--error)]">{formatCurrency(totalInterest)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--text-muted)]">还款总额：</span>
-                              <span className="text-[var(--text-primary)] font-medium">¥{totalPayment.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                    <span className="text-[var(--text-primary)] font-medium">{formatCurrency(totalPayment)}</span>
                             </div>
                           </div>
                         );

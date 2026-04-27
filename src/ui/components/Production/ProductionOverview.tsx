@@ -11,6 +11,7 @@ import {
   calculateBuildingDailyAmount,
   calculateBuildingFinancialEstimate,
 } from './BuildingFinancialEstimate';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -18,7 +19,7 @@ import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/desig
 type TimeRange = 'day' | 'week' | 'month';
 
 export const ProductionOverview: React.FC = () => {
-  const { getWorld, playerCash, playerBuildings, tick } = useGameStore();
+  const { getWorld, tick } = useGameStore();
   const world = getWorld();
   const [timeRange, setTimeRange] = useState<TimeRange>('day');
 
@@ -41,6 +42,7 @@ export const ProductionOverview: React.FC = () => {
 
     let totalOutput = 0;
     let activeCount = 0;
+    let totalBuildings = 0;
     let bottleneckCount = 0;
     let totalEfficiency = 0;
     let dailyCost = 0;
@@ -48,6 +50,7 @@ export const ProductionOverview: React.FC = () => {
 
     for (let i = 0; i < world.buildings.count; i++) {
       if (world.buildings.owners[i] === 0) {
+        totalBuildings++;
         const isActive = world.buildings.isActive[i];
         const efficiency = world.buildings.efficiencies[i];
         const outputModeId = world.buildings.outputModeIds[i];
@@ -106,18 +109,12 @@ export const ProductionOverview: React.FC = () => {
     return {
       periodOutput,
       activeBuildings: activeCount,
-      totalBuildings: playerBuildings,
+      totalBuildings,
       bottleneckCount,
       periodProfit,
       avgEfficiency,
     };
-  }, [world, playerBuildings, tick, timeMultiplier]);
-
-  const formatMoney = (value: number) => {
-    if (Math.abs(value) >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-    if (Math.abs(value) >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
-    return `¥${value.toFixed(0)}`;
-  };
+  }, [world, tick, timeMultiplier]);
 
   return (
     <Card variant="game" padding="md" className="mb-4">
@@ -139,7 +136,7 @@ export const ProductionOverview: React.FC = () => {
         <StatWidget
           icon="⚡"
           title={`${timeLabel}产能`}
-          value={formatMoney(stats.periodOutput)}
+          value={formatCurrency(stats.periodOutput)}
           status="info"
           compact
         />
@@ -160,7 +157,7 @@ export const ProductionOverview: React.FC = () => {
         <StatWidget
           icon="💰"
           title={`${timeLabel}预估利润`}
-          value={formatMoney(stats.periodProfit)}
+          value={formatCurrency(stats.periodProfit)}
           status={stats.periodProfit >= 0 ? 'success' : 'error'}
           compact
         />

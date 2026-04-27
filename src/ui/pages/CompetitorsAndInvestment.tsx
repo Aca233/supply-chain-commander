@@ -28,6 +28,7 @@ import {
   calculateMarketStats,
 } from '@/core/finance/CompanyProfile';
 import { getIPOOfferPreview, getMarketState } from '@/core/finance/StockMarket';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 设计系统组件
 import {
@@ -53,12 +54,6 @@ import {
 
 type MainTabType = 'competitors' | 'stockmarket';
 type CompanyTabType = 'all' | 'holdings' | 'favorites' | 'gainers' | 'losers';
-
-function formatMoney(value: number): string {
-  if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-  if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
-  return `¥${value.toFixed(0)}`;
-}
 
 export const CompetitorsAndInvestment: React.FC = () => {
   const { isMobile, isTablet, isNarrowDesktop } = useMobile();
@@ -314,7 +309,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
         />
         <StatWidget
           title="我的投资组合"
-          value={formatMoney(portfolio.totalValue)}
+          value={formatCurrency(portfolio.totalValue)}
           change={portfolio.gainPercent / 100}
           icon="💼"
           status={portfolio.totalGain >= 0 ? 'success' : 'error'}
@@ -369,14 +364,14 @@ export const CompetitorsAndInvestment: React.FC = () => {
           </div>
           
           <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
-            <StatWidget title="现金" value={formatMoney(playerProfile.cash)} icon="💵" compact />
-            <StatWidget title="总资产" value={formatMoney(playerProfile.totalAssets)} icon="🏦" compact />
+            <StatWidget title="现金" value={formatCurrency(playerProfile.cash)} icon="💵" compact />
+            <StatWidget title="总资产" value={formatCurrency(playerProfile.totalAssets)} icon="🏦" compact />
             <StatWidget title="建筑数量" value={playerProfile.buildingCount.toString()} icon="🏭" compact />
             <StatWidget title="市场份额" value={`${playerProfile.marketShare.toFixed(2)}%`} icon="📊" compact />
             {playerStock ? (
               <StatWidget
                 title="股价"
-                value={`¥${playerStock.currentPrice.toFixed(2)}`}
+                value={formatCurrency(playerStock.currentPrice)}
                 change={(playerStock.currentPrice - playerStock.previousClose) / playerStock.previousClose}
                 icon="📈"
                 compact
@@ -391,7 +386,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
           
           {playerProfile.inventoryValue > 0 && (
             <div className="mt-3 text-sm text-[var(--text-muted)]">
-              库存价值: <span className="text-[var(--text-primary)] tabular-nums">{formatMoney(playerProfile.inventoryValue)}</span>
+              库存价值: <span className="text-[var(--text-primary)] tabular-nums">{formatCurrency(playerProfile.inventoryValue)}</span>
             </div>
           )}
           
@@ -612,7 +607,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
               min={1}
               step={1}
               error={ipoFeedback || (!ipoPreview?.canLaunch ? ipoPreview?.message : undefined)}
-              helperText={ipoPreview ? `建议发行价：¥${ipoPreview.minPrice.toFixed(2)} - ¥${ipoPreview.maxPrice.toFixed(2)}，基准价约 ¥${ipoPreview.suggestedPrice.toFixed(2)}` : undefined}
+              helperText={ipoPreview ? `建议发行价：${formatCurrency(ipoPreview.minPrice)} - ${formatCurrency(ipoPreview.maxPrice)}，基准价约 ${formatCurrency(ipoPreview.suggestedPrice)}` : undefined}
             />
 
             <Card variant="elevated" padding="md">
@@ -621,13 +616,13 @@ export const CompetitorsAndInvestment: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">募集资金:</span>
                   <span className="text-[var(--success)] font-medium tabular-nums">
-                    ¥{(ipoShares[0] * ipoPrice).toLocaleString()}
+                    {formatCurrency(ipoShares[0] * ipoPrice)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">估值:</span>
                   <span className="text-[var(--text-primary)] tabular-nums">
-                    ¥{(1000000 * ipoPrice).toLocaleString()}
+                    {formatCurrency(1000000 * ipoPrice)}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -672,7 +667,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-[var(--text-muted)]">建议价格区间:</span>
                     <span className="text-[var(--text-primary)] tabular-nums">
-                      ¥{ipoPreview.minPrice.toFixed(2)} - ¥{ipoPreview.maxPrice.toFixed(2)}
+                      {formatCurrency(ipoPreview.minPrice)} - {formatCurrency(ipoPreview.maxPrice)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -772,11 +767,11 @@ export const CompetitorsAndInvestment: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div className="flex justify-between">
                       <span className="text-[var(--text-muted)]">当前股价:</span>
-                      <span className="text-[var(--text-primary)] tabular-nums">¥{currentPrice.toFixed(2)}</span>
+                      <span className="text-[var(--text-primary)] tabular-nums">{formatCurrency(currentPrice)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[var(--text-muted)]">要约价格:</span>
-                      <span className="text-[var(--success)] tabular-nums">¥{offerPrice.toFixed(2)}</span>
+                      <span className="text-[var(--success)] tabular-nums">{formatCurrency(offerPrice)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[var(--text-muted)]">目标股数:</span>
@@ -785,7 +780,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
                     <div className="flex justify-between">
                       <span className="text-[var(--text-muted)]">预估总成本:</span>
                       <span className={`tabular-nums ${totalCost > playerCash ? 'text-[var(--error)]' : 'text-[var(--text-primary)]'}`}>
-                        {formatMoney(totalCost)}
+                        {formatCurrency(totalCost)}
                       </span>
                     </div>
                   </div>
@@ -793,7 +788,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
                     <div className="flex justify-between text-sm">
                       <span className="text-[var(--text-muted)]">可用资金:</span>
                       <span className={`tabular-nums ${totalCost > playerCash ? 'text-[var(--error)]' : 'text-[var(--success)]'}`}>
-                        {formatMoney(playerCash)}
+                        {formatCurrency(playerCash)}
                       </span>
                     </div>
                   </div>

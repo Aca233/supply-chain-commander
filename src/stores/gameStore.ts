@@ -68,6 +68,7 @@ import {
   LoanType
 } from '@/core/finance/BankingSystem';
 import { calculateCompanyOperatingCostPerTick } from '@/core/finance/OperatingCosts';
+import { formatCurrency } from '@/ui/utils/format';
 import {
   PlayerFinancialSnapshot,
   calculateCompanyAssetBreakdown,
@@ -787,7 +788,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playOrderPlace();
-        get().addNotification('success', `买单已提交: ${quantity}单位 @ ¥${price.toFixed(2)}`);
+        get().addNotification('success', `买单已提交: ${quantity}单位 @ ${formatCurrency(price)}`);
         return true;
       } else {
         soundManager.playTradeFail();
@@ -803,7 +804,7 @@ export const useGameStore = create<GameState & GameActions>()(
       if (result.success) {
         const actualQty = result.actualQuantity ?? quantity;
         soundManager.playOrderPlace();
-        get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ¥${price.toFixed(2)}`);
+        get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ${formatCurrency(price)}`);
         return true;
       } else {
         soundManager.playTradeFail();
@@ -864,7 +865,7 @@ export const useGameStore = create<GameState & GameActions>()(
         // 检查资金
         if (worldRef.companies.cash[0] < totalCost) {
           soundManager.playTradeFail();
-          get().addNotification('error', `资金不足！需要 ¥${totalCost.toLocaleString()}`);
+          get().addNotification('error', `资金不足！需要 ${formatCurrency(totalCost)}`);
           return null;
         }
         
@@ -970,7 +971,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const playerCash = worldRef.companies.cash[0];
       
       if (playerCash < totalCost) {
-        get().addNotification('error', `资金不足，升级需要 ¥${totalCost.toLocaleString()}`);
+        get().addNotification('error', `资金不足，升级需要 ${formatCurrency(totalCost)}`);
         return false;
       }
       
@@ -1191,7 +1192,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
-        get().addNotification('success', `贷款申请成功！获得 ¥${amount.toLocaleString()}`);
+        get().addNotification('success', `贷款申请成功！获得 ${formatCurrency(amount)}`);
       } else {
         soundManager.playTradeFail();
         get().addNotification('error', `贷款申请失败：${result.reason}`);
@@ -1210,7 +1211,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playTradeSuccess();
-        get().addNotification('success', `贷款已提前还清${result.penalty ? `，罚金 ¥${result.penalty.toFixed(0)}` : ''}`);
+        get().addNotification('success', `贷款已提前还清${result.penalty ? `，罚金 ${formatCurrency(result.penalty)}` : ''}`);
       } else {
         soundManager.playTradeFail();
         get().addNotification('error', `还款失败：${result.reason}`);
@@ -1506,7 +1507,7 @@ export const useGameStore = create<GameState & GameActions>()(
         const playerCash = worldRef.companies.cash[0];
         
         if (playerCash < switchCost) {
-          return { success: false, reason: `资金不足，切换需要 ¥${switchCost.toLocaleString()}` };
+          return { success: false, reason: `资金不足，切换需要 ${formatCurrency(switchCost)}` };
         }
         
         // 扣费并切换
@@ -1520,7 +1521,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         
-        get().addNotification('success', `已切换到「${newMethod.name}」，花费 ¥${switchCost.toLocaleString()}`);
+        get().addNotification('success', `已切换到「${newMethod.name}」，花费 ${formatCurrency(switchCost)}`);
         return { success: true };
       }
       
@@ -1545,7 +1546,7 @@ export const useGameStore = create<GameState & GameActions>()(
       const playerCash = worldRef.companies.cash[0];
       
       if (playerCash < switchCost) {
-        return { success: false, reason: `资金不足，切换需要 ¥${switchCost.toLocaleString()}` };
+        return { success: false, reason: `资金不足，切换需要 ${formatCurrency(switchCost)}` };
       }
       
       // 扣费并切换
@@ -1558,7 +1559,7 @@ export const useGameStore = create<GameState & GameActions>()(
         });
         
         const method = METHODS_BY_ID.get(methodId);
-        get().addNotification('success', `已切换到「${method?.name || '未知方式'}」，花费 ¥${switchCost.toLocaleString()}`);
+        get().addNotification('success', `已切换到「${method?.name || '未知方式'}」，花费 ${formatCurrency(switchCost)}`);
         return { success: true };
       } else {
         // 恢复现金
@@ -1849,7 +1850,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
       const success = bankruptcyResolution.placeBid(worldRef, eventId, assetId, 0, amount, source);
       if (success) {
-        get().addNotification('success', `破产竞拍出价已提交：¥${amount.toLocaleString()}`);
+        get().addNotification('success', `破产竞拍出价已提交：${formatCurrency(amount)}`);
       }
       return success;
     },
@@ -1985,7 +1986,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playCoin();
-        get().addNotification('success', `分红成功！获得 ¥${result.playerReceived?.toLocaleString() || 0}`);
+        get().addNotification('success', `分红成功！获得 ${formatCurrency(result.playerReceived || 0)}`);
       }
       return result;
     },
@@ -2116,7 +2117,7 @@ export const useGameStore = create<GameState & GameActions>()(
       // 检查资金
       const playerCash = worldRef.companies.cash[0];
       if (playerCash < def.buildCost) {
-        return { success: false, reason: `资金不足，需要 ¥${def.buildCost.toLocaleString()}` };
+        return { success: false, reason: `资金不足，需要 ${formatCurrency(def.buildCost)}` };
       }
       
       // 扣费
@@ -2132,7 +2133,7 @@ export const useGameStore = create<GameState & GameActions>()(
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playBuildComplete();
-        get().addNotification('success', `已安装「${def.name}」，花费 ¥${def.buildCost.toLocaleString()}`);
+        get().addNotification('success', `已安装「${def.name}」，花费 ${formatCurrency(def.buildCost)}`);
       } else {
         // 恢复资金
         worldRef.companies.cash[0] += def.buildCost;
@@ -2182,7 +2183,7 @@ export const useGameStore = create<GameState & GameActions>()(
       // 检查资金
       const playerCash = worldRef.companies.cash[0];
       if (playerCash < costResult.cost) {
-        return { success: false, cost: costResult.cost, reason: `资金不足，维修需要 ¥${costResult.cost.toFixed(0)}` };
+        return { success: false, cost: costResult.cost, reason: `资金不足，维修需要 ${formatCurrency(costResult.cost)}` };
       }
       
       // 扣费
@@ -2197,7 +2198,7 @@ export const useGameStore = create<GameState & GameActions>()(
         });
         
         soundManager.playUpgrade();
-        get().addNotification('success', `维修完成，花费 ¥${costResult.cost.toFixed(0)}`);
+        get().addNotification('success', `维修完成，花费 ${formatCurrency(costResult.cost)}`);
       } else {
         // 恢复资金
         worldRef.companies.cash[0] += costResult.cost;
