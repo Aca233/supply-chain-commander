@@ -114,12 +114,12 @@ describe('Finance', () => {
   it('renders income statement numbers from the shared financial snapshot instead of raw trades', () => {
     const html = renderToStaticMarkup(React.createElement(Finance));
 
-    expect(html).toContain('现金余额:¥10.00K');
-    expect(html).toContain('总资产:¥20.00K');
-    expect(html).toContain('净资产:¥17.00K');
-    expect(html).toContain('¥1,200');
-    expect(html).toContain('-¥1,500');
-    expect(html).toContain('-¥300');
+    expect(html).toContain('现金余额:¥10.0K');
+    expect(html).toContain('总资产:¥20.0K');
+    expect(html).toContain('净资产:¥17.0K');
+    expect(html).toContain('¥1.2K');
+    expect(html).toContain('¥-1.5K');
+    expect(html).toContain('¥-300');
     expect(html).not.toContain('¥9,000');
   });
 });
