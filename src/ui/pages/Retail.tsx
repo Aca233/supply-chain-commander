@@ -6,7 +6,7 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { formatNumber } from '@/ui/utils/format';
+import { formatCurrency, formatNumber } from '@/ui/utils/format';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { shouldUseCompactRetailLayout } from './responsivePageLayout';
 
@@ -89,7 +89,7 @@ const Retail: React.FC = () => {
               />
               <StatWidget
                 title="今日营收"
-                value={`¥${formatNumber(marketOverview.totalRevenue)}`}
+              value={formatCurrency(marketOverview.totalRevenue)}
                 icon="💰"
                 status="success"
                 compact
@@ -192,14 +192,14 @@ const Retail: React.FC = () => {
                 <div className={`grid gap-4 ${useCompactDesktop ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-3'}`}>
                   <StatWidget
                     title="今日营收"
-                    value={`¥${formatNumber(store.dailyRevenue)}`}
+              value={formatCurrency(store.dailyRevenue)}
                     icon="💵"
                     status="success"
                     compact
                   />
                   <StatWidget
                     title="今日利润"
-                    value={`¥${formatNumber(store.dailyProfit)}`}
+              value={formatCurrency(store.dailyProfit)}
                     icon={store.dailyProfit >= 0 ? '📈' : '📉'}
                     status={store.dailyProfit >= 0 ? 'success' : 'error'}
                     compact
@@ -290,7 +290,7 @@ const Retail: React.FC = () => {
                                 </div>
                               </td>
                               <td className="py-2 text-right font-medium text-[var(--success)] tabular-nums">
-                                ¥{formatNumber(item.price)}
+                                {formatCurrency(item.price)}
                               </td>
                             </tr>
                           );

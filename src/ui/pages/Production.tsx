@@ -26,6 +26,7 @@ import {
 } from '@/ui/design-system';
 
 import { useMobile } from '@/ui/hooks/useMobile';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 视图模式
 type ViewMode = 'grid' | 'list';
@@ -158,7 +159,7 @@ export const Production: React.FC = () => {
                   建筑: {playerBuildings}/100
                 </Badge>
                 <Badge variant="success" size="sm">
-                  ¥{playerCash.toLocaleString()}
+                  {formatCurrency(playerCash)}
                 </Badge>
               </div>
             </div>

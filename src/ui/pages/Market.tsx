@@ -18,6 +18,7 @@ import { formatMonthDay, tickToDate, GameWorld } from '@/core/world/GameWorld';
 import { GoodsIcon, BuildingIcon } from '@/ui/components/Icons';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 设计系统组件
 import {
@@ -415,7 +416,7 @@ const TradePanel = React.memo<TradePanelProps>(({
       <Input
         label="单价"
         type="number"
-        placeholder={`¥${currentPrice.toFixed(2)}`}
+        placeholder={formatCurrency(currentPrice)}
         value={tradePrice}
         onChange={(e) => onPriceChange(e.target.value)}
         size="sm"
@@ -432,7 +433,7 @@ const TradePanel = React.memo<TradePanelProps>(({
         <span className={`font-bold ${
           tradeType === 'buy' ? 'text-success' : 'text-error'
         }`}>
-          ¥{totalCost.toFixed(2)}
+          {formatCurrency(totalCost)}
         </span>
       </div>
       
@@ -440,7 +441,7 @@ const TradePanel = React.memo<TradePanelProps>(({
       <div className="text-xs text-foreground-muted flex justify-between p-2 rounded-lg bg-background-muted/50">
         <span>{tradeType === 'buy' ? '可用资金' : '可售库存'}</span>
         <span className="font-semibold text-foreground">
-          {tradeType === 'buy' ? `¥${playerCash.toLocaleString()}` : playerStock.toFixed(0)}
+          {tradeType === 'buy' ? formatCurrency(playerCash) : playerStock.toFixed(0)}
         </span>
       </div>
       
@@ -840,7 +841,7 @@ export const Market: React.FC = () => {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatWidget
           title="最新成交价"
-          value={lastTradePrice !== null ? `¥${lastTradePrice.toFixed(2)}` : '暂无成交'}
+          value={lastTradePrice !== null ? formatCurrency(lastTradePrice) : '暂无成交'}
           change={lastTradePrice && selectedGoods ? (lastTradePrice / selectedGoods.basePrice - 1) : undefined}
           icon="💰"
           variant="game"
@@ -849,7 +850,7 @@ export const Market: React.FC = () => {
         />
         <StatWidget
           title="市场均衡价"
-          value={`¥${currentPrice.toFixed(2)}`}
+          value={formatCurrency(currentPrice)}
           change={selectedGoods ? (currentPrice / selectedGoods.basePrice - 1) : undefined}
           icon="📊"
           variant="elevated"
@@ -857,7 +858,7 @@ export const Market: React.FC = () => {
         />
         <StatWidget
           title="参考价格"
-          value={`¥${selectedGoods.basePrice.toFixed(2)}`}
+          value={formatCurrency(selectedGoods.basePrice)}
           icon="📌"
           variant="default"
           compact
@@ -1223,7 +1224,7 @@ export const Market: React.FC = () => {
             <div className="flex-1 p-2 rounded-lg bg-background-muted">
               <span className="text-foreground-muted">成交价</span>
               <span className="ml-2 font-semibold">
-                {lastTradePrice ? `¥${lastTradePrice.toFixed(2)}` : '-'}
+                {lastTradePrice ? formatCurrency(lastTradePrice) : '-'}
               </span>
             </div>
             <div className="flex-1 p-2 rounded-lg bg-background-muted">
@@ -1259,7 +1260,7 @@ export const Market: React.FC = () => {
                     {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
                       <div key={idx} className="flex flex-col text-xs py-1">
                         <div className="flex justify-between">
-                          <span className="text-error">¥{order.price.toFixed(2)}</span>
+                            <span className="text-error">{formatCurrency(order.price)}</span>
                           <span>{order.quantity.toFixed(0)}</span>
                         </div>
                         <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
@@ -1275,7 +1276,7 @@ export const Market: React.FC = () => {
                     {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
                       <div key={idx} className="flex flex-col text-xs py-1">
                         <div className="flex justify-between">
-                          <span className="text-success">¥{order.price.toFixed(2)}</span>
+                            <span className="text-success">{formatCurrency(order.price)}</span>
                           <span>{order.quantity.toFixed(0)}</span>
                         </div>
                         <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
@@ -1304,7 +1305,7 @@ export const Market: React.FC = () => {
                           <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
                             {order.type === 'buy' ? '买' : '卖'}
                           </Badge>
-                          <span className="text-sm font-medium">¥{order.price.toFixed(2)}</span>
+                      <span className="text-sm font-medium">{formatCurrency(order.price)}</span>
                           <span className="text-sm text-foreground-muted">×{order.quantity.toFixed(0)}</span>
                         </div>
                         <Button
@@ -1457,14 +1458,14 @@ export const Market: React.FC = () => {
                 <div className="grid grid-cols-3 gap-3">
                   <StatWidget
                     title="成交价"
-                    value={lastTradePrice ? `¥${lastTradePrice.toFixed(2)}` : '-'}
+          value={lastTradePrice ? formatCurrency(lastTradePrice) : '-'}
                     icon="💰"
                     variant="game"
                     compact
                   />
                   <StatWidget
                     title="均衡价"
-                    value={`¥${currentPrice.toFixed(2)}`}
+          value={formatCurrency(currentPrice)}
                     icon="📊"
                     variant="elevated"
                     compact
@@ -1504,7 +1505,7 @@ export const Market: React.FC = () => {
                 {orderBook.sellOrders.slice(0, 3).map((order, idx) => (
                   <div key={idx} className="flex flex-col text-xs py-1">
                     <div className="flex justify-between">
-                      <span className="text-error">¥{order.price.toFixed(2)}</span>
+                      <span className="text-error">{formatCurrency(order.price)}</span>
                       <span>{order.quantity.toFixed(0)}</span>
                     </div>
                     <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
@@ -1517,7 +1518,7 @@ export const Market: React.FC = () => {
                 {orderBook.buyOrders.slice(0, 3).map((order, idx) => (
                   <div key={idx} className="flex flex-col text-xs py-1">
                     <div className="flex justify-between">
-                      <span className="text-success">¥{order.price.toFixed(2)}</span>
+                      <span className="text-success">{formatCurrency(order.price)}</span>
                       <span>{order.quantity.toFixed(0)}</span>
                     </div>
                     <span className="text-[10px] text-foreground-muted truncate">{order.companyName}</span>
@@ -1663,7 +1664,7 @@ export const Market: React.FC = () => {
                             <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
                               {order.type === 'buy' ? '买' : '卖'}
                             </Badge>
-                            <span className="font-semibold">¥{order.price.toFixed(2)}</span>
+                    <span className="font-semibold">{formatCurrency(order.price)}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <span>{order.quantity.toFixed(0)}</span>
@@ -1693,7 +1694,7 @@ export const Market: React.FC = () => {
                           onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <span className="text-error font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
                             <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                           </div>
                           <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -1716,7 +1717,7 @@ export const Market: React.FC = () => {
                           onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <span className="text-success font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
                             <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                           </div>
                           <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -1897,7 +1898,7 @@ export const Market: React.FC = () => {
             <div className="grid grid-cols-4 gap-4">
               <StatWidget
                 title="最新成交价"
-                value={lastTradePrice !== null ? `¥${lastTradePrice.toFixed(2)}` : '暂无成交'}
+          value={lastTradePrice !== null ? formatCurrency(lastTradePrice) : '暂无成交'}
                 change={lastTradePrice && selectedGoods ? (lastTradePrice / selectedGoods.basePrice - 1) : undefined}
                 icon="💰"
                 variant="game"
@@ -1906,7 +1907,7 @@ export const Market: React.FC = () => {
               />
               <StatWidget
                 title="市场均衡价"
-                value={`¥${currentPrice.toFixed(2)}`}
+          value={formatCurrency(currentPrice)}
                 change={selectedGoods ? (currentPrice / selectedGoods.basePrice - 1) : undefined}
                 icon="📊"
                 variant="elevated"
@@ -1914,7 +1915,7 @@ export const Market: React.FC = () => {
               />
               <StatWidget
                 title="参考价格"
-                value={`¥${selectedGoods.basePrice.toFixed(2)}`}
+          value={formatCurrency(selectedGoods.basePrice)}
                 icon="📌"
                 variant="default"
                 compact
@@ -2276,7 +2277,7 @@ export const Market: React.FC = () => {
                         <Badge variant={order.type === 'buy' ? 'success' : 'error'} size="sm">
                           {order.type === 'buy' ? '买' : '卖'}
                         </Badge>
-                        <span className="font-semibold">¥{order.price.toFixed(2)}</span>
+                    <span className="font-semibold">{formatCurrency(order.price)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span>{order.quantity.toFixed(0)}</span>
@@ -2307,7 +2308,7 @@ export const Market: React.FC = () => {
                       onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span className="text-error font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
                         <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                       </div>
                       <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -2331,7 +2332,7 @@ export const Market: React.FC = () => {
                       onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span className="text-success font-semibold flex-shrink-0">¥{order.price.toFixed(2)}</span>
+                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
                         <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                       </div>
                       <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>

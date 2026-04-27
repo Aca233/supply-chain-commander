@@ -45,6 +45,7 @@ import {
   ProgressBar,
   StatWidget,
 } from '../design-system';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 示例数据
 const tableData = [
@@ -63,7 +64,7 @@ const tableColumns: Column<typeof tableData[0]>[] = [
     title: '价格',
     sortable: true,
     align: 'right',
-    render: (value) => `¥${value.toLocaleString()}`,
+    render: (value) => formatCurrency(value),
   },
   {
     key: 'stock',
@@ -440,7 +441,7 @@ export const DesignSystemShowcase: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatWidget
               title="Total Revenue"
-              value="¥1.2M"
+              value={formatCurrency(1200000)}
               change={0.124}
               icon="💰"
             />

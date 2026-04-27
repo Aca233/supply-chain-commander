@@ -11,6 +11,7 @@ import { Button } from '@/ui/design-system/components/Button/Button';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { MonthlyNewsReport, NewsCategory, NewsImportance } from '@/core/news';
 import { shouldUseCompactNewsLayout } from './responsivePageLayout';
+import { formatCurrency } from '@/ui/utils/format';
 
 // 分类图标映射
 const CATEGORY_ICONS: Record<NewsCategory, string> = {
@@ -203,7 +204,7 @@ const MonthlyReportCard: React.FC<{
               <div className="p-3 rounded-lg bg-[var(--bg-muted)]">
                 <div className="text-xs text-[var(--text-muted)] mb-1">GDP</div>
                 <div className="text-sm font-medium text-[var(--text-primary)]">
-                  ¥{(report.stats.economy.gdp / 1000000).toFixed(1)}M
+                  {formatCurrency(report.stats.economy.gdp)}
                 </div>
                 <div className={`text-xs ${report.stats.economy.gdpChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {report.stats.economy.gdpChange >= 0 ? '↑' : '↓'}{Math.abs(report.stats.economy.gdpChange).toFixed(1)}%

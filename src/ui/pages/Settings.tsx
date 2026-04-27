@@ -12,6 +12,7 @@ import { SoundSettingsPanel } from '@/ui/components/Sound/SoundSettingsPanel';
 import { formatGameDate } from '@/core/world/GameWorld';
 import { useMobile } from '@/ui/hooks/useMobile';
 import { shouldUseCompactSettingsLayout } from './responsivePageLayout';
+import { formatCurrency } from '@/ui/utils/format';
 import {
   loadLLMConfig,
   saveLLMConfig,
@@ -293,7 +294,7 @@ export const Settings: React.FC = () => {
       align: 'right',
       render: (value) => (
         <span className="text-[var(--success)]">
-          ¥{(value / 1000000).toFixed(2)}M
+          {formatCurrency(value)}
         </span>
       ),
     },
