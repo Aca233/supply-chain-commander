@@ -400,9 +400,9 @@ export class GameLoop {
     // 1. 自动补充建筑输入
     const endAutoFeed = perfMonitor.startMeasure('autoFeed');
     autoFeedBuildings(this.world);
-    updateMarketWages(this.world);
     adjustAIWageMultipliers(this.world);
     processBuildingLaborMarket(this.world);
+    updateMarketWages(this.world);
     endAutoFeed();
     
     // 2. 获取季节信息（不再直接修改demands）

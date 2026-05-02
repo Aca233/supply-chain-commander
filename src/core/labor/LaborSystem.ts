@@ -278,6 +278,14 @@ export function setAICompanyPersonalityProvider(provider: AICompanyPersonalityPr
   aiCompanyPersonalityProvider = provider;
 }
 
+function getRegisteredBuildingLaborRecipeProvider(): BuildingLaborRecipeProvider {
+  if (!buildingLaborRecipeProvider) {
+    throw new Error('Building labor recipe provider has not been registered');
+  }
+
+  return buildingLaborRecipeProvider;
+}
+
 function getBuildingRoleHired(world: GameWorld, buildingId: number, role: LaborRole): number {
   if (!isValidBuilding(world, buildingId) || !isValidLaborRole(role)) return 0;
   return getSafeLaborValue(world.buildings.workforceHired[getBuildingLaborIndex(buildingId, role)] || 0);
@@ -302,9 +310,8 @@ function isBuildingActiveForLaborMarket(world: GameWorld, buildingId: number): b
 function getActiveWorkforceDemand(world: GameWorld, buildingId: number): WorkforceDemand {
   const efficiency = world.buildings.efficiencies[buildingId] || 0;
   if (efficiency <= 0) return { ...EMPTY_WORKFORCE_DEMAND };
-  if (!buildingLaborRecipeProvider) return { ...EMPTY_WORKFORCE_DEMAND };
 
-  const recipe = buildingLaborRecipeProvider(world, buildingId);
+  const recipe = getRegisteredBuildingLaborRecipeProvider()(world, buildingId);
   return scaleWorkforceDemand(recipe.workforceRequired, efficiency);
 }
 

@@ -11,7 +11,7 @@ import {
   initializeBuildingProductionMethods,
 } from '@/core/production/ProductionMethods';
 import { resolveLegacyOutputModeToSlotMethods } from '@/core/production/legacyOutputModeBridge';
-import { AIDecision, CompanyAssessment } from './AIDecisionEngine';
+import type { AIDecision, CompanyAssessment } from './AIDecisionEngine';
 import { ALL_BUILDINGS, BuildingId } from '@/data/buildings';
 import { GoodsId } from '@/data/goods';
 
