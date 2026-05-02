@@ -5,13 +5,28 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, MAX_SLOTS, legacyHourTicksToDayTicks } from '@/core/constants';
+import { GOODS_COUNT, LABOR_ROLE_COUNT, MAX_SLOTS, legacyHourTicksToDayTicks } from '@/core/constants';
 import {
   BankruptcyResolutionSnapshot,
   BankruptcyStrategySettings,
   bankruptcyResolution,
 } from '@/core/finance/BankruptcyResolution';
+import {
+  LABOR_ROLE_BASIC,
+  LABOR_ROLE_MANAGEMENT,
+  LABOR_ROLE_TECHNICAL,
+  getBuildingLaborIndex,
+  getWorkforceDemandValue,
+  hydrateLaborState,
+  scaleWorkforceDemand,
+  type LaborRole,
+} from '@/core/labor/LaborSystem';
 import { backfillManualTargetsFromCurrentEfficiency, hydrateProductionControlState } from '@/core/production/ProductionControl';
+import {
+  getBuildingSlotCount,
+  getRecipeForBuilding,
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
 
 export interface SaveMetadata {
   id: string;
@@ -34,6 +49,15 @@ export interface SerializedWorld {
     demands: number[];
     demandPressure?: number[];
   };
+  labor?: {
+    totalSupply?: number[];
+    employed?: number[];
+    unemployed?: number[];
+    marketWages?: number[];
+    monthlyGrowth?: number[];
+    demandOpenings?: number[];
+    lastPayrollTick?: number;
+  };
   buildings: {
     count: number;
     types: number[];
@@ -46,6 +70,9 @@ export interface SerializedWorld {
     oversupplySuspendedUntilTick?: number[];
     slotMethods: number[];
     isActive: number[];
+    workforceHired?: number[];
+    wageMultipliers?: number[];
+    accruedPayroll?: number[];
   };
   companies: {
     count: number;
@@ -80,6 +107,12 @@ const SETTINGS_KEY = 'supply_chain_settings';
 const CURRENT_VERSION = '3.0.0';
 const SUPPORTED_VERSIONS = new Set<string>([CURRENT_VERSION]);
 const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024;
+const LEGACY_LABOR_BACKFILL_RATIO = 0.6;
+const LABOR_ROLES: LaborRole[] = [
+  LABOR_ROLE_BASIC,
+  LABOR_ROLE_TECHNICAL,
+  LABOR_ROLE_MANAGEMENT,
+];
 
 function getStorage(): Storage | null {
   return typeof localStorage === 'undefined' ? null : localStorage;
@@ -98,6 +131,8 @@ export class SaveManager {
   }
   
   serializeWorld(world: GameWorld, currentTick: number): SerializedWorld {
+    hydrateLaborState(world);
+
     return {
       timeModel: 'day',
       goods: {
@@ -106,6 +141,15 @@ export class SaveManager {
         supplies: Array.from(world.goods.supplies),
         demands: Array.from(world.goods.demands),
         demandPressure: Array.from(world.goods.demandPressure),
+      },
+      labor: {
+        totalSupply: Array.from(world.labor.totalSupply),
+        employed: Array.from(world.labor.employed),
+        unemployed: Array.from(world.labor.unemployed),
+        marketWages: Array.from(world.labor.marketWages),
+        monthlyGrowth: Array.from(world.labor.monthlyGrowth),
+        demandOpenings: Array.from(world.labor.demandOpenings),
+        lastPayrollTick: world.labor.lastPayrollTick,
       },
       buildings: {
         count: world.buildings.count,
@@ -119,6 +163,13 @@ export class SaveManager {
         oversupplySuspendedUntilTick: Array.from(world.buildings.oversupplySuspendedUntilTick),
         slotMethods: this.serializeSlotMethods(world),
         isActive: Array.from(world.buildings.isActive),
+        workforceHired: Array.from(
+          world.buildings.workforceHired.subarray(0, world.buildings.count * LABOR_ROLE_COUNT),
+        ),
+        wageMultipliers: Array.from(
+          world.buildings.wageMultipliers.subarray(0, world.buildings.count * LABOR_ROLE_COUNT),
+        ),
+        accruedPayroll: Array.from(world.buildings.accruedPayroll.subarray(0, world.buildings.count)),
       },
       companies: {
         count: world.companies.count,
@@ -151,8 +202,118 @@ export class SaveManager {
     }
     return inventories;
   }
+
+  private copyNumberArray(
+    target: Float32Array | Float64Array,
+    source: readonly number[] | undefined,
+    limit: number = target.length,
+  ): void {
+    if (!source) return;
+
+    const length = Math.min(source.length, target.length, limit);
+    for (let i = 0; i < length; i++) {
+      const value = source[i];
+      if (Number.isFinite(value)) {
+        target[i] = value;
+      }
+    }
+  }
+
+  private resetBuildingLaborState(world: GameWorld): void {
+    const laborLength = world.buildings.count * LABOR_ROLE_COUNT;
+    world.buildings.workforceHired.fill(0, 0, laborLength);
+    world.buildings.wageMultipliers.fill(1.0, 0, laborLength);
+    world.buildings.accruedPayroll.fill(0, 0, world.buildings.count);
+  }
+
+  private restoreLaborState(data: SerializedWorld['labor'], world: GameWorld): void {
+    if (!data) return;
+
+    this.copyNumberArray(world.labor.totalSupply, data.totalSupply);
+    this.copyNumberArray(world.labor.employed, data.employed);
+    this.copyNumberArray(world.labor.unemployed, data.unemployed);
+    this.copyNumberArray(world.labor.marketWages, data.marketWages);
+    this.copyNumberArray(world.labor.monthlyGrowth, data.monthlyGrowth);
+    this.copyNumberArray(world.labor.demandOpenings, data.demandOpenings);
+    if (typeof data.lastPayrollTick === 'number' && Number.isFinite(data.lastPayrollTick)) {
+      world.labor.lastPayrollTick = data.lastPayrollTick;
+    }
+  }
+
+  private restoreBuildingLaborState(data: SerializedWorld['buildings'], world: GameWorld): void {
+    const laborLength = world.buildings.count * LABOR_ROLE_COUNT;
+    this.copyNumberArray(world.buildings.workforceHired, data.workforceHired, laborLength);
+    this.copyNumberArray(world.buildings.wageMultipliers, data.wageMultipliers, laborLength);
+    this.copyNumberArray(world.buildings.accruedPayroll, data.accruedPayroll, world.buildings.count);
+  }
+
+  private getActiveBuildingDemand(world: GameWorld, buildingId: number) {
+    if (world.buildings.isActive[buildingId] !== 1) {
+      return null;
+    }
+
+    const owner = world.buildings.owners[buildingId];
+    if (!Number.isInteger(owner) || owner < 0 || owner >= world.companies.count) {
+      return null;
+    }
+
+    const efficiency = world.buildings.efficiencies[buildingId] || 0;
+    if (efficiency <= 0) {
+      return null;
+    }
+
+    const buildingTypeId = world.buildings.types[buildingId];
+    const slotCount = getBuildingSlotCount(buildingTypeId);
+    if (slotCount <= 0) {
+      return null;
+    }
+
+    const slotOffset = buildingId * MAX_SLOTS;
+    const slotMethods: number[] = [];
+    for (let i = 0; i < slotCount; i++) {
+      slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
+    }
+
+    const recipe = getRecipeForBuilding(buildingTypeId, slotMethods);
+    return scaleWorkforceDemand(recipe.workforceRequired, efficiency);
+  }
+
+  private migrateLegacyLaborState(world: GameWorld): void {
+    hydrateLaborState(world);
+    initializeBuildingProductionMethods();
+
+    for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+      const activeDemand = this.getActiveBuildingDemand(world, buildingId);
+      if (!activeDemand) continue;
+
+      for (const role of LABOR_ROLES) {
+        const demand = getWorkforceDemandValue(activeDemand, role);
+        if (demand <= 0) continue;
+
+        const idx = getBuildingLaborIndex(buildingId, role);
+        const existingHired = Math.max(0, world.buildings.workforceHired[idx] || 0);
+        if (existingHired > 0) {
+          const counted = Math.min(existingHired, Math.max(0, world.labor.unemployed[role] || 0));
+          world.labor.unemployed[role] = Math.max(0, world.labor.unemployed[role] - counted);
+          world.labor.employed[role] += counted;
+          continue;
+        }
+
+        const targetHire = Math.ceil(demand * LEGACY_LABOR_BACKFILL_RATIO);
+        const available = Math.max(0, world.labor.unemployed[role] || 0);
+        const hired = Math.min(targetHire, available);
+        if (hired <= 0) continue;
+
+        world.buildings.workforceHired[idx] = hired;
+        world.labor.unemployed[role] = Math.max(0, world.labor.unemployed[role] - hired);
+        world.labor.employed[role] += hired;
+      }
+    }
+  }
   
   deserializeWorld(data: SerializedWorld, world: GameWorld): void {
+    const hasSerializedLabor = data.labor !== undefined;
+
     // 恢复游戏tick（修复日期重置问题）
     world.tick = this.normalizeLoadedTick(data.currentTick, data.timeModel ?? 'hour');
     
@@ -209,6 +370,18 @@ export class SaveManager {
       for (let j = 0; j < inv.length; j++) {
         world.companies.inventories[i * GOODS_COUNT + j] = inv[j];
       }
+    }
+
+    if (!hasSerializedLabor) {
+      (world as unknown as { labor?: GameWorld['labor'] }).labor = undefined;
+    }
+    hydrateLaborState(world);
+    this.resetBuildingLaborState(world);
+    this.restoreLaborState(data.labor, world);
+    this.restoreBuildingLaborState(data.buildings, world);
+    hydrateLaborState(world);
+    if (!hasSerializedLabor) {
+      this.migrateLegacyLaborState(world);
     }
 
     bankruptcyResolution.hydrate(data.bankruptcy);
