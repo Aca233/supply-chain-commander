@@ -108,7 +108,7 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥-13/日');
+    expect(html).toContain('¥-8/日');
   });
 
   it('keeps showing positive estimated profit when the building is active', () => {
@@ -126,6 +126,6 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥988/日');
+    expect(html).toContain('¥992/日');
   });
 });

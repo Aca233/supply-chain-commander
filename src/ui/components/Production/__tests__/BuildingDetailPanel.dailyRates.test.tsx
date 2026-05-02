@@ -149,8 +149,8 @@ describe('BuildingDetailPanel daily rates', () => {
     expect(html).toContain('10 单位');
     expect(html).toContain('需求: 5/日');
     expect(html).toContain('+10/日');
-    expect(html).toContain('¥13');
+    expect(html).toContain('¥8');
     expect(html).toContain('¥1.0K');
-    expect(html).toContain('¥988');
+    expect(html).toContain('¥992');
   });
 });

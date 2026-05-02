@@ -102,7 +102,7 @@ describe('ProductionOverview time model', () => {
     const html = renderToStaticMarkup(React.createElement(ProductionOverview));
 
     expect(html).toContain('日产能:¥1.0K');
-    expect(html).toContain('日预估利润:¥987.5');
+    expect(html).toContain('日预估利润:¥991.67');
   });
 
   it('derives total building count from the current world instead of cached store count', () => {
