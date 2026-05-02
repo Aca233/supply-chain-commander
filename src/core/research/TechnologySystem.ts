@@ -55,7 +55,6 @@ export interface TechnologyUnlocks {
   buildings?: number[];          // 解锁的建筑ID
   recipes?: number[];            // 解锁的配方ID
   productionMethods?: number[];  // 解锁的生产方式ID
-  subsidiaries?: number[];       // 解锁的附属建筑ID
   features?: string[];           // 解锁的功能标识
 }
 
@@ -184,9 +183,7 @@ const LOGISTICS_TECHNOLOGIES: Technology[] = [
     researchTime: 36,
     prerequisites: [],
     requiredLevel: 1,
-    unlocks: {
-      subsidiaries: [10], // 装卸码头
-    },
+    unlocks: {},
     effects: {
       storageBonus: 0,
     },
@@ -203,9 +200,7 @@ const LOGISTICS_TECHNOLOGIES: Technology[] = [
     researchTime: 72,
     prerequisites: [10],
     requiredLevel: 2,
-    unlocks: {
-      subsidiaries: [1, 2], // 基础仓库、冷藏仓库
-    },
+    unlocks: {},
     effects: {
       storageBonus: 0,
       costReduction: 0,
@@ -268,9 +263,7 @@ const AUTOMATION_TECHNOLOGIES: Technology[] = [
     researchTime: 144,
     prerequisites: [20],
     requiredLevel: 3,
-    unlocks: {
-      subsidiaries: [3], // 自动化仓库
-    },
+    unlocks: {},
     effects: {
       efficiencyBonus: 0,
       productionBonus: 0,
@@ -315,9 +308,7 @@ const QUALITY_TECHNOLOGIES: Technology[] = [
     researchTime: 48,
     prerequisites: [],
     requiredLevel: 1,
-    unlocks: {
-      subsidiaries: [20], // 品质实验室
-    },
+    unlocks: {},
     effects: {
       qualityBonus: 0,
     },

@@ -420,9 +420,6 @@ const TechResearchDialog: React.FC<TechResearchDialogProps> = ({
                 {tech.unlocks.productionMethods && tech.unlocks.productionMethods.length > 0 && (
                   <div>⚙️ 解锁 {tech.unlocks.productionMethods.length} 个生产方式</div>
                 )}
-                {tech.unlocks.subsidiaries && tech.unlocks.subsidiaries.length > 0 && (
-                  <div>🏗️ 解锁 {tech.unlocks.subsidiaries.length} 个附属设施</div>
-                )}
                 {tech.unlocks.features && tech.unlocks.features.length > 0 && (
                   <div>✨ 解锁新功能</div>
                 )}
