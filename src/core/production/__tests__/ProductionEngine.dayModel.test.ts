@@ -113,6 +113,45 @@ describe('ProductionEngine workforce coverage', () => {
     expect(world.buildings.outputBuffers[buildingId * MAX_OUTPUTS]).toBe(0);
   });
 
+  it('reduces output by the lowest role coverage', () => {
+    const { world, buildingId } = createSingleBuildingWorld();
+
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] = 999;
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_TECHNICAL)] = 999;
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_MANAGEMENT)] = 0;
+
+    const coverage = getBuildingWorkforceCoverage(world, buildingId);
+    const result = updateAllProduction(world);
+
+    expect(coverage.coverage).toBe(0);
+    expect(coverage.bottleneckRole).toBe(LABOR_ROLE_MANAGEMENT);
+    expect(result.producedCount).toBe(0);
+    expect(result.laborShortage).toBe(1);
+    expect(world.buildings.outputBuffers[buildingId * MAX_OUTPUTS]).toBe(0);
+  });
+
+  it('lets active utilization reduce workforce demand before shortage coverage', () => {
+    const { world, buildingId, recipe } = createSingleBuildingWorld();
+    world.tick = 1;
+    world.buildings.efficiencies[buildingId] = 0.5;
+
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] =
+      Math.ceil(recipe.workforceRequired.basic * 0.5);
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_TECHNICAL)] =
+      Math.ceil(recipe.workforceRequired.technical * 0.5);
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_MANAGEMENT)] =
+      Math.ceil(recipe.workforceRequired.management * 0.5);
+
+    const coverage = getBuildingWorkforceCoverage(world, buildingId);
+    const result = updateAllProduction(world);
+
+    expect(coverage.activeDemand.basic).toBe(Math.ceil(recipe.workforceRequired.basic * 0.5));
+    expect(coverage.coverage).toBe(1);
+    expect(result.producedCount).toBe(1);
+    expect(result.laborShortage).toBe(0);
+    expect(world.buildings.outputBuffers[buildingId * MAX_OUTPUTS]).toBeGreaterThan(0);
+  });
+
   it('scales production output by the bottleneck role coverage for the building', () => {
     const { world, buildingId, recipe } = createSingleBuildingWorld();
     const outputOffset = buildingId * MAX_OUTPUTS;

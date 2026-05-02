@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGameWorld } from '@/core/world/GameWorld';
 import { addBuilding } from '@/core/world/WorldInitializer';
 import { BuildingId } from '@/data/buildings';
+import {
+  LABOR_ROLE_BASIC,
+  LABOR_ROLE_MANAGEMENT,
+  LABOR_ROLE_TECHNICAL,
+  getBuildingLaborIndex,
+} from '@/core/labor/LaborSystem';
 
 import { initProductionCache, updateAllProduction } from '../ProductionEngine';
 import { initializeBuildingProductionMethods } from '../ProductionMethods';
@@ -19,7 +25,10 @@ describe('Production energy handling', () => {
     world.companies.cash[0] = 10_000_000;
 
     for (let i = 0; i < 30; i++) {
-      addBuilding(world, 0, BuildingId.OIL_FIELD, 0);
+      const buildingId = addBuilding(world, 0, BuildingId.OIL_FIELD, 0);
+      world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] = 999;
+      world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_TECHNICAL)] = 999;
+      world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_MANAGEMENT)] = 999;
     }
 
     const result = updateAllProduction(world);
