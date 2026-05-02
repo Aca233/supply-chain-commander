@@ -15,6 +15,9 @@ export const ACTUAL_GOODS_COUNT = GOODS_COUNT;
 /** 最大建筑数量（增加以支持更多产业链） */
 export const MAX_BUILDINGS = 3000;
 
+/** 劳动力岗位数量：普通工人、技术工人、管理人员 */
+export const LABOR_ROLE_COUNT = 3;
+
 /** 最大公司数量（包括玩家和AI） */
 export const MAX_COMPANIES = 200;
 

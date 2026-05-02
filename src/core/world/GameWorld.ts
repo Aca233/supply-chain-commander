@@ -5,6 +5,7 @@
 
 import {
   GOODS_COUNT,
+  LABOR_ROLE_COUNT,
   MAX_BUILDINGS,
   MAX_COMPANIES,
   MAX_ORDERS,
@@ -66,6 +67,11 @@ export interface BuildingsSystem {
   isActive: Uint8Array;           // 是否激活运营
   oversupplySuspendedGoods: Int16Array;      // 自动因过剩休眠的主商品，-1=未休眠
   oversupplySuspendedUntilTick: Uint32Array; // 自动休眠最早恢复 tick
+
+  // 劳动力状态
+  workforceHired: Float32Array;    // [N × LABOR_ROLE_COUNT]
+  wageMultipliers: Float32Array;   // [N × LABOR_ROLE_COUNT]
+  accruedPayroll: Float64Array;    // [N] 本月已计提工资
 }
 
 /** 公司系统数据 */
@@ -260,6 +266,17 @@ export interface HouseholdSystem {
   totalConsumptionSpent: number;
 }
 
+/** 劳动力市场系统数据 */
+export interface LaborSystemData {
+  totalSupply: Float32Array;
+  employed: Float32Array;
+  unemployed: Float32Array;
+  marketWages: Float32Array;
+  monthlyGrowth: Float32Array;
+  demandOpenings: Float32Array;
+  lastPayrollTick: number;
+}
+
 /** 游戏世界主结构 */
 export interface GameWorld {
   tick: number;
@@ -277,6 +294,9 @@ export interface GameWorld {
 
   // 家庭/消费者系统（闭合货币循环）
   households: HouseholdSystem;
+
+  // 劳动力市场
+  labor: LaborSystemData;
 
   // 建造/拆除系统
   construction: ConstructionQueueSystem;
@@ -327,6 +347,9 @@ export function createBuildingsSystem(): BuildingsSystem {
   manualEfficiencyTargets.fill(1.0);
   const oversupplySuspendedGoods = new Int16Array(MAX_BUILDINGS);
   oversupplySuspendedGoods.fill(-1);
+  const laborSize = MAX_BUILDINGS * LABOR_ROLE_COUNT;
+  const wageMultipliers = new Float32Array(laborSize);
+  wageMultipliers.fill(1.0);
 
   return {
     count: 0,
@@ -344,6 +367,9 @@ export function createBuildingsSystem(): BuildingsSystem {
     isActive: new Uint8Array(MAX_BUILDINGS),
     oversupplySuspendedGoods,
     oversupplySuspendedUntilTick: new Uint32Array(MAX_BUILDINGS),
+    workforceHired: new Float32Array(laborSize),
+    wageMultipliers,
+    accruedPayroll: new Float64Array(MAX_BUILDINGS),
   };
 }
 
@@ -534,6 +560,39 @@ export function createHouseholdSystem(): HouseholdSystem {
 }
 
 /**
+ * 创建劳动力市场系统
+ */
+export function createLaborSystem(): LaborSystemData {
+  const totalSupply = new Float32Array(LABOR_ROLE_COUNT);
+  totalSupply[0] = 120_000;
+  totalSupply[1] = 32_000;
+  totalSupply[2] = 8_000;
+
+  const employed = new Float32Array(LABOR_ROLE_COUNT);
+  const unemployed = new Float32Array(totalSupply);
+
+  const marketWages = new Float32Array(LABOR_ROLE_COUNT);
+  marketWages[0] = 120;
+  marketWages[1] = 260;
+  marketWages[2] = 520;
+
+  const monthlyGrowth = new Float32Array(LABOR_ROLE_COUNT);
+  monthlyGrowth[0] = 600;
+  monthlyGrowth[1] = 120;
+  monthlyGrowth[2] = 30;
+
+  return {
+    totalSupply,
+    employed,
+    unemployed,
+    marketWages,
+    monthlyGrowth,
+    demandOpenings: new Float32Array(LABOR_ROLE_COUNT),
+    lastPayrollTick: 0,
+  };
+}
+
+/**
  * 创建完整的游戏世界
  */
 export function createGameWorld(): GameWorld {
@@ -549,6 +608,7 @@ export function createGameWorld(): GameWorld {
     trades: createTradesSystem(),
     retail: createRetailSystem(),
     households: createHouseholdSystem(),
+    labor: createLaborSystem(),
 
     // 建造/拆除系统
     construction: createConstructionQueueSystem(),
