@@ -127,6 +127,21 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     expect(world.labor.unemployed[LABOR_ROLE_BASIC]).toBe(quit);
   });
 
+  it('attrits at least one low-paid worker from a small workforce', () => {
+    const world = createGameWorld();
+    const idx = getBuildingLaborIndex(0, LABOR_ROLE_BASIC);
+    world.buildings.workforceHired[idx] = 2;
+    world.labor.employed[LABOR_ROLE_BASIC] = 2;
+    world.labor.unemployed[LABOR_ROLE_BASIC] = 0;
+
+    const quit = processRoleAttrition(world, 0, LABOR_ROLE_BASIC, 0.5);
+
+    expect(quit).toBe(1);
+    expect(world.buildings.workforceHired[idx]).toBe(1);
+    expect(world.labor.employed[LABOR_ROLE_BASIC]).toBe(1);
+    expect(world.labor.unemployed[LABOR_ROLE_BASIC]).toBe(1);
+  });
+
   it('does not attrit workers at or above market wage', () => {
     const world = createGameWorld();
     const idx = getBuildingLaborIndex(0, LABOR_ROLE_BASIC);
@@ -147,6 +162,17 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     expect(world.labor.marketWages[LABOR_ROLE_TECHNICAL]).toBeCloseTo(before * 1.01);
   });
 
+  it('caps market wage decreases at one percent and keeps wages above the lower bound', () => {
+    const world = createGameWorld();
+    world.labor.marketWages[LABOR_ROLE_BASIC] = 1;
+    world.labor.demandOpenings[LABOR_ROLE_BASIC] = 0;
+    world.labor.unemployed[LABOR_ROLE_BASIC] = world.labor.totalSupply[LABOR_ROLE_BASIC];
+
+    updateMarketWages(world);
+
+    expect(world.labor.marketWages[LABOR_ROLE_BASIC]).toBe(1);
+  });
+
   it('adds monthly labor growth to supply and unemployment', () => {
     const world = createGameWorld();
     const beforeSupply = world.labor.totalSupply[LABOR_ROLE_MANAGEMENT];
@@ -163,6 +189,24 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     world.buildings.wageMultipliers[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 3;
 
     expect(getActualDailyWage(world, 0, LABOR_ROLE_BASIC)).toBe(120 * 2);
+  });
+
+  it('ignores invalid labor roles without mutating labor arrays', () => {
+    const world = createGameWorld();
+    const invalidRole = 99 as typeof LABOR_ROLE_BASIC;
+    const hiredBefore = Array.from(world.buildings.workforceHired.slice(0, LABOR_ROLE_COUNT));
+    const employedBefore = Array.from(world.labor.employed);
+    const unemployedBefore = Array.from(world.labor.unemployed);
+
+    expect(getBuildingLaborIndex(0, invalidRole)).toBe(-1);
+    expect(hireForBuildingRole(world, 0, invalidRole, 10, 1)).toBe(0);
+    expect(processRoleAttrition(world, 0, invalidRole, 0.5)).toBe(0);
+    expect(getActualDailyWage(world, 0, invalidRole)).toBe(0);
+
+    expect(Array.from(world.buildings.workforceHired.slice(0, LABOR_ROLE_COUNT))).toEqual(hiredBefore);
+    expect(Array.from(world.labor.employed)).toEqual(employedBefore);
+    expect(Array.from(world.labor.unemployed)).toEqual(unemployedBefore);
+    expect(Number.isNaN(world.buildings.workforceHired[-1 as number])).toBe(false);
   });
 
   it('accrues daily payroll and pays monthly into households', () => {
@@ -183,6 +227,37 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     expect(world.households.cash[0]).toBe(accrued);
     expect(world.households.totalWagesReceived).toBe(accrued);
     expect(world.buildings.accruedPayroll[0]).toBe(0);
+  });
+
+  it('caps monthly payroll to company cash and keeps unpaid wages accrued', () => {
+    const world = createGameWorld();
+    world.companies.count = 1;
+    world.companies.cash[0] = 500;
+    world.buildings.count = 1;
+    world.buildings.owners[0] = 0;
+    world.buildings.accruedPayroll[0] = 1_200;
+
+    const paid = payMonthlyPayroll(world);
+
+    expect(paid[0]).toBe(500);
+    expect(world.companies.cash[0]).toBe(0);
+    expect(world.households.cash[0]).toBe(500);
+    expect(world.households.totalWagesReceived).toBe(500);
+    expect(world.buildings.accruedPayroll[0]).toBe(700);
+  });
+
+  it('preserves accrued payroll when the building owner is invalid', () => {
+    const world = createGameWorld();
+    world.companies.count = 1;
+    world.buildings.count = 1;
+    world.buildings.owners[0] = 9;
+    world.buildings.accruedPayroll[0] = 1_200;
+
+    const paid = payMonthlyPayroll(world);
+
+    expect(paid[0]).toBe(0);
+    expect(world.households.totalWagesReceived).toBe(0);
+    expect(world.buildings.accruedPayroll[0]).toBe(1_200);
   });
 
   it('accrues daily payroll for active buildings only', () => {

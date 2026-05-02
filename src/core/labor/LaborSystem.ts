@@ -28,15 +28,23 @@ const ROLE_NAMES = ['普通工人', '技术工人', '管理人员'] as const;
 const DEFAULT_TOTAL_SUPPLY = [120_000, 32_000, 8_000] as const;
 const DEFAULT_MARKET_WAGES = [120, 260, 520] as const;
 const DEFAULT_MONTHLY_GROWTH = [600, 120, 30] as const;
+const MARKET_WAGE_PRESSURE_COEFFICIENT = 0.02;
+const MARKET_WAGE_UNEMPLOYMENT_COEFFICIENT = 0.008;
 
 export const WAGE_MULTIPLIER_MIN = 0.5;
 export const WAGE_MULTIPLIER_MAX = 2.0;
 
+export function isValidLaborRole(role: number): role is LaborRole {
+  return Number.isInteger(role) && role >= 0 && role < LABOR_ROLE_COUNT;
+}
+
 export function getRoleName(role: LaborRole): string {
+  if (!isValidLaborRole(role)) return '';
   return ROLE_NAMES[role];
 }
 
 export function getBuildingLaborIndex(buildingId: number, role: LaborRole): number {
+  if (!Number.isInteger(buildingId) || buildingId < 0 || !isValidLaborRole(role)) return -1;
   return buildingId * LABOR_ROLE_COUNT + role;
 }
 
@@ -46,6 +54,7 @@ export function clampWageMultiplier(value: number): number {
 }
 
 export function getWorkforceDemandValue(demand: WorkforceDemand, role: LaborRole): number {
+  if (!isValidLaborRole(role)) return 0;
   if (role === LABOR_ROLE_BASIC) return demand.basic;
   if (role === LABOR_ROLE_TECHNICAL) return demand.technical;
   return demand.management;
@@ -56,6 +65,7 @@ export function setWorkforceDemandValue(
   role: LaborRole,
   value: number,
 ): void {
+  if (!isValidLaborRole(role)) return;
   const safeValue = Math.max(0, Number.isFinite(value) ? value : 0);
   if (role === LABOR_ROLE_BASIC) demand.basic = safeValue;
   else if (role === LABOR_ROLE_TECHNICAL) demand.technical = safeValue;
@@ -195,7 +205,7 @@ function getSafeLaborValue(value: number): number {
 }
 
 function getBuildingRoleHired(world: GameWorld, buildingId: number, role: LaborRole): number {
-  if (!isValidBuilding(world, buildingId)) return 0;
+  if (!isValidBuilding(world, buildingId) || !isValidLaborRole(role)) return 0;
   return getSafeLaborValue(world.buildings.workforceHired[getBuildingLaborIndex(buildingId, role)] || 0);
 }
 
@@ -207,7 +217,7 @@ export function hireForBuildingRole(
   wageMultiplier: number,
 ): number {
   hydrateLaborState(world);
-  if (!isValidBuilding(world, buildingId)) return 0;
+  if (!isValidBuilding(world, buildingId) || !isValidLaborRole(role)) return 0;
 
   const idx = getBuildingLaborIndex(buildingId, role);
   const hired = getBuildingRoleHired(world, buildingId, role);
@@ -234,7 +244,7 @@ export function processRoleAttrition(
   wageMultiplier: number,
 ): number {
   hydrateLaborState(world);
-  if (!isValidBuilding(world, buildingId)) return 0;
+  if (!isValidBuilding(world, buildingId) || !isValidLaborRole(role)) return 0;
 
   const multiplier = clampWageMultiplier(wageMultiplier);
   if (multiplier >= 1) return 0;
@@ -244,7 +254,7 @@ export function processRoleAttrition(
   if (hired <= 0) return 0;
 
   const quitRate = BASE_QUIT_RATES[role] * (1 - multiplier);
-  const quit = Math.min(hired, Math.floor(hired * quitRate));
+  const quit = Math.min(hired, Math.max(1, Math.ceil(hired * quitRate)));
   if (quit <= 0) return 0;
 
   world.buildings.workforceHired[idx] = Math.max(0, world.buildings.workforceHired[idx] - quit);
@@ -261,7 +271,11 @@ export function updateMarketWages(world: GameWorld): void {
     const totalSupply = Math.max(1, getSafeLaborValue(world.labor.totalSupply[role] || 0));
     const targetPressure = getSafeLaborValue(world.labor.demandOpenings[role] || 0) / totalSupply;
     const unemploymentRate = getSafeLaborValue(world.labor.unemployed[role] || 0) / totalSupply;
-    const wageDelta = targetPressure * 0.02 - unemploymentRate * 0.008;
+    // Settled from playtest tuning: keep the implemented 0.02 demand-pressure response
+    // even though the original Task 3 plan draft mentioned 0.015.
+    const wageDelta =
+      targetPressure * MARKET_WAGE_PRESSURE_COEFFICIENT -
+      unemploymentRate * MARKET_WAGE_UNEMPLOYMENT_COEFFICIENT;
     const dailyChange = Math.max(-0.01, Math.min(0.01, wageDelta));
     const marketWage = getSafeLaborValue(world.labor.marketWages[role] || 0);
     world.labor.marketWages[role] = Math.max(1, marketWage * (1 + dailyChange));
@@ -280,6 +294,7 @@ export function addMonthlyLaborGrowth(world: GameWorld): void {
 
 export function getActualDailyWage(world: GameWorld, buildingId: number, role: LaborRole): number {
   hydrateLaborState(world);
+  if (!isValidLaborRole(role)) return 0;
   if (!isValidBuilding(world, buildingId)) return getSafeLaborValue(world.labor.marketWages[role] || 0);
 
   const multiplier = world.buildings.wageMultipliers[getBuildingLaborIndex(buildingId, role)] || 1;
@@ -324,13 +339,18 @@ export function payMonthlyPayroll(world: GameWorld): number[] {
 
     const owner = world.buildings.owners[buildingId];
     if (owner >= 0 && owner < world.companies.count) {
-      world.companies.cash[owner] -= accrued;
-      paidByCompany[owner] += accrued;
-      world.households.cash[0] += accrued;
-      world.households.totalWagesReceived += accrued;
-    }
+      const availableCash = getSafeLaborValue(world.companies.cash[owner] || 0);
+      const paid = Math.min(accrued, availableCash);
 
-    world.buildings.accruedPayroll[buildingId] = 0;
+      if (paid > 0) {
+        world.companies.cash[owner] -= paid;
+        paidByCompany[owner] += paid;
+        world.households.cash[0] += paid;
+        world.households.totalWagesReceived += paid;
+      }
+
+      world.buildings.accruedPayroll[buildingId] = accrued - paid;
+    }
   }
 
   world.labor.lastPayrollTick = world.tick;
