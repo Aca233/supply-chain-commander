@@ -23,6 +23,7 @@ import {
   BuildingProductionMethod,
   BuildingSlotType,
 } from '@/core/production/methods';
+import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 
 // ==================== 类型定义 ====================
 
@@ -227,8 +228,8 @@ export function evaluateMethod(
   // 4. 能源成本：energyDelta 正值表示更耗能
   const energyCost = method.energyDelta;
 
-  // 5. 劳动力成本：laborDelta 正值表示更耗工
-  const laborCost = method.laborDelta;
+  // 5. 劳动力成本：workforceDelta 总量正值表示更耗工
+  const laborCost = getTotalWorkforceDemand(method.workforceDelta);
   
   // 6. 综合评分
   score += outputBonus * 0.35;
@@ -602,14 +603,14 @@ export function selectOptimalMethodForMarket(
       const strategy = getHighDemandStrategy(avgMarketScore);
       for (const d of method.outputDelta) score += d.amount * 5;
       score -= method.energyDelta * 0.5 * (1 - strategy.costTolerance);
-      score -= method.laborDelta * 0.5 * (1 - strategy.costTolerance);
+      score -= getTotalWorkforceDemand(method.workforceDelta) * 0.5 * (1 - strategy.costTolerance);
 
     } else if (avgMarketScore < 40) {
       // 低需求市场：优先成本和品质
       const strategy = getLowDemandStrategy(avgMarketScore);
       if (strategy.costFocus) {
         score -= method.energyDelta;
-        score -= method.laborDelta;
+        score -= getTotalWorkforceDemand(method.workforceDelta);
         for (const d of method.inputDelta) score += -d.amount;
       }
 
@@ -618,7 +619,7 @@ export function selectOptimalMethodForMarket(
       for (const d of method.outputDelta) score += d.amount * 3;
       for (const d of method.inputDelta) score += -d.amount * 2;
       score -= method.energyDelta * 0.3;
-      score -= method.laborDelta * 0.2;
+      score -= getTotalWorkforceDemand(method.workforceDelta) * 0.2;
     }
     
     if (score > bestScore) {

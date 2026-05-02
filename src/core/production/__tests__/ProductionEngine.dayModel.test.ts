@@ -8,6 +8,7 @@ import {
 } from '@/core/production/ProductionMethods';
 import { TICKS_PER_DAY } from '@/core/constants';
 import { BuildingId } from '@/data/buildings';
+import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 import {
   calculateDailyConsumption,
   calculateTheoreticalOutput,
@@ -26,7 +27,7 @@ describe('ProductionEngine day-model normalization (Vic3 recipe)', () => {
       getBuildingDefaultMethods(BuildingId.IRON_MINE),
     );
     expect(recipe.outputs.length).toBeGreaterThan(0);
-    expect(recipe.laborRequired).toBeGreaterThanOrEqual(0);
+    expect(getTotalWorkforceDemand(recipe.workforceRequired)).toBeGreaterThanOrEqual(0);
     expect(recipe.energyRequired).toBeGreaterThanOrEqual(0);
   });
 

@@ -26,6 +26,7 @@ import {
   AUTO_PRODUCTION_EFFICIENCY_MIN,
   canAutomaticSystemsAdjustEfficiency,
 } from './ProductionControl';
+import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 
 interface CompanyResources {
   totalLabor: number;
@@ -138,7 +139,7 @@ function processBuildingProduction(
   const tickOutput = efficiency / recipe.ticksRequired;
 
   // 劳动力检查
-  const laborNeeded = recipe.laborRequired * efficiency;
+  const laborNeeded = getTotalWorkforceDemand(recipe.workforceRequired) * efficiency;
   const availableLabor = resources.totalLabor - resources.usedLabor;
   let actualOutput = tickOutput;
   if (laborNeeded > availableLabor) {

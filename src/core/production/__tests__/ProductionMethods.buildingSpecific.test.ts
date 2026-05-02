@@ -10,6 +10,7 @@ import {
 import { initProductionCache } from '@/core/production/ProductionEngine';
 import { getProductionVariantByLegacyOutputMode } from '@/core/production/legacyOutputModeBridge';
 import { BuildingId } from '@/data/buildings';
+import { computeRecipe, createMethod } from '@/core/production/methods/registry';
 
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -113,5 +114,24 @@ describe('production method workforce demand', () => {
       );
 
     expect(semiconductorTechnicalShare).toBeGreaterThan(farmTechnicalShare);
+  });
+
+  it('does not share mutable workforce objects between methods or empty recipes', () => {
+    const workforce = { basic: 10, technical: 2, management: 1 };
+    const method = createMethod(999, 1, 'production', 'test', 'Test Method', {
+      workforceDelta: workforce,
+    });
+
+    workforce.basic = 99;
+    method.workforceDelta.technical = 50;
+
+    expect(method.workforceDelta.basic).toBe(10);
+    expect(workforce.technical).toBe(2);
+
+    const firstRecipe = computeRecipe(123456, {});
+    const secondRecipe = computeRecipe(123456, {});
+    firstRecipe.workforceRequired.basic = 42;
+
+    expect(secondRecipe.workforceRequired.basic).toBe(0);
   });
 });

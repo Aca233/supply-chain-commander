@@ -27,6 +27,11 @@ vi.mock('@/core/production/ProductionMethods', () => ({
   getRecipeForBuilding: getRecipeForBuildingMock,
 }));
 
+vi.mock('@/core/labor/LaborSystem', () => ({
+  getTotalWorkforceDemand: (demand: { basic: number; technical: number; management: number }) =>
+    demand.basic + demand.technical + demand.management,
+}));
+
 vi.mock('@/data/goods', () => ({
   ALL_GOODS: [
     { id: 1, name: '钢材' },
@@ -84,7 +89,7 @@ describe('ProductionMethodsPanel', () => {
           slotId: 'production',
           inputDelta: [{ goodsId: 2, amount: 11 }],
           outputDelta: [{ goodsId: 1, amount: 17 }],
-          laborDelta: 0,
+          workforceDelta: { basic: 0, technical: 0, management: 0 },
           energyDelta: 0,
           ticksRequired: 1,
           requiredLevel: 1,
@@ -103,7 +108,7 @@ describe('ProductionMethodsPanel', () => {
           slotId: 'workforce',
           inputDelta: [{ goodsId: 3, amount: 5 }],
           outputDelta: [{ goodsId: 1, amount: 24 }],
-          laborDelta: 1,
+          workforceDelta: { basic: 1, technical: 0, management: 0 },
           energyDelta: 0,
           ticksRequired: 1,
           requiredLevel: 1,
@@ -123,7 +128,7 @@ describe('ProductionMethodsPanel', () => {
         { goodsId: 3, amount: 7 },
       ],
       outputs: [{ goodsId: 1, amount: 41 }],
-      laborRequired: 1,
+      workforceRequired: { basic: 1, technical: 0, management: 0 },
       energyRequired: 0,
       ticksRequired: 1,
     });

@@ -60,7 +60,7 @@ vi.mock('@/core/production/ProductionMethods', () => ({
       recipe: {
         inputs: [{ goodsId: 1, amount: 1 }],
         outputs: [{ goodsId: 2, amount: 10 }],
-        laborRequired: 0,
+        workforceRequired: { basic: 0, technical: 0, management: 0 },
         energyRequired: 0,
         ticksRequired: 1,
       },

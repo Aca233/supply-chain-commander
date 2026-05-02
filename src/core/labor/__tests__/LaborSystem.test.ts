@@ -9,8 +9,10 @@ import {
   LABOR_ROLE_TECHNICAL,
   clampWageMultiplier,
   getBuildingLaborIndex,
+  getTotalWorkforceDemand,
   getRoleName,
   hydrateLaborState,
+  cloneWorkforceDemand,
   scaleWorkforceDemand,
 } from '../LaborSystem';
 
@@ -62,6 +64,17 @@ describe('LaborSystem', () => {
       technical: 0,
       management: 0,
     });
+  });
+
+  it('clones and totals workforce demand without sharing mutable state', () => {
+    const demand = { basic: 100, technical: 20, management: 5 };
+    const cloned = cloneWorkforceDemand(demand);
+
+    cloned.basic = 1;
+
+    expect(demand.basic).toBe(100);
+    expect(getTotalWorkforceDemand(demand)).toBe(125);
+    expect(getTotalWorkforceDemand({ basic: -1, technical: Number.NaN, management: 3 })).toBe(3);
   });
 
   it('clamps wage multipliers and exposes display names', () => {

@@ -133,6 +133,7 @@ import {
   getMethodById,
   getBuildingSlotCount,
 } from '@/core/production/ProductionMethods';
+import type { WorkforceDemand } from '@/core/labor/LaborSystem';
 
 // UI bridge：组件层依赖的 slot config 形状
 export interface UiBuildingSlotConfig {
@@ -152,7 +153,7 @@ export interface UiProductionMethod {
   slotType: string;
   inputDelta: Array<{ goodsId: number; amount: number }>;
   outputDelta: Array<{ goodsId: number; amount: number }>;
-  laborDelta: number;
+  workforceDelta: WorkforceDemand;
   energyDelta: number;
   requiredLevel: number;
   switchCost: number;
@@ -1363,7 +1364,7 @@ export const useGameStore = create<GameState & GameActions>()(
           slotType: 'process',
           inputDelta: m.inputDelta.map(d => ({ goodsId: d.goodsId, amount: d.amount })),
           outputDelta: m.outputDelta.map(d => ({ goodsId: d.goodsId, amount: d.amount })),
-          laborDelta: m.laborDelta,
+          workforceDelta: { ...m.workforceDelta },
           energyDelta: m.energyDelta,
           requiredLevel: m.requiredLevel,
           switchCost: m.switchCost,

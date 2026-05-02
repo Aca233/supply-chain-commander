@@ -7,6 +7,7 @@
 import {
   EMPTY_WORKFORCE_DEMAND,
   addWorkforceDemand,
+  cloneWorkforceDemand,
   type WorkforceDemand,
 } from '@/core/labor/LaborSystem';
 import { TICKS_PER_DAY } from '@/core/constants';
@@ -92,10 +93,20 @@ export function isMethodAvailable(
 const EMPTY_RECIPE: ComputedRecipe = {
   inputs: [],
   outputs: [],
-  workforceRequired: { ...EMPTY_WORKFORCE_DEMAND },
+  workforceRequired: cloneWorkforceDemand(EMPTY_WORKFORCE_DEMAND),
   energyRequired: 0,
   ticksRequired: TICKS_PER_DAY,
 };
+
+function createEmptyRecipe(): ComputedRecipe {
+  return {
+    inputs: [],
+    outputs: [],
+    workforceRequired: cloneWorkforceDemand(EMPTY_WORKFORCE_DEMAND),
+    energyRequired: 0,
+    ticksRequired: TICKS_PER_DAY,
+  };
+}
 
 /**
  * 计算建筑选定 method 后的实际配方（线性求和）
@@ -105,7 +116,7 @@ export function computeRecipe(
   selectedMethods: Record<string, number>,
 ): ComputedRecipe {
   const config = buildingConfigs.get(buildingTypeId);
-  if (!config) return { ...EMPTY_RECIPE, inputs: [], outputs: [] };
+  if (!config) return createEmptyRecipe();
 
   const inputMap = new Map<number, number>();
   const outputMap = new Map<number, number>();
@@ -185,7 +196,7 @@ export function createMethod(
     slotId,
     inputDelta: options.inputDelta ?? [],
     outputDelta: options.outputDelta ?? [],
-    workforceDelta: options.workforceDelta ?? { ...EMPTY_WORKFORCE_DEMAND },
+    workforceDelta: cloneWorkforceDemand(options.workforceDelta ?? EMPTY_WORKFORCE_DEMAND),
     energyDelta: options.energyDelta ?? 0,
     ticksRequired: options.ticksRequired ?? TICKS_PER_DAY,
     requiredLevel: options.requiredLevel ?? 1,

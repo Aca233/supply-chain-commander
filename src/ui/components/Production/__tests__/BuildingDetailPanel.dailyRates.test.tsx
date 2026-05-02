@@ -33,7 +33,7 @@ vi.mock('@/core/production/ProductionEngine', () => ({
     outputs: [{ goodsId: 1, amount: 10 }],
     inputs: [{ goodsId: 2, amount: 5 }],
     ticksRequired: 1,
-    laborRequired: 0,
+    workforceRequired: { basic: 0, technical: 0, management: 0 },
     energyRequired: 0,
   }),
 }));

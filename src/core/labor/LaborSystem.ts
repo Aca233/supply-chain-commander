@@ -70,6 +70,22 @@ export function addWorkforceDemand(a: WorkforceDemand, b: WorkforceDemand): Work
   };
 }
 
+export function cloneWorkforceDemand(demand: WorkforceDemand): WorkforceDemand {
+  return {
+    basic: Math.max(0, Number.isFinite(demand.basic) ? demand.basic : 0),
+    technical: Math.max(0, Number.isFinite(demand.technical) ? demand.technical : 0),
+    management: Math.max(0, Number.isFinite(demand.management) ? demand.management : 0),
+  };
+}
+
+export function getTotalWorkforceDemand(demand: WorkforceDemand): number {
+  return (
+    Math.max(0, Number.isFinite(demand.basic) ? demand.basic : 0) +
+    Math.max(0, Number.isFinite(demand.technical) ? demand.technical : 0) +
+    Math.max(0, Number.isFinite(demand.management) ? demand.management : 0)
+  );
+}
+
 export function scaleWorkforceDemand(demand: WorkforceDemand, utilization: number): WorkforceDemand {
   const factor = Math.max(0, Number.isFinite(utilization) ? utilization : 0);
   if (factor <= 0) return { ...EMPTY_WORKFORCE_DEMAND };

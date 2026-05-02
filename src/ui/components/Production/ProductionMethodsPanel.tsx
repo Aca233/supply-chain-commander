@@ -11,6 +11,7 @@ import {
   type BuildingSlotType,
   type BuildingProductionMethod,
 } from '@/core/production/ProductionMethods';
+import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 
 interface ProductionMethodsPanelProps {
   buildingId: number;
@@ -133,10 +134,11 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
       }
     }
 
-    if (method.laborDelta !== 0) {
-      const formatted = formatDelta(method.laborDelta);
+    const workforceDelta = getTotalWorkforceDemand(method.workforceDelta);
+    if (workforceDelta !== 0) {
+      const formatted = formatDelta(workforceDelta);
       if (formatted) {
-        meta.push({ icon: '👷', label: '人力', value: formatted, isPositive: method.laborDelta < 0 });
+        meta.push({ icon: '👷', label: '人力', value: formatted, isPositive: workforceDelta < 0 });
       }
     }
 
@@ -270,10 +272,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
   }));
 
   const finalRecipeMeta: MetaMethodEffect[] = [
-    ...(finalRecipe.laborRequired > 0 ? [{
+    ...(getTotalWorkforceDemand(finalRecipe.workforceRequired) > 0 ? [{
       icon: '👷',
       label: '工资',
-      value: `${finalRecipe.laborRequired}`,
+      value: `${getTotalWorkforceDemand(finalRecipe.workforceRequired)}`,
       isPositive: false,
     }] : []),
     ...(finalRecipe.energyRequired > 0 ? [{

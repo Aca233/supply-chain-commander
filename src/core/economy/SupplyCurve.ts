@@ -9,6 +9,7 @@ import { GameWorld } from '@/core/world/GameWorld';
 import { BUILDINGS_BY_ID } from '@/data/buildings';
 import { GOODS_COUNT } from '@/core/constants';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
+import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 
 /**
  * 成本结构
@@ -78,8 +79,8 @@ export function calculateCostStructure(
   const fixedCost = 100; // 基础固定成本
   
   // 劳动力成本（半固定，随产量有一定变化）
-  const laborRequired = production.laborRequired || 10;
-  const laborCost = laborRequired * 0.1 * Math.sqrt(quantity);
+  const workforceRequiredTotal = getTotalWorkforceDemand(production.workforceRequired) || 10;
+  const laborCost = workforceRequiredTotal * 0.1 * Math.sqrt(quantity);
   
   // 原材料成本（完全可变）
   let materialCost = 0;
@@ -113,7 +114,7 @@ export function calculateCostStructure(
   
   const marginalCost = baseMaterialCostPerUnit * (1 + 0.1 * quantity / capacity)
     + energyRequired * energyPrice * 0.001
-    + laborRequired * 0.05 / Math.max(1, Math.sqrt(quantity));
+    + workforceRequiredTotal * 0.05 / Math.max(1, Math.sqrt(quantity));
   
   return {
     fixedCost,

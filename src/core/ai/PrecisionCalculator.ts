@@ -17,6 +17,7 @@ import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE, TICKS_PER_DAY } from '@/
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import type { ComputedRecipe, RecipeDelta } from '@/core/production/ProductionMethods';
+import { getTotalWorkforceDemand, type WorkforceDemand } from '@/core/labor/LaborSystem';
 
 // ==================== 类型定义 ====================
 
@@ -147,7 +148,7 @@ interface ProductionConfig {
   inputs: RecipeDelta[];
   outputs: RecipeDelta[];
   ticksRequired: number;
-  laborRequired: number;
+  workforceRequired: WorkforceDemand;
   energyRequired: number;
 }
 
@@ -181,7 +182,7 @@ export function calculateProductionUnitCost(
   const materialCost = calculateProductionMaterialCost(world, production);
   
   // 人工成本（假设人工时薪50元）
-  const laborCost = production.laborRequired * 50 / production.ticksRequired;
+  const laborCost = getTotalWorkforceDemand(production.workforceRequired) * 50 / production.ticksRequired;
   
   // 能源成本（假设电价0.5元/度）
   const energyCost = production.energyRequired * 0.5 / production.ticksRequired;
@@ -268,7 +269,7 @@ export function analyzeGoodsProfit(
   
   if (producingConfig) {
     rawMaterialCost = calculateProductionMaterialCost(world, producingConfig);
-    laborCost = producingConfig.laborRequired * 50 / producingConfig.ticksRequired;
+    laborCost = getTotalWorkforceDemand(producingConfig.workforceRequired) * 50 / producingConfig.ticksRequired;
     energyCost = producingConfig.energyRequired * 0.5 / producingConfig.ticksRequired;
     
     // 转换为单位成本
