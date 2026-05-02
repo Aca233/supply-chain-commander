@@ -1,9 +1,11 @@
 /**
  * 建筑生产方式类型定义（Vic3 风格）
- * - 每个 method 携带一组 delta（input/output/labor/energy 的绝对值加减项）
+ * - 每个 method 携带一组 delta（input/output/workforce/energy 的绝对值加减项）
  * - 选中所有 slot 的 method 后，建筑实际配方 = 所有 delta 的求和
  * - 没有任何百分比 modifier
  */
+
+import type { WorkforceDemand } from '@/core/labor/LaborSystem';
 
 export interface BuildingSlotType {
   id: string;
@@ -29,7 +31,7 @@ export interface BuildingProductionMethod {
   // 配方加减项：正=加项，负=减项；最终配方按 goodsId 求和后过滤 amount > 0
   inputDelta: RecipeDelta[];
   outputDelta: RecipeDelta[];
-  laborDelta: number;
+  workforceDelta: WorkforceDemand;
   energyDelta: number;
   ticksRequired: number;
 
@@ -50,7 +52,7 @@ export interface BuildingMethodConfig {
 export interface ComputedRecipe {
   inputs: { goodsId: number; amount: number }[];
   outputs: { goodsId: number; amount: number }[];
-  laborRequired: number;
+  workforceRequired: WorkforceDemand;
   energyRequired: number;
   ticksRequired: number;
 }

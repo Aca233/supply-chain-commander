@@ -1,9 +1,14 @@
 /**
  * 生产方式注册中心（Vic3 风格）
- * - method 携带 input/output/labor/energy delta（绝对值）
+ * - method 携带 input/output/workforce/energy delta（绝对值）
  * - 选定 slot 的 method 后，建筑实际配方 = 所有 method 的 delta 求和
  */
 
+import {
+  EMPTY_WORKFORCE_DEMAND,
+  addWorkforceDemand,
+  type WorkforceDemand,
+} from '@/core/labor/LaborSystem';
 import { TICKS_PER_DAY } from '@/core/constants';
 import {
   BuildingMethodConfig,
@@ -87,7 +92,7 @@ export function isMethodAvailable(
 const EMPTY_RECIPE: ComputedRecipe = {
   inputs: [],
   outputs: [],
-  laborRequired: 0,
+  workforceRequired: { ...EMPTY_WORKFORCE_DEMAND },
   energyRequired: 0,
   ticksRequired: TICKS_PER_DAY,
 };
@@ -104,7 +109,7 @@ export function computeRecipe(
 
   const inputMap = new Map<number, number>();
   const outputMap = new Map<number, number>();
-  let labor = 0;
+  let workforce: WorkforceDemand = { ...EMPTY_WORKFORCE_DEMAND };
   let energy = 0;
   let ticksRequired = 0;
 
@@ -120,7 +125,7 @@ export function computeRecipe(
     for (const d of method.outputDelta) {
       outputMap.set(d.goodsId, (outputMap.get(d.goodsId) ?? 0) + d.amount);
     }
-    labor += method.laborDelta;
+    workforce = addWorkforceDemand(workforce, method.workforceDelta);
     energy += method.energyDelta;
     ticksRequired = Math.max(ticksRequired, method.ticksRequired);
   }
@@ -132,7 +137,7 @@ export function computeRecipe(
     outputs: [...outputMap.entries()]
       .filter(([, amount]) => amount > 0)
       .map(([goodsId, amount]) => ({ goodsId, amount })),
-    laborRequired: Math.max(0, labor),
+    workforceRequired: workforce,
     energyRequired: Math.max(0, energy),
     ticksRequired: Math.max(TICKS_PER_DAY, ticksRequired),
   };
@@ -154,7 +159,7 @@ export function createSlot(
 export interface CreateMethodOptions {
   inputDelta?: RecipeDelta[];
   outputDelta?: RecipeDelta[];
-  laborDelta?: number;
+  workforceDelta?: WorkforceDemand;
   energyDelta?: number;
   ticksRequired?: number;
   requiredLevel?: number;
@@ -180,7 +185,7 @@ export function createMethod(
     slotId,
     inputDelta: options.inputDelta ?? [],
     outputDelta: options.outputDelta ?? [],
-    laborDelta: options.laborDelta ?? 0,
+    workforceDelta: options.workforceDelta ?? { ...EMPTY_WORKFORCE_DEMAND },
     energyDelta: options.energyDelta ?? 0,
     ticksRequired: options.ticksRequired ?? TICKS_PER_DAY,
     requiredLevel: options.requiredLevel ?? 1,

@@ -3,6 +3,7 @@
  * - 暴露注册体系；method 携带 delta（绝对值），建筑实际配方 = 选中 delta 求和
  */
 
+import { EMPTY_WORKFORCE_DEMAND } from '@/core/labor/LaborSystem';
 import * as MethodsRegistry from './methods';
 import type { ComputedRecipe } from './methods/types';
 
@@ -28,7 +29,7 @@ export interface BuildingProductionVariant {
 const EMPTY_RECIPE_BUILDER = (): ComputedRecipe => ({
   inputs: [],
   outputs: [],
-  laborRequired: 0,
+  workforceRequired: { ...EMPTY_WORKFORCE_DEMAND },
   energyRequired: 0,
   ticksRequired: 1,
 });
