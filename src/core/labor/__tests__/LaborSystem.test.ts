@@ -3,17 +3,25 @@ import { describe, expect, it } from 'vitest';
 import { TICKS_PER_MONTH } from '@/core/constants';
 import { createGameWorld } from '@/core/world/GameWorld';
 import {
+  accrueDailyPayroll,
+  accrueDailyPayrollForBuilding,
+  addMonthlyLaborGrowth,
   LABOR_ROLE_BASIC,
   LABOR_ROLE_COUNT,
   LABOR_ROLE_MANAGEMENT,
   LABOR_ROLE_TECHNICAL,
   clampWageMultiplier,
+  getActualDailyWage,
   getBuildingLaborIndex,
   getTotalWorkforceDemand,
   getRoleName,
+  hireForBuildingRole,
   hydrateLaborState,
   cloneWorkforceDemand,
+  payMonthlyPayroll,
+  processRoleAttrition,
   scaleWorkforceDemand,
+  updateMarketWages,
 } from '../LaborSystem';
 
 describe('LaborSystem', () => {
@@ -88,5 +96,105 @@ describe('LaborSystem', () => {
 
   it('uses monthly time constant for payroll cadence expectations', () => {
     expect(TICKS_PER_MONTH).toBe(30);
+  });
+});
+
+describe('labor hiring, attrition, market wages, and payroll', () => {
+  it('hires only up to the building gap and unemployed pool', () => {
+    const world = createGameWorld();
+    world.buildings.count = 1;
+    world.labor.unemployed[LABOR_ROLE_BASIC] = 3;
+
+    const hired = hireForBuildingRole(world, 0, LABOR_ROLE_BASIC, 10, 1.0);
+
+    expect(hired).toBe(2);
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)]).toBe(2);
+    expect(world.labor.unemployed[LABOR_ROLE_BASIC]).toBe(1);
+    expect(world.labor.employed[LABOR_ROLE_BASIC]).toBe(2);
+  });
+
+  it('returns low-paid workers to unemployment through attrition', () => {
+    const world = createGameWorld();
+    const idx = getBuildingLaborIndex(0, LABOR_ROLE_BASIC);
+    world.buildings.workforceHired[idx] = 100;
+    world.labor.employed[LABOR_ROLE_BASIC] = 100;
+    world.labor.unemployed[LABOR_ROLE_BASIC] = 0;
+
+    const quit = processRoleAttrition(world, 0, LABOR_ROLE_BASIC, 0.5);
+
+    expect(quit).toBeGreaterThan(0);
+    expect(world.buildings.workforceHired[idx]).toBe(100 - quit);
+    expect(world.labor.unemployed[LABOR_ROLE_BASIC]).toBe(quit);
+  });
+
+  it('does not attrit workers at or above market wage', () => {
+    const world = createGameWorld();
+    const idx = getBuildingLaborIndex(0, LABOR_ROLE_BASIC);
+    world.buildings.workforceHired[idx] = 100;
+
+    expect(processRoleAttrition(world, 0, LABOR_ROLE_BASIC, 1.0)).toBe(0);
+    expect(processRoleAttrition(world, 0, LABOR_ROLE_BASIC, 1.3)).toBe(0);
+  });
+
+  it('updates market wages with a one percent daily cap', () => {
+    const world = createGameWorld();
+    world.labor.demandOpenings[LABOR_ROLE_TECHNICAL] = 20_000;
+    world.labor.unemployed[LABOR_ROLE_TECHNICAL] = 0;
+    const before = world.labor.marketWages[LABOR_ROLE_TECHNICAL];
+
+    updateMarketWages(world);
+
+    expect(world.labor.marketWages[LABOR_ROLE_TECHNICAL]).toBeCloseTo(before * 1.01);
+  });
+
+  it('adds monthly labor growth to supply and unemployment', () => {
+    const world = createGameWorld();
+    const beforeSupply = world.labor.totalSupply[LABOR_ROLE_MANAGEMENT];
+    const beforeUnemployed = world.labor.unemployed[LABOR_ROLE_MANAGEMENT];
+
+    addMonthlyLaborGrowth(world);
+
+    expect(world.labor.totalSupply[LABOR_ROLE_MANAGEMENT]).toBe(beforeSupply + 30);
+    expect(world.labor.unemployed[LABOR_ROLE_MANAGEMENT]).toBe(beforeUnemployed + 30);
+  });
+
+  it('uses clamped wage multipliers for actual daily wages', () => {
+    const world = createGameWorld();
+    world.buildings.wageMultipliers[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 3;
+
+    expect(getActualDailyWage(world, 0, LABOR_ROLE_BASIC)).toBe(120 * 2);
+  });
+
+  it('accrues daily payroll and pays monthly into households', () => {
+    const world = createGameWorld();
+    world.companies.count = 1;
+    world.companies.cash[0] = 100_000;
+    world.buildings.count = 1;
+    world.buildings.owners[0] = 0;
+    world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 10;
+
+    const accrued = accrueDailyPayrollForBuilding(world, 0);
+    expect(accrued).toBe(10 * 120);
+    expect(world.buildings.accruedPayroll[0]).toBe(accrued);
+
+    const paid = payMonthlyPayroll(world);
+    expect(paid[0]).toBe(accrued);
+    expect(world.companies.cash[0]).toBe(100_000 - accrued);
+    expect(world.households.cash[0]).toBe(accrued);
+    expect(world.households.totalWagesReceived).toBe(accrued);
+    expect(world.buildings.accruedPayroll[0]).toBe(0);
+  });
+
+  it('accrues daily payroll for active buildings only', () => {
+    const world = createGameWorld();
+    world.buildings.count = 2;
+    world.buildings.isActive[0] = 1;
+    world.buildings.isActive[1] = 0;
+    world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 1;
+    world.buildings.workforceHired[getBuildingLaborIndex(1, LABOR_ROLE_BASIC)] = 1;
+
+    expect(accrueDailyPayroll(world)).toBe(120);
+    expect(world.buildings.accruedPayroll[0]).toBe(120);
+    expect(world.buildings.accruedPayroll[1]).toBe(0);
   });
 });
