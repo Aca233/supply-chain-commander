@@ -1,18 +1,28 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { createGameWorld } from '@/core/world/GameWorld';
+import { addBuilding } from '@/core/world/WorldInitializer';
 import {
   getBuildingDefaultMethods,
   getBuildingProductionVariants,
   getRecipeForBuilding,
   initializeBuildingProductionMethods,
 } from '@/core/production/ProductionMethods';
-import { TICKS_PER_DAY } from '@/core/constants';
+import { MAX_OUTPUTS, TICKS_PER_DAY } from '@/core/constants';
 import { BuildingId } from '@/data/buildings';
-import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
+import {
+  LABOR_ROLE_BASIC,
+  LABOR_ROLE_MANAGEMENT,
+  LABOR_ROLE_TECHNICAL,
+  getBuildingLaborIndex,
+  getTotalWorkforceDemand,
+} from '@/core/labor/LaborSystem';
 import {
   calculateDailyConsumption,
   calculateTheoreticalOutput,
+  getBuildingWorkforceCoverage,
   initProductionCache,
+  updateAllProduction,
 } from '../ProductionEngine';
 
 describe('ProductionEngine day-model normalization (Vic3 recipe)', () => {
@@ -65,5 +75,61 @@ describe('ProductionEngine day-model normalization (Vic3 recipe)', () => {
       const recipe = getRecipeForBuilding(BuildingId.FOOD_FACTORY, variant.slotMethods);
       expect(recipe.outputs.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('ProductionEngine workforce coverage', () => {
+  beforeEach(() => {
+    initializeBuildingProductionMethods();
+    initProductionCache();
+  });
+
+  function createSingleBuildingWorld(buildingTypeId: number = BuildingId.IRON_MINE) {
+    const world = createGameWorld();
+    world.companies.count = 1;
+    world.companies.cash[0] = 10_000_000;
+    const buildingId = addBuilding(world, 0, buildingTypeId, 0);
+    const recipe = getRecipeForBuilding(
+      buildingTypeId,
+      getBuildingDefaultMethods(buildingTypeId),
+    );
+
+    return { world, buildingId, recipe };
+  }
+
+  it('blocks production when an active building has no hired workforce coverage', () => {
+    const { world, buildingId } = createSingleBuildingWorld();
+
+    const coverage = getBuildingWorkforceCoverage(world, buildingId);
+    const result = updateAllProduction(world);
+
+    expect(coverage.coverage).toBe(0);
+    expect(coverage.bottleneckRole).toBe(LABOR_ROLE_BASIC);
+    expect(result.producedCount).toBe(0);
+    expect(result.blockedCount).toBe(1);
+    expect(result.laborShortage).toBe(1);
+    expect('totalLaborCoverage' in result).toBe(true);
+    expect((result as { totalLaborCoverage?: number }).totalLaborCoverage).toBe(0);
+    expect(world.buildings.outputBuffers[buildingId * MAX_OUTPUTS]).toBe(0);
+  });
+
+  it('scales production output by the bottleneck role coverage for the building', () => {
+    const { world, buildingId, recipe } = createSingleBuildingWorld();
+    const outputOffset = buildingId * MAX_OUTPUTS;
+    const basicDemand = recipe.workforceRequired.basic;
+
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] =
+      basicDemand / 2;
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_TECHNICAL)] =
+      recipe.workforceRequired.technical;
+    world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_MANAGEMENT)] =
+      recipe.workforceRequired.management;
+
+    const result = updateAllProduction(world);
+
+    expect(result.producedCount).toBe(1);
+    expect(result.laborShortage).toBe(1);
+    expect((result as { totalLaborCoverage?: number }).totalLaborCoverage).toBeCloseTo(0.5, 1);
+    expect(world.buildings.outputBuffers[outputOffset]).toBeCloseTo(recipe.outputs[0].amount * 0.5, 1);
   });
 });

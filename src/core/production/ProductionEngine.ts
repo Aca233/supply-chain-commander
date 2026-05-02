@@ -26,15 +26,10 @@ import {
   AUTO_PRODUCTION_EFFICIENCY_MIN,
   canAutomaticSystemsAdjustEfficiency,
 } from './ProductionControl';
-import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
-
-interface CompanyResources {
-  totalLabor: number;
-  usedLabor: number;
-  laborShortage: boolean;
-}
-
-const companyResources: Map<number, CompanyResources> = new Map();
+import {
+  calculateWorkforceCoverage,
+  type WorkforceCoverageResult,
+} from '@/core/labor/LaborSystem';
 
 // 建筑实例的配方缓存（按 buildingId 索引）
 const recipeCache: Map<number, ComputedRecipe> = new Map();
@@ -75,21 +70,6 @@ export function getBuildingRecipeFromInstance(world: GameWorld, buildingId: numb
 // 兼容旧版调用
 export const initRecipeCache = initProductionCache;
 
-function calculateCompanyResources(world: GameWorld, companyId: number): CompanyResources {
-  let totalLabor = 1000;
-  let buildingCount = 0;
-  for (let i = 0; i < world.buildings.count; i++) {
-    if (world.buildings.owners[i] === companyId) {
-      buildingCount++;
-    }
-  }
-  totalLabor += buildingCount * 50;
-  const cash = world.companies.cash[companyId] || 0;
-  const laborFromCash = Math.min(cash / 10000, 500);
-  totalLabor += laborFromCash;
-  return { totalLabor, usedLabor: 0, laborShortage: false };
-}
-
 export function getBuildingSelectedMethods(world: GameWorld, buildingId: number): number[] {
   const b = world.buildings;
   const slotOffset = buildingId * MAX_SLOTS;
@@ -116,14 +96,21 @@ export function setBuildingMethod(
   return true;
 }
 
+export function getBuildingWorkforceCoverage(
+  world: GameWorld,
+  buildingId: number,
+): WorkforceCoverageResult {
+  const recipe = getBuildingRecipe(world, buildingId);
+  const utilization = world.buildings.efficiencies[buildingId] || 0;
+  return calculateWorkforceCoverage(world, buildingId, recipe.workforceRequired, utilization);
+}
+
 function processBuildingProduction(
   world: GameWorld,
   buildingId: number,
-  resources: CompanyResources,
-): { produced: boolean; laborUsed: number; qualityBonus: number } {
+): { produced: boolean; workforceCoverage: number; laborShortage: boolean; qualityBonus: number } {
   const b = world.buildings;
-  const g = world.goods;
-  const result = { produced: false, laborUsed: 0, qualityBonus: 0 };
+  const result = { produced: false, workforceCoverage: 1, laborShortage: false, qualityBonus: 0 };
 
   if (!b.isActive[buildingId]) return result;
 
@@ -138,20 +125,15 @@ function processBuildingProduction(
   // 本 tick 产出率（无 modifier 乘法）
   const tickOutput = efficiency / recipe.ticksRequired;
 
-  // 劳动力检查
-  const laborNeeded = getTotalWorkforceDemand(recipe.workforceRequired) * efficiency;
-  const availableLabor = resources.totalLabor - resources.usedLabor;
-  let actualOutput = tickOutput;
-  if (laborNeeded > availableLabor) {
-    if (availableLabor > 0) {
-      const laborRatio = availableLabor / laborNeeded;
-      actualOutput *= laborRatio;
-      resources.laborShortage = true;
-    } else {
-      resources.laborShortage = true;
-      return result;
-    }
+  const workforceCoverage = getBuildingWorkforceCoverage(world, buildingId);
+  result.workforceCoverage = workforceCoverage.coverage;
+  result.laborShortage = workforceCoverage.coverage < 1;
+
+  if (workforceCoverage.coverage <= 0) {
+    return result;
   }
+
+  const actualOutput = tickOutput * workforceCoverage.coverage;
 
   // 输入检查
   const inputOffset = buildingId * MAX_INPUTS;
@@ -167,7 +149,6 @@ function processBuildingProduction(
     b.inputBuffers[inputOffset + j] -= recipe.inputs[j].amount * actualOutput;
   }
 
-  result.laborUsed = Math.min(laborNeeded, availableLabor);
   result.qualityBonus = 0;
 
   // 产出
@@ -497,7 +478,7 @@ export interface ProductionResult {
   producedCount: number;
   blockedCount: number;
   laborShortage: number;
-  totalLaborUsed: number;
+  totalLaborCoverage: number;
   totalQualityBonus: number;
 }
 
@@ -508,7 +489,7 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     producedCount: 0,
     blockedCount: 0,
     laborShortage: 0,
-    totalLaborUsed: 0,
+    totalLaborCoverage: 0,
     totalQualityBonus: 0,
   };
 
@@ -516,30 +497,21 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     adjustOversupplyProduction(world);
   }
 
-  companyResources.clear();
-  for (let i = 0; i < world.companies.count; i++) {
-    companyResources.set(i, calculateCompanyResources(world, i));
-  }
-
   for (let i = 0; i < b.count; i++) {
     result.processedCount++;
-    const owner = b.owners[i];
-    const resources = companyResources.get(owner);
-    if (!resources) continue;
-    const prodResult = processBuildingProduction(world, i, resources);
+    const prodResult = processBuildingProduction(world, i);
+    if (b.isActive[i]) {
+      result.totalLaborCoverage += prodResult.workforceCoverage;
+      if (prodResult.laborShortage) result.laborShortage++;
+    }
     if (prodResult.produced) {
       result.producedCount++;
-      resources.usedLabor += prodResult.laborUsed;
-      result.totalLaborUsed += prodResult.laborUsed;
       result.totalQualityBonus += prodResult.qualityBonus;
     } else if (b.isActive[i]) {
       result.blockedCount++;
     }
   }
 
-  for (const [, res] of companyResources) {
-    if (res.laborShortage) result.laborShortage++;
-  }
   return result;
 }
 
@@ -570,10 +542,6 @@ export function getInventoryQualityName(_world: GameWorld, _companyId: number, _
 
 export function getInventoryQualityPriceMultiplier(_world: GameWorld, _companyId: number, _goodsId: number): number {
   return 1.0;
-}
-
-export function getCompanyResourceUsage(companyId: number): CompanyResources | null {
-  return companyResources.get(companyId) || null;
 }
 
 /**

@@ -18,6 +18,13 @@ export interface WorkforceDemand {
   management: number;
 }
 
+export interface WorkforceCoverageResult {
+  coverage: number;
+  roleCoverage: WorkforceDemand;
+  activeDemand: WorkforceDemand;
+  bottleneckRole: LaborRole | null;
+}
+
 export const EMPTY_WORKFORCE_DEMAND: WorkforceDemand = {
   basic: 0,
   technical: 0,
@@ -104,6 +111,46 @@ export function scaleWorkforceDemand(demand: WorkforceDemand, utilization: numbe
     basic: Math.ceil(demand.basic * factor),
     technical: Math.ceil(demand.technical * factor),
     management: Math.ceil(demand.management * factor),
+  };
+}
+
+export function calculateWorkforceCoverage(
+  world: GameWorld,
+  buildingId: number,
+  fullDemand: WorkforceDemand,
+  utilization: number,
+): WorkforceCoverageResult {
+  hydrateLaborState(world);
+
+  const activeDemand = scaleWorkforceDemand(fullDemand, utilization);
+  const roleCoverage: WorkforceDemand = { ...EMPTY_WORKFORCE_DEMAND };
+  let coverage = 1;
+  let bottleneckRole: LaborRole | null = null;
+  let hasDemand = false;
+
+  for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+    const typedRole = role as LaborRole;
+    const demand = getWorkforceDemandValue(activeDemand, typedRole);
+    let currentCoverage = 1;
+
+    if (demand > 0) {
+      hasDemand = true;
+      const hired = getBuildingRoleHired(world, buildingId, typedRole);
+      currentCoverage = Math.max(0, Math.min(1, hired / demand));
+    }
+
+    setWorkforceDemandValue(roleCoverage, typedRole, currentCoverage);
+    if (hasDemand && currentCoverage < coverage) {
+      coverage = currentCoverage;
+      bottleneckRole = typedRole;
+    }
+  }
+
+  return {
+    coverage: hasDemand ? coverage : 1,
+    roleCoverage,
+    activeDemand,
+    bottleneckRole,
   };
 }
 
