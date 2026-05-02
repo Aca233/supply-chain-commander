@@ -162,7 +162,19 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     expect(world.labor.marketWages[LABOR_ROLE_TECHNICAL]).toBeCloseTo(before * 1.01);
   });
 
-  it('caps market wage decreases at one percent and keeps wages above the lower bound', () => {
+  it('caps market wage decreases at one percent under severe unemployment pressure', () => {
+    const world = createGameWorld();
+    world.labor.totalSupply[LABOR_ROLE_BASIC] = 100;
+    world.labor.marketWages[LABOR_ROLE_BASIC] = 200;
+    world.labor.demandOpenings[LABOR_ROLE_BASIC] = 0;
+    world.labor.unemployed[LABOR_ROLE_BASIC] = 500;
+
+    updateMarketWages(world);
+
+    expect(world.labor.marketWages[LABOR_ROLE_BASIC]).toBeCloseTo(198);
+  });
+
+  it('keeps market wages above the lower bound', () => {
     const world = createGameWorld();
     world.labor.marketWages[LABOR_ROLE_BASIC] = 1;
     world.labor.demandOpenings[LABOR_ROLE_BASIC] = 0;
