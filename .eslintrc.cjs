@@ -1,0 +1,46 @@
+module.exports = {
+  root: true,
+  env: {
+    browser: true,
+    es2020: true,
+    node: true,
+  },
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+    ecmaFeatures: {
+      jsx: true,
+    },
+  },
+  plugins: ['@typescript-eslint', 'react-hooks', 'react-refresh'],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+  ],
+  ignorePatterns: [
+    'dist/',
+    'node_modules/',
+    'coverage/',
+    'storybook-static/',
+    '.storybook/',
+    '.worktrees/',
+    '.codex-artifacts/',
+    '.codex-tools/',
+  ],
+  rules: {
+    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-empty-function': 'off',
+    '@typescript-eslint/no-unused-vars': 'off',
+    '@typescript-eslint/ban-ts-comment': 'off',
+    'no-case-declarations': 'off',
+    'no-control-regex': 'off',
+    'no-constant-condition': 'off',
+    'no-empty': 'off',
+    'no-inner-declarations': 'off',
+    'prefer-const': 'off',
+    'react-hooks/rules-of-hooks': 'error',
+    'react-hooks/exhaustive-deps': 'off',
+    'react-refresh/only-export-components': 'off',
+  },
+};

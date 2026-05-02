@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 生产概览组件
  * 使用设计系统组件重构
  */
@@ -6,12 +6,14 @@
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS } from '@/data/goods';
-import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
+import { ALL_BUILDINGS } from '@/data/buildings';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import {
   calculateBuildingDailyAmount,
   calculateBuildingFinancialEstimate,
 } from './BuildingFinancialEstimate';
 import { formatCurrency } from '@/ui/utils/format';
+import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -53,45 +55,41 @@ export const ProductionOverview: React.FC = () => {
         totalBuildings++;
         const isActive = world.buildings.isActive[i];
         const efficiency = world.buildings.efficiencies[i];
-        const outputModeId = world.buildings.outputModeIds[i];
         const typeId = world.buildings.types[i];
         const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-        
+
         const outputEstimates: Array<{ dailyAmount: number; price: number }> = [];
 
         if (isActive) {
           activeCount++;
           totalEfficiency += efficiency;
-          
-          const production = getBuildingProduction(typeId, outputModeId);
-          if (production && production.outputs) {
-            const ticksRequired = production.ticksRequired || 1;
-            for (const output of production.outputs) {
-              const goods = ALL_GOODS.find(g => g.id === output.goodsId);
-              if (goods) {
-                const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
-                const price = world.goods.prices[output.goodsId] || goods.basePrice;
-                totalOutput += dailyAmount * price;
-                outputEstimates.push({ dailyAmount, price });
-              }
+
+          const production = getBuildingRecipeFromInstance(world, i);
+          const ticksRequired = production.ticksRequired || 1;
+          for (const output of production.outputs) {
+            const goods = ALL_GOODS.find(g => g.id === output.goodsId);
+            if (goods) {
+              const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
+              const price = world.goods.prices[output.goodsId] || goods.basePrice;
+              totalOutput += dailyAmount * price;
+              outputEstimates.push({ dailyAmount, price });
             }
-            
-            let hasBottleneck = false;
-            const inputs = production.inputs || [];
-            for (let j = 0; j < inputs.length; j++) {
-              const inputBuffer = world.buildings.inputBuffers[i * 8 + j];
-              if (inputBuffer < inputs[j].amount) {
-                hasBottleneck = true;
-                break;
-              }
-            }
-            if (hasBottleneck) bottleneckCount++;
           }
+
+          let hasBottleneck = false;
+          const inputs = production.inputs;
+          for (let j = 0; j < inputs.length; j++) {
+            const inputBuffer = world.buildings.inputBuffers[i * 8 + j];
+            if (inputBuffer < inputs[j].amount) {
+              hasBottleneck = true;
+              break;
+            }
+          }
+          if (hasBottleneck) bottleneckCount++;
         }
         
         if (buildingDef) {
-          const buildingDailyCost =
-            buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost;
+          const buildingDailyCost = calculateBuildingDefinitionOperatingCostPerTick(buildingDef).cashExpense;
           dailyCost += buildingDailyCost;
           dailyRevenue += calculateBuildingFinancialEstimate({
             isActive: Boolean(isActive),

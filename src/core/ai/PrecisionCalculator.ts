@@ -3,7 +3,7 @@
  *
  * 替换AIDecisionEngine中的硬编码值，实现真实的利润率和市场份额计算
  *
- * v4.0更新：使用getBuildingProduction替代RECIPES
+ * Vic3 更新：使用当前建筑实例 recipe 替代旧 RECIPES / outputMode 体系
  *
  * 设计目标：
  * 1. 精确计算每种商品的真实利润率（成本、收入、边际利润）
@@ -13,9 +13,10 @@
  */
 
 import { GameWorld, getPriceHistory } from '@/core/world/GameWorld';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE, TICKS_PER_DAY } from '@/core/constants';
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
-import { getBuildingProduction, BuildingProductionConfig, ProductionIO } from '@/data/buildings';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
+import type { ComputedRecipe, RecipeDelta } from '@/core/production/ProductionMethods';
 
 // ==================== 类型定义 ====================
 
@@ -143,8 +144,8 @@ export interface PriceTrendIndicators {
 
 /** 生产配置类型（用于计算） */
 interface ProductionConfig {
-  inputs: ProductionIO[];
-  outputs: ProductionIO[];
+  inputs: RecipeDelta[];
+  outputs: RecipeDelta[];
   ticksRequired: number;
   laborRequired: number;
   energyRequired: number;
@@ -200,7 +201,7 @@ export const calculateRecipeUnitCost = calculateProductionUnitCost;
 
 /**
  * 计算公司对某商品的日产量
- * v4.0更新：使用getBuildingProduction替代RECIPES
+ * Vic3 更新：使用当前建筑实例 recipe 替代旧 RECIPES / outputMode 体系
  */
 export function calculateDailyOutput(
   world: GameWorld,
@@ -213,18 +214,14 @@ export function calculateDailyOutput(
   for (let i = 0; i < b.count; i++) {
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
-    
-    const buildingTypeId = b.types[i];
-    const outputModeId = b.outputModeIds[i];
-    const production = getBuildingProduction(buildingTypeId, outputModeId);
-    if (!production) continue;
-    
+
+    const production = getBuildingRecipeFromInstance(world, i);
+
     for (const output of production.outputs) {
       if (output.goodsId === goodsId) {
         const efficiency = b.efficiencies[i] || 1;
-        // 每tick产量 * 24tick/天 * 效率
         const outputPerCycle = output.amount;
-        const cyclesPerDay = 24 / production.ticksRequired;
+        const cyclesPerDay = TICKS_PER_DAY / Math.max(1, production.ticksRequired);
         dailyOutput += outputPerCycle * cyclesPerDay * efficiency;
       }
     }
@@ -251,7 +248,7 @@ export function getCompanySalesData(
 
 /**
  * 计算公司对某商品的完整利润分析
- * v4.0更新：使用getBuildingProduction替代RECIPES
+ * Vic3 更新：使用当前建筑实例 recipe 替代旧 RECIPES / outputMode 体系
  */
 export function analyzeGoodsProfit(
   world: GameWorld,
@@ -332,12 +329,9 @@ function findProducingConfig(
   for (let i = 0; i < b.count; i++) {
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
-    
-    const buildingTypeId = b.types[i];
-    const outputModeId = b.outputModeIds[i];
-    const production = getBuildingProduction(buildingTypeId, outputModeId);
-    if (!production) continue;
-    
+
+    const production = getBuildingRecipeFromInstance(world, i);
+
     if (production.outputs.some(o => o.goodsId === goodsId)) {
       return production;
     }
@@ -351,7 +345,7 @@ const findProducingRecipe = findProducingConfig;
 
 /**
  * 计算公司某商品生产的平均效率
- * v4.0更新：使用getBuildingProduction替代RECIPES
+ * Vic3 更新：使用当前建筑实例 recipe 替代旧 RECIPES / outputMode 体系
  */
 function calculateAverageEfficiency(
   world: GameWorld,
@@ -365,12 +359,9 @@ function calculateAverageEfficiency(
   for (let i = 0; i < b.count; i++) {
     if (b.owners[i] !== companyId) continue;
     if (!b.isActive[i]) continue;
-    
-    const buildingTypeId = b.types[i];
-    const outputModeId = b.outputModeIds[i];
-    const production = getBuildingProduction(buildingTypeId, outputModeId);
-    if (!production) continue;
-    
+
+    const production = getBuildingRecipeFromInstance(world, i);
+
     if (production.outputs.some(o => o.goodsId === goodsId)) {
       totalEfficiency += b.efficiencies[i] || 1;
       count++;

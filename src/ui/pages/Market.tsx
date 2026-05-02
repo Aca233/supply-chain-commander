@@ -441,7 +441,7 @@ const TradePanel = React.memo<TradePanelProps>(({
       <div className="text-xs text-foreground-muted flex justify-between p-2 rounded-lg bg-background-muted/50">
         <span>{tradeType === 'buy' ? '可用资金' : '可售库存'}</span>
         <span className="font-semibold text-foreground">
-          {tradeType === 'buy' ? formatCurrency(playerCash) : playerStock.toFixed(0)}
+          {tradeType === 'buy' ? formatCurrency(playerCash) : playerStock.toLocaleString('zh-CN', { minimumFractionDigits: Number.isInteger(playerStock) ? 0 : 1, maximumFractionDigits: Number.isInteger(playerStock) ? 0 : 1 })}
         </span>
       </div>
       
@@ -865,7 +865,7 @@ export const Market: React.FC = () => {
         />
         <StatWidget
           title="我的库存"
-          value={playerStock.toFixed(0)}
+          value={playerStock.toLocaleString('zh-CN', { minimumFractionDigits: Number.isInteger(playerStock) ? 0 : 1, maximumFractionDigits: Number.isInteger(playerStock) ? 0 : 1 })}
           icon="📦"
           variant="elevated"
           status={playerStock > 0 ? 'success' : 'none'}
@@ -885,9 +885,9 @@ export const Market: React.FC = () => {
           
           // 格式化数字（使用万、亿单位）
           const formatNumber = (num: number) => {
-            if (num >= 100000000) {
+            if (Math.abs(num) >= 100000000) {
               return (num / 100000000).toFixed(1) + '亿';
-            } else if (num >= 10000) {
+            } else if (Math.abs(num) >= 10000) {
               return (num / 10000).toFixed(1) + '万';
             }
             return Math.round(num).toLocaleString('zh-CN');
@@ -1472,7 +1472,7 @@ export const Market: React.FC = () => {
                   />
                   <StatWidget
                     title="库存"
-                    value={playerStock.toFixed(0)}
+                    value={playerStock.toLocaleString('zh-CN', { minimumFractionDigits: Number.isInteger(playerStock) ? 0 : 1, maximumFractionDigits: Number.isInteger(playerStock) ? 0 : 1 })}
                     icon="📦"
                     variant="elevated"
                     compact
@@ -1922,7 +1922,7 @@ export const Market: React.FC = () => {
               />
               <StatWidget
                 title="我的库存"
-                value={playerStock.toFixed(0)}
+                value={playerStock.toLocaleString('zh-CN', { minimumFractionDigits: Number.isInteger(playerStock) ? 0 : 1, maximumFractionDigits: Number.isInteger(playerStock) ? 0 : 1 })}
                 icon="📦"
                 variant="elevated"
                 status={playerStock > 0 ? 'success' : 'none'}
@@ -1942,9 +1942,9 @@ export const Market: React.FC = () => {
                 
                 // 格式化数字（使用万、亿单位）
                 const formatNumber = (num: number) => {
-                  if (num >= 100000000) {
+                  if (Math.abs(num) >= 100000000) {
                     return (num / 100000000).toFixed(1) + '亿';
-                  } else if (num >= 10000) {
+                  } else if (Math.abs(num) >= 10000) {
                     return (num / 10000).toFixed(1) + '万';
                   }
                   return Math.round(num).toLocaleString('zh-CN');

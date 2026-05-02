@@ -1,120 +1,81 @@
 /**
- * 生产方式注册中心
- * 管理所有建筑的专属生产方式配置
+ * 生产方式注册中心（Vic3 风格）
+ * - method 携带 input/output/labor/energy delta（绝对值）
+ * - 选定 slot 的 method 后，建筑实际配方 = 所有 method 的 delta 求和
  */
 
+import { TICKS_PER_DAY } from '@/core/constants';
 import {
   BuildingMethodConfig,
   BuildingSlotType,
   BuildingProductionMethod,
-  ComputedModifiers,
+  ComputedRecipe,
+  RecipeDelta,
   getMethodIdBase,
 } from './types';
 
-// ==================== 全局注册表 ====================
-
-/** 按建筑类型ID索引的配置表 */
 export const buildingConfigs: Map<number, BuildingMethodConfig> = new Map();
-
-/** 按方式ID索引的方式表（用于快速查找） */
 export const methodsById: Map<number, BuildingProductionMethod> = new Map();
-
-/** 按建筑类型ID和槽位ID索引的方式列表 */
 export const methodsBySlot: Map<string, BuildingProductionMethod[]> = new Map();
 
-// ==================== 注册函数 ====================
-
-/**
- * 注册建筑的生产方式配置
- */
 export function registerBuildingConfig(config: BuildingMethodConfig): void {
-  // 如果该建筑已注册，先清除旧的方式索引
   const existingConfig = buildingConfigs.get(config.buildingTypeId);
   if (existingConfig) {
-    // 清除旧的方式索引
     for (const method of existingConfig.methods) {
       methodsById.delete(method.id);
       const slotKey = `${existingConfig.buildingTypeId}:${method.slotId}`;
       methodsBySlot.delete(slotKey);
     }
   }
-  
+
   buildingConfigs.set(config.buildingTypeId, config);
-  
-  // 索引所有方式
+
   for (const method of config.methods) {
-    // 防止重复添加
     if (!methodsById.has(method.id)) {
       methodsById.set(method.id, method);
     }
-    
-    // 按槽位分组
     const slotKey = `${config.buildingTypeId}:${method.slotId}`;
     const existing = methodsBySlot.get(slotKey) || [];
-    // 检查是否已存在该方式，避免重复
-    if (!existing.some(m => m.id === method.id)) {
+    if (!existing.some((m) => m.id === method.id)) {
       existing.push(method);
     }
     methodsBySlot.set(slotKey, existing);
   }
 }
 
-/**
- * 批量注册多个配置
- */
 export function registerBuildingConfigs(configs: BuildingMethodConfig[]): void {
   for (const config of configs) {
     registerBuildingConfig(config);
   }
 }
 
-// ==================== 查询函数 ====================
-
-/**
- * 获取建筑的配置
- */
 export function getBuildingConfig(buildingTypeId: number): BuildingMethodConfig | null {
   return buildingConfigs.get(buildingTypeId) || null;
 }
 
-/**
- * 获取建筑的所有槽位
- */
 export function getBuildingSlots(buildingTypeId: number): BuildingSlotType[] {
   const config = buildingConfigs.get(buildingTypeId);
   return config?.slots || [];
 }
 
-/**
- * 获取建筑某个槽位可用的方式列表
- */
 export function getSlotMethods(buildingTypeId: number, slotId: string): BuildingProductionMethod[] {
   const key = `${buildingTypeId}:${slotId}`;
   return methodsBySlot.get(key) || [];
 }
 
-/**
- * 获取单个方式详情
- */
 export function getMethodById(methodId: number): BuildingProductionMethod | null {
   return methodsById.get(methodId) || null;
 }
 
-/**
- * 获取建筑的默认方式配置
- */
 export function getDefaultMethods(buildingTypeId: number): Record<string, number> {
   const config = buildingConfigs.get(buildingTypeId);
   return config?.defaultMethods || {};
 }
 
-/**
- * 检查方式是否对建筑可用
- */
 export function isMethodAvailable(
   buildingTypeId: number,
   methodId: number,
-  buildingLevel: number
+  buildingLevel: number,
 ): boolean {
   const method = methodsById.get(methodId);
   if (!method) return false;
@@ -123,216 +84,142 @@ export function isMethodAvailable(
   return true;
 }
 
-// ==================== 计算函数 ====================
+const EMPTY_RECIPE: ComputedRecipe = {
+  inputs: [],
+  outputs: [],
+  laborRequired: 0,
+  energyRequired: 0,
+  ticksRequired: TICKS_PER_DAY,
+};
 
 /**
- * 计算建筑的综合修正
- * @param buildingTypeId 建筑类型ID
- * @param selectedMethods 已选方式 { slotId: methodId }
+ * 计算建筑选定 method 后的实际配方（线性求和）
  */
-export function computeModifiers(
+export function computeRecipe(
   buildingTypeId: number,
-  selectedMethods: Record<string, number>
-): ComputedModifiers {
-  const result: ComputedModifiers = {
-    inputMultipliers: new Map(),
-    outputMultipliers: new Map(),
-    allInputMultiplier: 1.0,
-    allOutputMultiplier: 1.0,
-    laborMultiplier: 1.0,
-    energyMultiplier: 1.0,
-    maintenanceMultiplier: 1.0,
-    qualityBonus: 0,
-    pollutionMultiplier: 1.0,
-    productionSpeedMultiplier: 1.0,
-    byproducts: [],
-  };
-  
-  // 遍历所有选中的方式
+  selectedMethods: Record<string, number>,
+): ComputedRecipe {
+  const config = buildingConfigs.get(buildingTypeId);
+  if (!config) return { ...EMPTY_RECIPE, inputs: [], outputs: [] };
+
+  const inputMap = new Map<number, number>();
+  const outputMap = new Map<number, number>();
+  let labor = 0;
+  let energy = 0;
+  let ticksRequired = 0;
+
   for (const slotId of Object.keys(selectedMethods)) {
     const methodId = selectedMethods[slotId];
     if (!methodId) continue;
-    
     const method = methodsById.get(methodId);
     if (!method || method.buildingTypeId !== buildingTypeId) continue;
-    
-    // 应用输入修正
-    for (const mod of method.inputModifiers) {
-      if (mod.goodsId === 'all') {
-        result.allInputMultiplier *= mod.multiplier;
-      } else {
-        const current = result.inputMultipliers.get(mod.goodsId) ?? 1.0;
-        result.inputMultipliers.set(mod.goodsId, current * mod.multiplier);
-      }
+
+    for (const d of method.inputDelta) {
+      inputMap.set(d.goodsId, (inputMap.get(d.goodsId) ?? 0) + d.amount);
     }
-    
-    // 应用输出修正
-    for (const mod of method.outputModifiers) {
-      if (mod.goodsId === 'all') {
-        result.allOutputMultiplier *= mod.multiplier;
-      } else {
-        const current = result.outputMultipliers.get(mod.goodsId) ?? 1.0;
-        result.outputMultipliers.set(mod.goodsId, current * mod.multiplier);
-      }
+    for (const d of method.outputDelta) {
+      outputMap.set(d.goodsId, (outputMap.get(d.goodsId) ?? 0) + d.amount);
     }
-    
-    // 应用成本修正（乘法叠加）
-    result.laborMultiplier *= method.laborMultiplier;
-    result.energyMultiplier *= method.energyMultiplier;
-    result.maintenanceMultiplier *= method.maintenanceMultiplier;
-    
-    // 品质加成（加法叠加）
-    result.qualityBonus += method.qualityBonus;
-    
-    // 污染和速度修正（乘法叠加）
-    result.pollutionMultiplier *= method.pollutionMultiplier;
-    result.productionSpeedMultiplier *= method.productionSpeedMultiplier;
-    
-    // 副产品
-    if (method.byproductChance && method.byproductGoodsId !== undefined) {
-      result.byproducts.push({
-        goodsId: method.byproductGoodsId,
-        chance: method.byproductChance,
-        amount: method.byproductAmount || 1,
-      });
-    }
+    labor += method.laborDelta;
+    energy += method.energyDelta;
+    ticksRequired = Math.max(ticksRequired, method.ticksRequired);
   }
-  
-  return result;
-}
 
-/**
- * 获取某商品的实际输入倍率
- */
-export function getInputMultiplier(modifiers: ComputedModifiers, goodsId: number): number {
-  const specific = modifiers.inputMultipliers.get(goodsId) ?? 1.0;
-  return specific * modifiers.allInputMultiplier;
-}
-
-/**
- * 获取某商品的实际输出倍率
- */
-export function getOutputMultiplier(modifiers: ComputedModifiers, goodsId: number): number {
-  const specific = modifiers.outputMultipliers.get(goodsId) ?? 1.0;
-  return specific * modifiers.allOutputMultiplier;
+  return {
+    inputs: [...inputMap.entries()]
+      .filter(([, amount]) => amount > 0)
+      .map(([goodsId, amount]) => ({ goodsId, amount })),
+    outputs: [...outputMap.entries()]
+      .filter(([, amount]) => amount > 0)
+      .map(([goodsId, amount]) => ({ goodsId, amount })),
+    laborRequired: Math.max(0, labor),
+    energyRequired: Math.max(0, energy),
+    ticksRequired: Math.max(TICKS_PER_DAY, ticksRequired),
+  };
 }
 
 // ==================== 辅助构建函数 ====================
 
-/**
- * 创建槽位定义的辅助函数
- */
 export function createSlot(
   buildingTypeId: number,
   id: string,
   name: string,
   icon: string,
   description: string,
-  order: number = 0
+  order: number = 0,
 ): BuildingSlotType {
-  return {
-    id,
-    buildingTypeId,
-    name,
-    icon,
-    description,
-    order,
-  };
+  return { id, buildingTypeId, name, icon, description, order };
 }
 
-/**
- * 创建方式定义的辅助函数
- */
+export interface CreateMethodOptions {
+  inputDelta?: RecipeDelta[];
+  outputDelta?: RecipeDelta[];
+  laborDelta?: number;
+  energyDelta?: number;
+  ticksRequired?: number;
+  requiredLevel?: number;
+  switchCost?: number;
+  switchCooldown?: number;
+  description?: string;
+}
+
 export function createMethod(
   buildingTypeId: number,
-  localId: number,  // 建筑内的本地ID（0-999）
+  localId: number,
   slotId: string,
   key: string,
   name: string,
-  options: Partial<Omit<BuildingProductionMethod, 'id' | 'key' | 'name' | 'buildingTypeId' | 'slotId'>> = {}
+  options: CreateMethodOptions = {},
 ): BuildingProductionMethod {
   const baseId = getMethodIdBase(buildingTypeId);
-  
   return {
     id: baseId + localId,
     key,
     name,
     buildingTypeId,
     slotId,
-    inputModifiers: options.inputModifiers || [],
-    outputModifiers: options.outputModifiers || [],
-    laborMultiplier: options.laborMultiplier ?? 1.0,
-    energyMultiplier: options.energyMultiplier ?? 1.0,
-    maintenanceMultiplier: options.maintenanceMultiplier ?? 1.0,
-    qualityBonus: options.qualityBonus ?? 0,
-    pollutionMultiplier: options.pollutionMultiplier ?? 1.0,
-    productionSpeedMultiplier: options.productionSpeedMultiplier ?? 1.0,
-    byproductChance: options.byproductChance,
-    byproductGoodsId: options.byproductGoodsId,
-    byproductAmount: options.byproductAmount,
+    inputDelta: options.inputDelta ?? [],
+    outputDelta: options.outputDelta ?? [],
+    laborDelta: options.laborDelta ?? 0,
+    energyDelta: options.energyDelta ?? 0,
+    ticksRequired: options.ticksRequired ?? TICKS_PER_DAY,
     requiredLevel: options.requiredLevel ?? 1,
-    requiredTech: options.requiredTech,
-    switchCooldown: options.switchCooldown ?? 24,
     switchCost: options.switchCost ?? 50000,
-    description: options.description || '',
-    effects: options.effects || [],
+    switchCooldown: options.switchCooldown ?? 24,
+    description: options.description ?? '',
   };
 }
 
-/**
- * 创建建筑配置的辅助函数
- */
 export function createBuildingConfig(
   buildingTypeId: number,
   slots: BuildingSlotType[],
   methods: BuildingProductionMethod[],
-  defaultMethods?: Record<string, number>
+  defaultMethods?: Record<string, number>,
 ): BuildingMethodConfig {
-  // 如果没有提供默认配置，则使用每个槽位的第一个方式
-  const defaults = defaultMethods || {};
+  const defaults = defaultMethods ?? {};
   if (!defaultMethods) {
     for (const slot of slots) {
-      const slotMethods = methods.filter(m => m.slotId === slot.id);
+      const slotMethods = methods.filter((m) => m.slotId === slot.id);
       if (slotMethods.length > 0) {
         defaults[slot.id] = slotMethods[0].id;
       }
     }
   }
-  
-  return {
-    buildingTypeId,
-    slots,
-    methods,
-    defaultMethods: defaults,
-  };
+  return { buildingTypeId, slots, methods, defaultMethods: defaults };
 }
 
-// ==================== 统计函数 ====================
-
-/**
- * 获取已注册的建筑数量
- */
 export function getRegisteredBuildingCount(): number {
   return buildingConfigs.size;
 }
 
-/**
- * 获取已注册的方式总数
- */
 export function getRegisteredMethodCount(): number {
   return methodsById.size;
 }
 
-/**
- * 获取所有已注册的建筑类型ID
- */
 export function getRegisteredBuildingIds(): number[] {
   return Array.from(buildingConfigs.keys());
 }
 
-/**
- * 清空注册表（用于测试）
- */
 export function clearRegistry(): void {
   buildingConfigs.clear();
   methodsById.clear();

@@ -5,6 +5,7 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT, TICKS_PER_DAY, TICKS_PER_YEAR } from '@/core/constants';
+import { GOODS_BY_ID } from '@/data/goods';
 
 /**
  * 股票信息
@@ -114,33 +115,37 @@ export interface StockMarketState {
   stocks: Map<number, Stock>;
   orders: StockOrder[];
   holdings: Map<string, Holding>; // key: `${ownerCompanyId}-${stockCompanyId}`
+  holdingsByStockCompany: Map<number, Set<string>>;
+  holdingsByOwnerCompany: Map<number, Set<string>>;
   nextOrderId: number;
   marketOpen: boolean;
   lastUpdateTick: number;
-  
+
   // 市场指数
   marketIndex: number;
   marketIndexChange: number;
   totalMarketCap: number;
   totalVolume: number;
-  
+
   // 公司历史数据（用于计算业绩变化驱动股价）
-    companyHistory: Map<number, CompanyHistoryData>;
-    
-    // 估值缓存（避免重复计算）
-    valuationCache: Map<number, {
-      bookValue: number;
-      intrinsicValue: number;
-      marketValue: number;
-      cachedTick: number;
-    }>;
-  }
+  companyHistory: Map<number, CompanyHistoryData>;
+
+  // 估值缓存（避免重复计算）
+  valuationCache: Map<number, {
+    bookValue: number;
+    intrinsicValue: number;
+    marketValue: number;
+    cachedTick: number;
+  }>;
+}
   
   // 全局股票市场状态
 let stockMarket: StockMarketState = {
   stocks: new Map(),
   orders: [],
   holdings: new Map(),
+  holdingsByStockCompany: new Map(),
+  holdingsByOwnerCompany: new Map(),
   nextOrderId: 1,
   marketOpen: true,
   lastUpdateTick: 0,
@@ -157,6 +162,114 @@ const IPO_MAX_SHARE_RATIO = 0.6;
 const IPO_MIN_PRICE_MULTIPLIER = 0.5;
 const IPO_MAX_PRICE_MULTIPLIER = 2;
 
+function addHoldingIndex(ownerCompanyId: number, stockCompanyId: number, key: string): void {
+  let stockKeys = stockMarket.holdingsByStockCompany.get(stockCompanyId);
+  if (!stockKeys) {
+    stockKeys = new Set();
+    stockMarket.holdingsByStockCompany.set(stockCompanyId, stockKeys);
+  }
+  stockKeys.add(key);
+
+  let ownerKeys = stockMarket.holdingsByOwnerCompany.get(ownerCompanyId);
+  if (!ownerKeys) {
+    ownerKeys = new Set();
+    stockMarket.holdingsByOwnerCompany.set(ownerCompanyId, ownerKeys);
+  }
+  ownerKeys.add(key);
+}
+
+function removeHoldingIndex(ownerCompanyId: number, stockCompanyId: number, key: string): void {
+  const stockKeys = stockMarket.holdingsByStockCompany.get(stockCompanyId);
+  if (stockKeys) {
+    stockKeys.delete(key);
+    if (stockKeys.size === 0) {
+      stockMarket.holdingsByStockCompany.delete(stockCompanyId);
+    }
+  }
+
+  const ownerKeys = stockMarket.holdingsByOwnerCompany.get(ownerCompanyId);
+  if (ownerKeys) {
+    ownerKeys.delete(key);
+    if (ownerKeys.size === 0) {
+      stockMarket.holdingsByOwnerCompany.delete(ownerCompanyId);
+    }
+  }
+}
+
+function setHoldingRecord(key: string, holding: Holding): void {
+  stockMarket.holdings.set(key, holding);
+  addHoldingIndex(holding.ownerCompanyId, holding.stockCompanyId, key);
+}
+
+function deleteHoldingRecord(key: string, holding: Holding): void {
+  stockMarket.holdings.delete(key);
+  removeHoldingIndex(holding.ownerCompanyId, holding.stockCompanyId, key);
+}
+
+function getHoldingsForStock(stockCompanyId: number): Array<[string, Holding]> {
+  const keys = stockMarket.holdingsByStockCompany.get(stockCompanyId);
+  if (!keys) return [];
+
+  const result: Array<[string, Holding]> = [];
+  for (const key of keys) {
+    const holding = stockMarket.holdings.get(key);
+    if (holding) {
+      result.push([key, holding]);
+    }
+  }
+  return result;
+}
+
+function getHoldingsForOwner(ownerCompanyId: number): Holding[] {
+  const keys = stockMarket.holdingsByOwnerCompany.get(ownerCompanyId);
+  if (!keys) return [];
+
+  const result: Holding[] = [];
+  for (const key of keys) {
+    const holding = stockMarket.holdings.get(key);
+    if (holding) {
+      result.push(holding);
+    }
+  }
+  return result;
+}
+
+function getListedStocks(): Array<[number, Stock]> {
+  const result: Array<[number, Stock]> = [];
+  for (const [companyId, stock] of stockMarket.stocks) {
+    if (stock.isListed) {
+      result.push([companyId, stock]);
+    }
+  }
+  return result;
+}
+
+function getGoodsName(goodsId: number): string {
+  return GOODS_BY_ID.get(goodsId)?.name ?? `商品#${goodsId}`;
+}
+
+function getGoodsDefinition(goodsId: number) {
+  return GOODS_BY_ID.get(goodsId);
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString('zh-CN', {
+    minimumFractionDigits: value < 1000 && !Number.isInteger(value) ? 2 : 0,
+    maximumFractionDigits: value < 1000 && !Number.isInteger(value) ? 2 : 0,
+  });
+}
+
+function formatCurrencyPrecise(value: number): string {
+  return `¥${formatMoney(value)}`;
+}
+
+function formatQuantity(value: number): string {
+  return value.toLocaleString('zh-CN', {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 1,
+  });
+}
+
 interface IPOAssessment extends IPOOfferPreview {
   stock: Stock;
   subscriptions: Array<{ aiId: number; shares: number; cost: number }>;
@@ -172,6 +285,8 @@ export function initializeStockMarket(world: GameWorld): void {
     stocks: new Map(),
     orders: [],
     holdings: new Map(),
+    holdingsByStockCompany: new Map(),
+    holdingsByOwnerCompany: new Map(),
     nextOrderId: 1,
     marketOpen: true,
     lastUpdateTick: world.tick,
@@ -216,7 +331,7 @@ export function initializeStockMarket(world: GameWorld): void {
       avgCost: stock.currentPrice,
       unrealizedGain: 0,
     };
-    stockMarket.holdings.set(`${companyId}-${companyId}`, selfHolding);
+    setHoldingRecord(`${companyId}-${companyId}`, selfHolding);
     
     // 2. 分配30%给其他AI公司（确保市场有卖方）
     const distributedShares = Math.floor(stock.totalShares * 0.30);
@@ -244,7 +359,7 @@ export function initializeStockMarket(world: GameWorld): void {
               avgCost: stock.currentPrice,
               unrealizedGain: 0,
             };
-            stockMarket.holdings.set(holdingKey, holding);
+            setHoldingRecord(holdingKey, holding);
           }
         }
       }
@@ -438,23 +553,22 @@ export function buyStock(
     let totalCost = 0;
     let filledQuantity = 0;
     
-    // 遍历所有持股，找到可以卖出的
-    for (const [key, holding] of stockMarket.holdings) {
-      if (holding.stockCompanyId !== stockCompanyId) continue;
+    // 遍历目标股票的持股索引，找到可以卖出的
+    for (const [key, holding] of getHoldingsForStock(stockCompanyId)) {
       if (holding.ownerCompanyId === buyerCompanyId) continue; // 不能自己买自己
       if (holding.ownerCompanyId === stockCompanyId) continue; // 公司自持股不卖
       if (holding.shares <= 0) continue;
-      
+
       // 计算可以购买的数量
       const availableShares = Math.min(holding.shares, remainingQuantity);
       const cost = availableShares * tradePrice;
-      
+
       // 执行交易
       holding.shares -= availableShares;
       if (holding.shares <= 0) {
-        stockMarket.holdings.delete(key);
+        deleteHoldingRecord(key, holding);
       }
-      
+
       // 更新买方持股
       updateHoldings(world, buyerCompanyId, stockCompanyId, availableShares, tradePrice);
       
@@ -761,7 +875,7 @@ function updateHoldings(
       avgCost: 0,
       unrealizedGain: 0,
     };
-    stockMarket.holdings.set(key, holding);
+    setHoldingRecord(key, holding);
   }
   
   if (sharesChange > 0) {
@@ -773,7 +887,7 @@ function updateHoldings(
     // 卖出
     holding.shares += sharesChange;
     if (holding.shares <= 0) {
-      stockMarket.holdings.delete(key);
+      deleteHoldingRecord(key, holding);
     }
   }
   
@@ -846,8 +960,7 @@ export function delistStock(
   stock.volume = 0;
 
   let distributedCash = 0;
-  const affectedHoldings = Array.from(stockMarket.holdings.entries())
-    .filter(([, holding]) => holding.stockCompanyId === companyId);
+  const affectedHoldings = getHoldingsForStock(companyId);
   const externalShareTotal = affectedHoldings.reduce((sum, [, holding]) => {
     if (holding.ownerCompanyId === companyId || holding.shares <= 0) {
       return sum;
@@ -861,7 +974,7 @@ export function delistStock(
       world.companies.cash[holding.ownerCompanyId] += payout;
       distributedCash += payout;
     }
-    stockMarket.holdings.delete(holdingKey);
+    deleteHoldingRecord(holdingKey, holding);
   }
 
   stockMarket.orders = stockMarket.orders.filter((order) => {
@@ -885,15 +998,7 @@ export function delistStock(
  * 获取持股信息
  */
 export function getHoldings(ownerCompanyId: number): Holding[] {
-  const holdings: Holding[] = [];
-  
-  for (const [key, holding] of stockMarket.holdings) {
-    if (holding.ownerCompanyId === ownerCompanyId) {
-      holdings.push(holding);
-    }
-  }
-  
-  return holdings;
+  return getHoldingsForOwner(ownerCompanyId);
 }
 
 /**
@@ -1084,7 +1189,7 @@ export function initiateIPO(
     avgCost: offeringPrice,
     unrealizedGain: 0,
   };
-  stockMarket.holdings.set(`${companyId}-${companyId}`, selfHolding);
+  setHoldingRecord(`${companyId}-${companyId}`, selfHolding);
 
   for (const { aiId, shares, cost } of subscriptions) {
     world.companies.cash[aiId] -= cost;
@@ -1097,7 +1202,7 @@ export function initiateIPO(
       avgCost: offeringPrice,
       unrealizedGain: 0,
     };
-    stockMarket.holdings.set(holdingKey, holding);
+    setHoldingRecord(holdingKey, holding);
   }
 
   world.companies.cash[companyId] += totalSubscribed * offeringPrice;
@@ -1147,8 +1252,8 @@ export function payDividend(world: GameWorld, companyId: number, dividendPerShar
   world.companies.cash[companyId] -= totalDividend;
   
   // 向股东支付股息
-  for (const [key, holding] of stockMarket.holdings) {
-    if (holding.stockCompanyId === companyId && holding.ownerCompanyId !== companyId) {
+  for (const [, holding] of getHoldingsForStock(companyId)) {
+    if (holding.ownerCompanyId !== companyId) {
       const dividend = dividendPerShare * holding.shares;
       world.companies.cash[holding.ownerCompanyId] += dividend;
     }
@@ -1329,8 +1434,7 @@ export function updateStockMarket(world: GameWorld): void {
   // 2. 股价更新 - 分批处理，降低每tick开销
   // 每4个tick更新所有股票，每个tick更新1/4
   const updatePhase = currentTick % 4;
-  const stockArray = Array.from(stockMarket.stocks.entries())
-    .filter(([, stock]) => stock.isListed);
+  const stockArray = getListedStocks();
   const batchSize = Math.ceil(stockArray.length / 4);
   const startIdx = updatePhase * batchSize;
   const endIdx = Math.min(startIdx + batchSize, stockArray.length);

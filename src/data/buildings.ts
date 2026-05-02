@@ -18,37 +18,6 @@ export interface RetailConfig {
   allowedGoodsIds: number[];
 }
 
-/** 生产输入/输出定义 */
-export interface ProductionIO {
-  goodsId: number;
-  amount: number;
-}
-
-/** 产品模式（用于多产品建筑） */
-export interface OutputMode {
-  modeId: number;
-  name: string;
-  inputs: ProductionIO[];
-  outputs: ProductionIO[];
-  ticksRequired?: number;
-  laborRequired?: number;
-  energyRequired?: number;
-  unlockLevel?: number;
-}
-
-/** 建筑生产配置 */
-export interface BuildingProductionConfig {
-  // 默认生产参数
-  inputs: ProductionIO[];
-  outputs: ProductionIO[];
-  ticksRequired: number;
-  laborRequired: number;
-  energyRequired: number;
-  
-  // 可选产品模式（用于多产品建筑）
-  outputModes?: OutputMode[];
-}
-
 export interface BuildingTypeDefinition {
   id: number;
   key: string;
@@ -72,10 +41,7 @@ export interface BuildingTypeDefinition {
   upgradeCosts: number[];
   capacityMultipliers: number[];
   efficiencyMultipliers: number[];
-  
-  // 生产配置（替代原来的配方）
-  production: BuildingProductionConfig;
-  
+
   description: string;
   
   // 零售建筑专属配置
@@ -97,15 +63,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 15,
     maxLevel: 5,
     upgradeCosts: [0, 200000, 400000, 800000, 1600000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.IRON_ORE, amount: 100 }],
-      ticksRequired: 1,
-      laborRequired: 50,
-      energyRequired: 200,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采铁矿石的矿场',
   },
   {
@@ -121,15 +80,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 18,
     maxLevel: 5,
     upgradeCosts: [0, 240000, 480000, 960000, 1920000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.COPPER_ORE, amount: 80 }],
-      ticksRequired: 1,
-      laborRequired: 50,
-      energyRequired: 220,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采铜矿石的矿场',
   },
   {
@@ -145,15 +97,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 20,
     maxLevel: 5,
     upgradeCosts: [0, 220000, 440000, 880000, 1760000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.BAUXITE, amount: 100 }],
-      ticksRequired: 1,
-      laborRequired: 50,
-      energyRequired: 200,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采铝土矿的矿场',
   },
   {
@@ -169,15 +114,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 18,
     maxLevel: 5,
     upgradeCosts: [0, 260000, 520000, 1040000, 2080000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.COAL, amount: 240 }],
-      ticksRequired: 1,
-      laborRequired: 55,
-      energyRequired: 220,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采煤炭的矿场',
   },
   {
@@ -193,15 +131,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 42,
     maxLevel: 5,
     upgradeCosts: [0, 1400000, 2800000, 5600000, 11200000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.CRUDE_OIL, amount: 130 }],
-      ticksRequired: 1,
-      laborRequired: 45,
-      energyRequired: 480,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采原油的油田',
   },
   {
@@ -217,15 +148,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 36,
     maxLevel: 5,
     upgradeCosts: [0, 1200000, 2400000, 4800000, 9600000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.NATURAL_GAS, amount: 180 }],
-      ticksRequired: 1,
-      laborRequired: 38,
-      energyRequired: 420,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采天然气的气田',
   },
   {
@@ -241,15 +165,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 18,
     maxLevel: 5,
     upgradeCosts: [0, 220000, 440000, 880000, 1760000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.SILICON, amount: 90 }],
-      ticksRequired: 1,
-      laborRequired: 45,
-      energyRequired: 180,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采硅石的矿场',
   },
   {
@@ -265,15 +182,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 30,
     maxLevel: 5,
     upgradeCosts: [0, 320000, 640000, 1280000, 2560000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.LITHIUM, amount: 50 }],
-      ticksRequired: 2,
-      laborRequired: 55,
-      energyRequired: 280,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采锂矿的矿场',
   },
   {
@@ -289,15 +199,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 35,
     maxLevel: 5,
     upgradeCosts: [0, 480000, 960000, 1920000, 3840000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.RARE_EARTH, amount: 30 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 250,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采稀土矿的矿场',
   },
   {
@@ -313,15 +216,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 8,
     maxLevel: 5,
     upgradeCosts: [0, 80000, 160000, 320000, 640000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.TIMBER, amount: 120 }],
-      ticksRequired: 1,
-      laborRequired: 60,
-      energyRequired: 100,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '采伐木材的林场',
   },
   {
@@ -337,36 +233,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 5,
     maxLevel: 5,
     upgradeCosts: [0, 120000, 240000, 480000, 960000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.GRAIN, amount: 200 }],
-      ticksRequired: 18,
-      laborRequired: 100,
-      energyRequired: 50,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '粮食种植',
-          inputs: [],
-          outputs: [{ goodsId: GoodsId.GRAIN, amount: 200 }],
-          ticksRequired: 18,
-          laborRequired: 100,
-          energyRequired: 50,
-        },
-        {
-          modeId: 1,
-          name: '棉花种植',
-          inputs: [],
-          outputs: [{ goodsId: GoodsId.COTTON, amount: 80 }],
-          ticksRequired: 18,
-          laborRequired: 80,
-          energyRequired: 40,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '种植粮食和棉花的农场',
   },
   {
@@ -382,15 +250,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 6,
     maxLevel: 5,
     upgradeCosts: [0, 140000, 280000, 560000, 1120000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.RUBBER_RAW, amount: 80 }],
-      ticksRequired: 1,
-      laborRequired: 60,
-      energyRequired: 50,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '种植和采集天然橡胶的种植园',
   },
   {
@@ -406,15 +267,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 10,
     maxLevel: 5,
     upgradeCosts: [0, 240000, 480000, 960000, 1920000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.GRAIN, amount: 150 }],
-      outputs: [{ goodsId: GoodsId.LIVESTOCK, amount: 12 }],
-      ticksRequired: 36,
-      laborRequired: 100,
-      energyRequired: 80,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '养殖牲畜的大型农场',
   },
   {
@@ -430,15 +284,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 12,
     maxLevel: 5,
     upgradeCosts: [0, 160000, 320000, 640000, 1280000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.SEAFOOD, amount: 80 }],
-      ticksRequired: 18,
-      laborRequired: 50,
-      energyRequired: 60,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '水产养殖和捕捞基地',
   },
   {
@@ -454,15 +301,8 @@ const EXTRACTION_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 8,
     maxLevel: 5,
     upgradeCosts: [0, 160000, 320000, 640000, 1280000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.HERBS, amount: 72 }],
-      ticksRequired: 36,
-      laborRequired: 40,
-      energyRequired: 30,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '种植中草药的专业种植园',
   },
 ];
@@ -482,15 +322,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 150,
     maxLevel: 5,
     upgradeCosts: [0, 2600000, 5200000, 10400000, 20800000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.IRON_ORE, amount: 220 }, { goodsId: GoodsId.COAL, amount: 110 }],
-      outputs: [{ goodsId: GoodsId.STEEL, amount: 240 }],
-      ticksRequired: 2,
-      laborRequired: 160,
-      energyRequired: 960,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '将铁矿石加工成钢材',
   },
   {
@@ -506,36 +339,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 90,
     maxLevel: 5,
     upgradeCosts: [0, 720000, 1440000, 2880000, 5760000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [{ goodsId: GoodsId.COPPER_ORE, amount: 80 }],
-      outputs: [{ goodsId: GoodsId.COPPER, amount: 60 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 400,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '铜冶炼',
-          inputs: [{ goodsId: GoodsId.COPPER_ORE, amount: 80 }],
-          outputs: [{ goodsId: GoodsId.COPPER, amount: 60 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 400,
-        },
-        {
-          modeId: 1,
-          name: '铝冶炼',
-          inputs: [{ goodsId: GoodsId.BAUXITE, amount: 100 }],
-          outputs: [{ goodsId: GoodsId.ALUMINUM, amount: 40 }],
-          ticksRequired: 2,
-          laborRequired: 45,
-          energyRequired: 600,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '冶炼铜材和铝材',
   },
   {
@@ -551,15 +356,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 125,
     maxLevel: 5,
     upgradeCosts: [0, 3600000, 7200000, 14400000, 28800000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.CRUDE_OIL, amount: 180 }],
-      outputs: [{ goodsId: GoodsId.FUEL, amount: 120 }, { goodsId: GoodsId.PLASTIC, amount: 70 }],
-      ticksRequired: 2,
-      laborRequired: 95,
-      energyRequired: 980,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '将原油精炼成燃油和塑料',
   },
   {
@@ -575,36 +373,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 100,
     maxLevel: 5,
     upgradeCosts: [0, 2200000, 4400000, 8800000, 17600000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.CRUDE_OIL, amount: 90 }, { goodsId: GoodsId.NATURAL_GAS, amount: 40 }],
-      outputs: [{ goodsId: GoodsId.CHEMICALS, amount: 110 }],
-      ticksRequired: 2,
-      laborRequired: 75,
-      energyRequired: 650,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '化学品生产',
-          inputs: [{ goodsId: GoodsId.CRUDE_OIL, amount: 90 }, { goodsId: GoodsId.NATURAL_GAS, amount: 40 }],
-          outputs: [{ goodsId: GoodsId.CHEMICALS, amount: 110 }],
-          ticksRequired: 2,
-          laborRequired: 75,
-          energyRequired: 650,
-        },
-        {
-          modeId: 1,
-          name: '橡胶制品生产',
-          inputs: [{ goodsId: GoodsId.RUBBER_RAW, amount: 80 }, { goodsId: GoodsId.CHEMICALS, amount: 25 }],
-          outputs: [{ goodsId: GoodsId.RUBBER, amount: 70 }],
-          ticksRequired: 2,
-          laborRequired: 55,
-          energyRequired: 220,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产化学品和橡胶制品',
   },
   {
@@ -620,15 +390,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 70,
     maxLevel: 5,
     upgradeCosts: [0, 880000, 1760000, 3520000, 7040000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [{ goodsId: GoodsId.SILICON, amount: 140 }],
-      outputs: [{ goodsId: GoodsId.GLASS, amount: 130 }],
-      ticksRequired: 1,
-      laborRequired: 55,
-      energyRequired: 560,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产玻璃制品',
   },
   {
@@ -644,15 +407,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 85,
     maxLevel: 5,
     upgradeCosts: [0, 1120000, 2240000, 4480000, 8960000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [{ goodsId: GoodsId.SILICON, amount: 70 }, { goodsId: GoodsId.COAL, amount: 45 }],
-      outputs: [{ goodsId: GoodsId.CEMENT, amount: 260 }],
-      ticksRequired: 2,
-      laborRequired: 75,
-      energyRequired: 720,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产水泥',
   },
   {
@@ -668,15 +424,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 35,
     maxLevel: 5,
     upgradeCosts: [0, 200000, 400000, 800000, 1600000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [{ goodsId: GoodsId.TIMBER, amount: 80 }],
-      outputs: [{ goodsId: GoodsId.PAPER, amount: 100 }],
-      ticksRequired: 2,
-      laborRequired: 40,
-      energyRequired: 200,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '将木材加工成纸张',
   },
   {
@@ -692,36 +441,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 25,
     maxLevel: 5,
     upgradeCosts: [0, 240000, 480000, 960000, 1920000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [{ goodsId: GoodsId.COTTON, amount: 100 }],
-      outputs: [{ goodsId: GoodsId.TEXTILES, amount: 80 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 150,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '纺织品生产',
-          inputs: [{ goodsId: GoodsId.COTTON, amount: 100 }],
-          outputs: [{ goodsId: GoodsId.TEXTILES, amount: 80 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 150,
-        },
-        {
-          modeId: 1,
-          name: '丝绸生产',
-          inputs: [{ goodsId: GoodsId.COTTON, amount: 80 }],
-          outputs: [{ goodsId: GoodsId.SILK, amount: 30 }],
-          ticksRequired: 4,
-          laborRequired: 80,
-          energyRequired: 120,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '将棉花加工成纺织品和丝绸',
   },
   {
@@ -737,76 +458,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 24,
     maxLevel: 5,
     upgradeCosts: [0, 400000, 800000, 1600000, 3200000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [{ goodsId: GoodsId.GRAIN, amount: 120 }],
-      outputs: [{ goodsId: GoodsId.PROCESSED_FOOD, amount: 120 }],
-      ticksRequired: 1,
-      laborRequired: 50,
-      energyRequired: 120,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '食品加工',
-          inputs: [{ goodsId: GoodsId.GRAIN, amount: 120 }],
-          outputs: [{ goodsId: GoodsId.PROCESSED_FOOD, amount: 120 }],
-          ticksRequired: 1,
-          laborRequired: 50,
-          energyRequired: 120,
-        },
-        {
-          modeId: 1,
-          name: '饮料生产',
-          inputs: [{ goodsId: GoodsId.GRAIN, amount: 45 }],
-          outputs: [{ goodsId: GoodsId.BEVERAGES, amount: 160 }],
-          ticksRequired: 1,
-          laborRequired: 40,
-          energyRequired: 90,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '零食生产',
-          inputs: [{ goodsId: GoodsId.GRAIN, amount: 40 }, { goodsId: GoodsId.PACKAGING, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.SNACKS, amount: 80 }],
-          ticksRequired: 1,
-          laborRequired: 30,
-          energyRequired: 80,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 3,
-          name: '食品成品生产',
-          inputs: [{ goodsId: GoodsId.PROCESSED_FOOD, amount: 50 }],
-          outputs: [{ goodsId: GoodsId.FOOD, amount: 60 }],
-          ticksRequired: 1,
-          laborRequired: 40,
-          energyRequired: 80,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 4,
-          name: '宠物食品生产',
-          inputs: [{ goodsId: GoodsId.MEAT, amount: 20 }, { goodsId: GoodsId.GRAIN, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.PET_FOOD, amount: 60 }],
-          ticksRequired: 1,
-          laborRequired: 35,
-          energyRequired: 90,
-          unlockLevel: 3,
-        },
-        {
-          modeId: 5,
-          name: '有机食品生产',
-          inputs: [{ goodsId: GoodsId.GRAIN, amount: 50 }, { goodsId: GoodsId.DAIRY, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.ORGANIC_FOOD, amount: 30 }],
-          ticksRequired: 2,
-          laborRequired: 50,
-          energyRequired: 100,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '加工各类食品',
   },
   {
@@ -822,45 +475,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 30,
     maxLevel: 5,
     upgradeCosts: [0, 320000, 640000, 1280000, 2560000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.LIVESTOCK, amount: 5 }],
-      outputs: [{ goodsId: GoodsId.MEAT, amount: 100 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 150,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '肉类加工',
-          inputs: [{ goodsId: GoodsId.LIVESTOCK, amount: 5 }],
-          outputs: [{ goodsId: GoodsId.MEAT, amount: 100 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 150,
-        },
-        {
-          modeId: 1,
-          name: '冷冻食品生产',
-          inputs: [{ goodsId: GoodsId.MEAT, amount: 30 }, { goodsId: GoodsId.SEAFOOD, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.FROZEN_FOOD, amount: 60 }],
-          ticksRequired: 2,
-          laborRequired: 50,
-          energyRequired: 200,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '罐头食品生产',
-          inputs: [{ goodsId: GoodsId.MEAT, amount: 20 }, { goodsId: GoodsId.PROCESSED_FOOD, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.CANNED_FOOD, amount: 40 }],
-          ticksRequired: 2,
-          laborRequired: 45,
-          energyRequired: 120,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '肉类加工和冷冻食品生产',
   },
   {
@@ -876,15 +492,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 28,
     maxLevel: 5,
     upgradeCosts: [0, 280000, 560000, 1120000, 2240000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [{ goodsId: GoodsId.LIVESTOCK, amount: 2 }],
-      outputs: [{ goodsId: GoodsId.DAIRY, amount: 150 }],
-      ticksRequired: 1,
-      laborRequired: 30,
-      energyRequired: 100,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '乳制品生产工厂',
   },
   {
@@ -900,54 +509,8 @@ const PROCESSING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 60,
     maxLevel: 5,
     upgradeCosts: [0, 840000, 1680000, 3360000, 6720000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [
-        { goodsId: GoodsId.CEMENT, amount: 120 },
-        { goodsId: GoodsId.STEEL, amount: 55 },
-        { goodsId: GoodsId.GLASS, amount: 20 },
-      ],
-      outputs: [{ goodsId: GoodsId.BUILDING_MATERIALS, amount: 140 }],
-      ticksRequired: 2,
-      laborRequired: 80,
-      energyRequired: 380,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '建筑材料生产',
-          inputs: [
-            { goodsId: GoodsId.CEMENT, amount: 120 },
-            { goodsId: GoodsId.STEEL, amount: 55 },
-            { goodsId: GoodsId.GLASS, amount: 20 },
-          ],
-          outputs: [{ goodsId: GoodsId.BUILDING_MATERIALS, amount: 140 }],
-          ticksRequired: 2,
-          laborRequired: 80,
-          energyRequired: 380,
-        },
-        {
-          modeId: 1,
-          name: '包装材料生产',
-          inputs: [{ goodsId: GoodsId.PAPER, amount: 70 }, { goodsId: GoodsId.PLASTIC, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.PACKAGING, amount: 120 }],
-          ticksRequired: 1,
-          laborRequired: 45,
-          energyRequired: 140,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '建材成品生产',
-          inputs: [{ goodsId: GoodsId.BUILDING_MATERIALS, amount: 90 }, { goodsId: GoodsId.GLASS, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.BUILDING_PRODUCTS, amount: 70 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 220,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产建筑材料和包装材料',
   },
 ];
@@ -967,56 +530,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 60,
     maxLevel: 5,
     upgradeCosts: [0, 2600000, 5200000, 10400000, 20800000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.8],
-    production: {
-      inputs: [{ goodsId: GoodsId.COPPER, amount: 35 }, { goodsId: GoodsId.PLASTIC, amount: 25 }],
-      outputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 40 }],
-      ticksRequired: 2,
-      laborRequired: 75,
-      energyRequired: 300,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '电子元件生产',
-          inputs: [{ goodsId: GoodsId.COPPER, amount: 35 }, { goodsId: GoodsId.PLASTIC, amount: 25 }],
-          outputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 40 }],
-          ticksRequired: 2,
-          laborRequired: 75,
-          energyRequired: 300,
-        },
-        {
-          modeId: 1,
-          name: '智能手机组装',
-          inputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 18 }, { goodsId: GoodsId.CHIPS, amount: 4 }, { goodsId: GoodsId.BATTERY, amount: 3 }, { goodsId: GoodsId.SCREEN, amount: 6 }],
-          outputs: [{ goodsId: GoodsId.SMARTPHONE, amount: 14 }],
-          ticksRequired: 2,
-          laborRequired: 95,
-          energyRequired: 180,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '电脑组装',
-          inputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 16 }, { goodsId: GoodsId.CHIPS, amount: 6 }, { goodsId: GoodsId.SCREEN, amount: 2 }, { goodsId: GoodsId.PLASTIC, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.COMPUTER, amount: 6 }],
-          ticksRequired: 3,
-          laborRequired: 120,
-          energyRequired: 240,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 3,
-          name: '无人机生产',
-          inputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 20 }, { goodsId: GoodsId.CHIPS, amount: 3 }, { goodsId: GoodsId.BATTERY, amount: 2 }, { goodsId: GoodsId.PLASTIC, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.DRONE, amount: 5 }],
-          ticksRequired: 3,
-          laborRequired: 90,
-          energyRequired: 180,
-          unlockLevel: 3,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产电子元件、手机、电脑、无人机',
   },
   {
@@ -1032,15 +547,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 180,
     maxLevel: 5,
     upgradeCosts: [0, 14000000, 28000000, 56000000, 112000000],
-    capacityMultipliers: [1.0, 1.15, 1.3, 1.5, 1.8],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.SILICON, amount: 40 }, { goodsId: GoodsId.RARE_EARTH, amount: 6 }, { goodsId: GoodsId.CHEMICALS, amount: 18 }],
-      outputs: [{ goodsId: GoodsId.CHIPS, amount: 12 }],
-      ticksRequired: 4,
-      laborRequired: 180,
-      energyRequired: 900,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产芯片的高科技工厂',
   },
   {
@@ -1056,46 +564,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 70,
     maxLevel: 5,
     upgradeCosts: [0, 3200000, 6400000, 12800000, 25600000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.LITHIUM, amount: 30 }, { goodsId: GoodsId.COPPER, amount: 15 }, { goodsId: GoodsId.CHEMICALS, amount: 20 }],
-      outputs: [{ goodsId: GoodsId.BATTERY, amount: 20 }],
-      ticksRequired: 3,
-      laborRequired: 50,
-      energyRequired: 350,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '电池生产',
-          inputs: [{ goodsId: GoodsId.LITHIUM, amount: 30 }, { goodsId: GoodsId.COPPER, amount: 15 }, { goodsId: GoodsId.CHEMICALS, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.BATTERY, amount: 20 }],
-          ticksRequired: 3,
-          laborRequired: 50,
-          energyRequired: 350,
-        },
-        {
-          modeId: 1,
-          name: '储能系统生产',
-          inputs: [{ goodsId: GoodsId.BATTERY, amount: 30 }, { goodsId: GoodsId.ELECTRONICS, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.ENERGY_STORAGE, amount: 3 }],
-          ticksRequired: 4,
-          laborRequired: 80,
-          energyRequired: 300,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '光伏系统组装',
-          inputs: [{ goodsId: GoodsId.SOLAR_PANEL, amount: 30 }, { goodsId: GoodsId.ELECTRONICS, amount: 20 }, { goodsId: GoodsId.BATTERY, amount: 5 }],
-          outputs: [{ goodsId: GoodsId.SOLAR_SYSTEM, amount: 2 }],
-          ticksRequired: 5,
-          laborRequired: 120,
-          energyRequired: 250,
-          unlockLevel: 3,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产电池、储能系统和光伏系统',
   },
   {
@@ -1111,73 +581,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 70,
     maxLevel: 5,
     upgradeCosts: [0, 1800000, 3600000, 7200000, 14400000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.COPPER, amount: 45 }, { goodsId: GoodsId.STEEL, amount: 30 }, { goodsId: GoodsId.RARE_EARTH, amount: 4 }],
-      outputs: [{ goodsId: GoodsId.MOTOR, amount: 30 }],
-      ticksRequired: 2,
-      laborRequired: 90,
-      energyRequired: 320,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '电机生产',
-          inputs: [{ goodsId: GoodsId.COPPER, amount: 45 }, { goodsId: GoodsId.STEEL, amount: 30 }, { goodsId: GoodsId.RARE_EARTH, amount: 4 }],
-          outputs: [{ goodsId: GoodsId.MOTOR, amount: 30 }],
-          ticksRequired: 2,
-          laborRequired: 90,
-          energyRequired: 320,
-        },
-        {
-          modeId: 1,
-          name: '屏幕生产',
-          inputs: [{ goodsId: GoodsId.GLASS, amount: 30 }, { goodsId: GoodsId.ELECTRONICS, amount: 15 }, { goodsId: GoodsId.RARE_EARTH, amount: 2 }],
-          outputs: [{ goodsId: GoodsId.SCREEN, amount: 20 }],
-          ticksRequired: 2,
-          laborRequired: 70,
-          energyRequired: 250,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '汽车零部件生产',
-          inputs: [{ goodsId: GoodsId.STEEL, amount: 80 }, { goodsId: GoodsId.PLASTIC, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.CAR_PARTS, amount: 72 }],
-          ticksRequired: 3,
-          laborRequired: 140,
-          energyRequired: 420,
-        },
-        {
-          modeId: 3,
-          name: '机械部件生产',
-          inputs: [{ goodsId: GoodsId.STEEL, amount: 40 }, { goodsId: GoodsId.ALUMINUM, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.MECHANICAL_PARTS, amount: 35 }],
-          ticksRequired: 2,
-          laborRequired: 70,
-          energyRequired: 220,
-        },
-        {
-          modeId: 4,
-          name: '航空部件生产',
-          inputs: [{ goodsId: GoodsId.ALUMINUM, amount: 50 }, { goodsId: GoodsId.STEEL, amount: 30 }, { goodsId: GoodsId.RARE_EARTH, amount: 5 }],
-          outputs: [{ goodsId: GoodsId.AIRCRAFT_PARTS, amount: 10 }],
-          ticksRequired: 5,
-          laborRequired: 120,
-          energyRequired: 350,
-          unlockLevel: 3,
-        },
-        {
-          modeId: 5,
-          name: '服装面料生产',
-          inputs: [{ goodsId: GoodsId.TEXTILES, amount: 50 }],
-          outputs: [{ goodsId: GoodsId.CLOTHING_FABRIC, amount: 40 }],
-          ticksRequired: 2,
-          laborRequired: 50,
-          energyRequired: 100,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产电机、屏幕、汽车零件、机械部件等',
   },
   {
@@ -1193,46 +598,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 110,
     maxLevel: 5,
     upgradeCosts: [0, 6000000, 12000000, 24000000, 48000000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.CAR_PARTS, amount: 26 }, { goodsId: GoodsId.ELECTRONICS, amount: 12 }, { goodsId: GoodsId.RUBBER, amount: 10 }, { goodsId: GoodsId.GLASS, amount: 14 }],
-      outputs: [{ goodsId: GoodsId.CAR, amount: 1 }],
-      ticksRequired: 4,
-      laborRequired: 240,
-      energyRequired: 520,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '燃油汽车组装',
-          inputs: [{ goodsId: GoodsId.CAR_PARTS, amount: 26 }, { goodsId: GoodsId.ELECTRONICS, amount: 12 }, { goodsId: GoodsId.RUBBER, amount: 10 }, { goodsId: GoodsId.GLASS, amount: 14 }],
-          outputs: [{ goodsId: GoodsId.CAR, amount: 1 }],
-          ticksRequired: 4,
-          laborRequired: 240,
-          energyRequired: 520,
-        },
-        {
-          modeId: 1,
-          name: '电动汽车组装',
-          inputs: [{ goodsId: GoodsId.CAR_PARTS, amount: 22 }, { goodsId: GoodsId.BATTERY, amount: 18 }, { goodsId: GoodsId.MOTOR, amount: 5 }, { goodsId: GoodsId.ELECTRONICS, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.ELECTRIC_CAR, amount: 1 }],
-          ticksRequired: 7,
-          laborRequired: 260,
-          energyRequired: 560,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '豪华汽车组装',
-          inputs: [{ goodsId: GoodsId.CAR_PARTS, amount: 25 }, { goodsId: GoodsId.ELECTRONICS, amount: 30 }, { goodsId: GoodsId.GOLD, amount: 1 }, { goodsId: GoodsId.GLASS, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.LUXURY_CAR, amount: 1 }],
-          ticksRequired: 10,
-          laborRequired: 300,
-          energyRequired: 500,
-          unlockLevel: 3,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '组装燃油汽车、电动汽车和豪华汽车',
   },
   {
@@ -1248,15 +615,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 60,
     maxLevel: 5,
     upgradeCosts: [0, 2200000, 4400000, 8800000, 17600000],
-    capacityMultipliers: [1.0, 1.25, 1.5, 1.8, 2.2],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.STEEL, amount: 70 }, { goodsId: GoodsId.ELECTRONICS, amount: 30 }, { goodsId: GoodsId.PLASTIC, amount: 45 }],
-      outputs: [{ goodsId: GoodsId.APPLIANCES, amount: 12 }],
-      ticksRequired: 4,
-      laborRequired: 180,
-      energyRequired: 420,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产家用电器',
   },
   {
@@ -1272,36 +632,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 25,
     maxLevel: 5,
     upgradeCosts: [0, 600000, 1200000, 2400000, 4800000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.15, 1.3, 1.5, 1.7],
-    production: {
-      inputs: [{ goodsId: GoodsId.TIMBER, amount: 60 }, { goodsId: GoodsId.STEEL, amount: 20 }],
-      outputs: [{ goodsId: GoodsId.FURNITURE, amount: 10 }],
-      ticksRequired: 3,
-      laborRequired: 100,
-      energyRequired: 150,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '家具生产',
-          inputs: [{ goodsId: GoodsId.TIMBER, amount: 60 }, { goodsId: GoodsId.STEEL, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.FURNITURE, amount: 10 }],
-          ticksRequired: 3,
-          laborRequired: 100,
-          energyRequired: 150,
-        },
-        {
-          modeId: 1,
-          name: '服装生产',
-          inputs: [{ goodsId: GoodsId.CLOTHING_FABRIC, amount: 70 }],
-          outputs: [{ goodsId: GoodsId.CLOTHING, amount: 60 }],
-          ticksRequired: 2,
-          laborRequired: 95,
-          energyRequired: 110,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产家具和服装',
   },
   {
@@ -1317,46 +649,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 55,
     maxLevel: 5,
     upgradeCosts: [0, 2400000, 4800000, 9600000, 19200000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.SILICON, amount: 50 }, { goodsId: GoodsId.GLASS, amount: 30 }, { goodsId: GoodsId.ALUMINUM, amount: 20 }],
-      outputs: [{ goodsId: GoodsId.SOLAR_PANEL, amount: 20 }],
-      ticksRequired: 3,
-      laborRequired: 80,
-      energyRequired: 300,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '光伏板生产',
-          inputs: [{ goodsId: GoodsId.SILICON, amount: 50 }, { goodsId: GoodsId.GLASS, amount: 30 }, { goodsId: GoodsId.ALUMINUM, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.SOLAR_PANEL, amount: 20 }],
-          ticksRequired: 3,
-          laborRequired: 80,
-          energyRequired: 300,
-        },
-        {
-          modeId: 1,
-          name: '风机叶片生产',
-          inputs: [{ goodsId: GoodsId.ALUMINUM, amount: 50 }, { goodsId: GoodsId.PLASTIC, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.WIND_BLADE, amount: 8 }],
-          ticksRequired: 4,
-          laborRequired: 100,
-          energyRequired: 350,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '工业机器人生产',
-          inputs: [{ goodsId: GoodsId.MECHANICAL_PARTS, amount: 30 }, { goodsId: GoodsId.ELECTRONICS, amount: 40 }, { goodsId: GoodsId.CHIPS, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 2 }],
-          ticksRequired: 6,
-          laborRequired: 150,
-          energyRequired: 400,
-          unlockLevel: 3,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产光伏板、风机叶片和工业机器人',
   },
   {
@@ -1372,74 +666,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 90,
     maxLevel: 5,
     upgradeCosts: [0, 4200000, 8400000, 16800000, 33600000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.HERBS, amount: 70 }, { goodsId: GoodsId.CHEMICALS, amount: 30 }],
-      outputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 60 }],
-      ticksRequired: 3,
-      laborRequired: 95,
-      energyRequired: 360,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '医药原料生产',
-          inputs: [{ goodsId: GoodsId.HERBS, amount: 70 }, { goodsId: GoodsId.CHEMICALS, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 60 }],
-          ticksRequired: 3,
-          laborRequired: 95,
-          energyRequired: 360,
-        },
-        {
-          modeId: 1,
-          name: '抗生素生产',
-          inputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.ANTIBIOTICS, amount: 15 }],
-          ticksRequired: 4,
-          laborRequired: 100,
-          energyRequired: 280,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '疫苗生产',
-          inputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 50 }, { goodsId: GoodsId.CHEMICALS, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.VACCINE, amount: 10 }],
-          ticksRequired: 8,
-          laborRequired: 150,
-          energyRequired: 400,
-          unlockLevel: 3,
-        },
-        {
-          modeId: 3,
-          name: '仿制药生产',
-          inputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.GENERIC_DRUG, amount: 240 }],
-          ticksRequired: 3,
-          laborRequired: 110,
-          energyRequired: 260,
-        },
-        {
-          modeId: 4,
-          name: '专利药生产',
-          inputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 40 }, { goodsId: GoodsId.CHEMICALS, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.PATENT_DRUG, amount: 20 }],
-          ticksRequired: 5,
-          laborRequired: 120,
-          energyRequired: 300,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 5,
-          name: '非处方药生产',
-          inputs: [{ goodsId: GoodsId.PHARMA_BASE, amount: 18 }],
-          outputs: [{ goodsId: GoodsId.OTC_DRUG, amount: 140 }],
-          ticksRequired: 2,
-          laborRequired: 90,
-          energyRequired: 220,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产各类药品',
   },
   {
@@ -1455,36 +683,8 @@ const MANUFACTURING_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 50,
     maxLevel: 5,
     upgradeCosts: [0, 4800000, 9600000, 19200000, 38400000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.6, 1.9],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.PLASTIC, amount: 30 }, { goodsId: GoodsId.TEXTILES, amount: 20 }],
-      outputs: [{ goodsId: GoodsId.MEDICAL_SUPPLIES, amount: 100 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 150,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '医用耗材生产',
-          inputs: [{ goodsId: GoodsId.PLASTIC, amount: 30 }, { goodsId: GoodsId.TEXTILES, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.MEDICAL_SUPPLIES, amount: 100 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 150,
-        },
-        {
-          modeId: 1,
-          name: '医疗设备生产',
-          inputs: [{ goodsId: GoodsId.ELECTRONICS, amount: 30 }, { goodsId: GoodsId.CHIPS, amount: 10 }, { goodsId: GoodsId.STEEL, amount: 20 }],
-          outputs: [{ goodsId: GoodsId.MEDICAL_DEVICE, amount: 2 }],
-          ticksRequired: 6,
-          laborRequired: 100,
-          energyRequired: 300,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '生产医疗设备和医用耗材',
   },
 ];
@@ -1504,56 +704,8 @@ const LUXURY_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 65,
     maxLevel: 5,
     upgradeCosts: [0, 4000000, 8000000, 16000000, 32000000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.6, 1.9],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [{ goodsId: GoodsId.GOLD_ORE, amount: 5 }],
-      ticksRequired: 2,
-      laborRequired: 60,
-      energyRequired: 300,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '金矿开采',
-          inputs: [],
-          outputs: [{ goodsId: GoodsId.GOLD_ORE, amount: 5 }],
-          ticksRequired: 2,
-          laborRequired: 60,
-          energyRequired: 300,
-        },
-        {
-          modeId: 1,
-          name: '钻石矿开采',
-          inputs: [],
-          outputs: [{ goodsId: GoodsId.DIAMOND_ORE, amount: 2 }],
-          ticksRequired: 3,
-          laborRequired: 70,
-          energyRequired: 350,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '黄金精炼',
-          inputs: [{ goodsId: GoodsId.GOLD_ORE, amount: 10 }],
-          outputs: [{ goodsId: GoodsId.GOLD, amount: 8 }],
-          ticksRequired: 3,
-          laborRequired: 40,
-          energyRequired: 400,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 3,
-          name: '钻石切割',
-          inputs: [{ goodsId: GoodsId.DIAMOND_ORE, amount: 5 }],
-          outputs: [{ goodsId: GoodsId.DIAMOND, amount: 3 }],
-          ticksRequired: 4,
-          laborRequired: 50,
-          energyRequired: 200,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '开采和精炼贵金属和钻石',
   },
   {
@@ -1569,46 +721,8 @@ const LUXURY_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 15,
     maxLevel: 5,
     upgradeCosts: [0, 6000000, 12000000, 24000000, 48000000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.6, 1.9],
-    efficiencyMultipliers: [1.0, 1.1, 1.25, 1.4, 1.6],
-    production: {
-      inputs: [{ goodsId: GoodsId.GOLD, amount: 0.35 }, { goodsId: GoodsId.DIAMOND, amount: 0.3 }],
-      outputs: [{ goodsId: GoodsId.JEWELRY, amount: 2 }],
-      ticksRequired: 6,
-      laborRequired: 80,
-      energyRequired: 100,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '珠宝制作',
-          inputs: [{ goodsId: GoodsId.GOLD, amount: 0.35 }, { goodsId: GoodsId.DIAMOND, amount: 0.3 }],
-          outputs: [{ goodsId: GoodsId.JEWELRY, amount: 2 }],
-          ticksRequired: 6,
-          laborRequired: 80,
-          energyRequired: 100,
-        },
-        {
-          modeId: 1,
-          name: '奢侈腕表生产',
-          inputs: [{ goodsId: GoodsId.GOLD, amount: 2 }, { goodsId: GoodsId.ELECTRONICS, amount: 5 }, { goodsId: GoodsId.GLASS, amount: 3 }],
-          outputs: [{ goodsId: GoodsId.LUXURY_WATCH, amount: 2 }],
-          ticksRequired: 8,
-          laborRequired: 100,
-          energyRequired: 80,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '设计师服装生产',
-          inputs: [{ goodsId: GoodsId.SILK, amount: 20 }, { goodsId: GoodsId.TEXTILES, amount: 30 }],
-          outputs: [{ goodsId: GoodsId.DESIGNER_CLOTHING, amount: 10 }],
-          ticksRequired: 6,
-          laborRequired: 120,
-          energyRequired: 80,
-          unlockLevel: 2,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '手工制作珠宝、腕表、设计师服装',
   },
 ];
@@ -1628,51 +742,15 @@ const SERVICE_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 0,  // 发电厂不消耗电力
     maxLevel: 5,
     upgradeCosts: [0, 4800000, 9600000, 19200000, 38400000],
-    capacityMultipliers: [1.0, 1.3, 1.6, 2.0, 2.5],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.35, 1.5],
-    production: {
-      inputs: [{ goodsId: GoodsId.COAL, amount: 180 }],
-      outputs: [{ goodsId: GoodsId.ELECTRICITY, amount: 1200 }],
-      ticksRequired: 1,
-      laborRequired: 70,
-      energyRequired: 0,
-      outputModes: [
-        {
-          modeId: 0,
-          name: '燃煤发电',
-          inputs: [{ goodsId: GoodsId.COAL, amount: 180 }],
-          outputs: [{ goodsId: GoodsId.ELECTRICITY, amount: 1200 }],
-          ticksRequired: 1,
-          laborRequired: 70,
-          energyRequired: 0,
-        },
-        {
-          modeId: 1,
-          name: '燃气发电',
-          inputs: [{ goodsId: GoodsId.NATURAL_GAS, amount: 120 }],
-          outputs: [{ goodsId: GoodsId.ELECTRICITY, amount: 1000 }],
-          ticksRequired: 1,
-          laborRequired: 55,
-          energyRequired: 0,
-          unlockLevel: 2,
-        },
-        {
-          modeId: 2,
-          name: '光伏发电',
-          inputs: [],
-          outputs: [{ goodsId: GoodsId.ELECTRICITY, amount: 180 }],
-          ticksRequired: 1,
-          laborRequired: 18,
-          energyRequired: 0,
-          unlockLevel: 3,
-        },
-      ],
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     description: '发电供应工厂和市场',
   },
 ];
 
-// ==================== 零售类建筑（ID 40，共1种）====================
+// ==================== 零售类建筑（ID 40-49，共10种）====================
+// 共用模板：retail 建筑无生产输入输出，只通过 retailConfig 销售
+
 export const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
   {
     id: 40,
@@ -1687,20 +765,13 @@ export const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
     powerConsumption: 8,
     maxLevel: 5,
     upgradeCosts: [0, 300000, 600000, 1200000, 2400000],
-    capacityMultipliers: [1.0, 1.2, 1.4, 1.7, 2.0],
-    efficiencyMultipliers: [1.0, 1.1, 1.2, 1.3, 1.4],
-    production: {
-      inputs: [],
-      outputs: [],
-      ticksRequired: 1,
-      laborRequired: 0,
-      energyRequired: 0,
-    },
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
     retailConfig: {
       maxInventorySlots: 12,
       inventoryCapacity: 200,
       customerCapacity: 80,
-      markupRange: [0.1, 0.45],
+      markupRange: [0.15, 0.30],
       allowedGoodsIds: [
         GoodsId.FOOD,
         GoodsId.BEVERAGES,
@@ -1711,10 +782,283 @@ export const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
     },
     description: '面向社区居民的综合零售门店',
   },
+  {
+    id: 41,
+    key: 'supermarket',
+    name: '超市',
+    category: 'retail',
+    buildCost: 2400000,
+    buildTime: 60,
+    maintenanceCost: 6000,
+    laborCost: 22000,
+    energyCost: 4500,
+    powerConsumption: 22,
+    maxLevel: 5,
+    upgradeCosts: [0, 800000, 1600000, 3200000, 6400000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 24,
+      inventoryCapacity: 500,
+      customerCapacity: 240,
+      markupRange: [0.10, 0.25],
+      allowedGoodsIds: [
+        GoodsId.FOOD,
+        GoodsId.BEVERAGES,
+        GoodsId.SNACKS,
+        GoodsId.PROCESSED_FOOD,
+        GoodsId.FROZEN_FOOD,
+        GoodsId.CANNED_FOOD,
+        GoodsId.DAIRY,
+        GoodsId.MEAT,
+        GoodsId.ORGANIC_FOOD,
+        GoodsId.PET_FOOD,
+        GoodsId.GENERIC_DRUG,
+        GoodsId.OTC_DRUG,
+      ],
+    },
+    description: '中型综合超市，覆盖日常食品与生鲜',
+  },
+  {
+    id: 42,
+    key: 'electronics_store',
+    name: '电器商场',
+    category: 'retail',
+    buildCost: 3500000,
+    buildTime: 75,
+    maintenanceCost: 9000,
+    laborCost: 28000,
+    energyCost: 5500,
+    powerConsumption: 30,
+    maxLevel: 5,
+    upgradeCosts: [0, 1200000, 2400000, 4800000, 9600000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 12,
+      inventoryCapacity: 150,
+      customerCapacity: 80,
+      markupRange: [0.08, 0.20],
+      allowedGoodsIds: [
+        GoodsId.SMARTPHONE,
+        GoodsId.COMPUTER,
+        GoodsId.APPLIANCES,
+        GoodsId.DRONE,
+        GoodsId.INDUSTRIAL_ROBOT,
+      ],
+    },
+    description: '电子产品与家电的专业卖场',
+  },
+  {
+    id: 43,
+    key: 'car_dealership',
+    name: '汽车 4S 店',
+    category: 'retail',
+    buildCost: 5500000,
+    buildTime: 90,
+    maintenanceCost: 14000,
+    laborCost: 35000,
+    energyCost: 4000,
+    powerConsumption: 18,
+    maxLevel: 5,
+    upgradeCosts: [0, 1800000, 3600000, 7200000, 14400000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 6,
+      inventoryCapacity: 40,
+      customerCapacity: 30,
+      markupRange: [0.05, 0.15],
+      allowedGoodsIds: [
+        GoodsId.CAR,
+        GoodsId.ELECTRIC_CAR,
+        GoodsId.LUXURY_CAR,
+      ],
+    },
+    description: '汽车整车销售与售后展厅',
+  },
+  {
+    id: 44,
+    key: 'clothing_store',
+    name: '服装店',
+    category: 'retail',
+    buildCost: 1500000,
+    buildTime: 45,
+    maintenanceCost: 4000,
+    laborCost: 14000,
+    energyCost: 2000,
+    powerConsumption: 10,
+    maxLevel: 5,
+    upgradeCosts: [0, 500000, 1000000, 2000000, 4000000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 6,
+      inventoryCapacity: 300,
+      customerCapacity: 100,
+      markupRange: [0.30, 0.60],
+      allowedGoodsIds: [
+        GoodsId.CLOTHING,
+        GoodsId.DESIGNER_CLOTHING,
+      ],
+    },
+    description: '日常服装与设计师品牌的零售门店',
+  },
+  {
+    id: 45,
+    key: 'furniture_mall',
+    name: '家具城',
+    category: 'retail',
+    buildCost: 3200000,
+    buildTime: 70,
+    maintenanceCost: 7500,
+    laborCost: 22000,
+    energyCost: 3500,
+    powerConsumption: 18,
+    maxLevel: 5,
+    upgradeCosts: [0, 1100000, 2200000, 4400000, 8800000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 6,
+      inventoryCapacity: 120,
+      customerCapacity: 60,
+      markupRange: [0.15, 0.35],
+      allowedGoodsIds: [
+        GoodsId.FURNITURE,
+        GoodsId.BUILDING_PRODUCTS,
+      ],
+    },
+    description: '家具与建材成品的大型卖场',
+  },
+  {
+    id: 46,
+    key: 'pharmacy',
+    name: '药房',
+    category: 'retail',
+    buildCost: 1200000,
+    buildTime: 40,
+    maintenanceCost: 3500,
+    laborCost: 12000,
+    energyCost: 1800,
+    powerConsumption: 8,
+    maxLevel: 5,
+    upgradeCosts: [0, 400000, 800000, 1600000, 3200000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 10,
+      inventoryCapacity: 200,
+      customerCapacity: 90,
+      markupRange: [0.20, 0.40],
+      allowedGoodsIds: [
+        GoodsId.GENERIC_DRUG,
+        GoodsId.OTC_DRUG,
+        GoodsId.PATENT_DRUG,
+        GoodsId.MEDICAL_DEVICE,
+        GoodsId.MEDICAL_SUPPLIES,
+      ],
+    },
+    description: '医药与医疗器械的零售药店',
+  },
+  {
+    id: 47,
+    key: 'luxury_store',
+    name: '奢侈品店',
+    category: 'retail',
+    buildCost: 4500000,
+    buildTime: 80,
+    maintenanceCost: 12000,
+    laborCost: 30000,
+    energyCost: 3500,
+    powerConsumption: 16,
+    maxLevel: 5,
+    upgradeCosts: [0, 1500000, 3000000, 6000000, 12000000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 6,
+      inventoryCapacity: 50,
+      customerCapacity: 30,
+      markupRange: [0.50, 1.00],
+      allowedGoodsIds: [
+        GoodsId.JEWELRY,
+        GoodsId.LUXURY_WATCH,
+        GoodsId.DESIGNER_CLOTHING,
+      ],
+    },
+    description: '高端珠宝、名表与设计师服饰精品店',
+  },
+  {
+    id: 48,
+    key: 'energy_service_store',
+    name: '能源服务店',
+    category: 'retail',
+    buildCost: 2800000,
+    buildTime: 65,
+    maintenanceCost: 7000,
+    laborCost: 18000,
+    energyCost: 4500,
+    powerConsumption: 20,
+    maxLevel: 5,
+    upgradeCosts: [0, 900000, 1800000, 3600000, 7200000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 6,
+      inventoryCapacity: 60,
+      customerCapacity: 40,
+      markupRange: [0.05, 0.10],
+      allowedGoodsIds: [
+        GoodsId.SOLAR_SYSTEM,
+        GoodsId.ENERGY_STORAGE,
+      ],
+    },
+    description: '光伏系统与储能产品的销售与安装服务店',
+  },
+  {
+    id: 49,
+    key: 'department_store',
+    name: '综合百货',
+    category: 'retail',
+    buildCost: 6800000,
+    buildTime: 100,
+    maintenanceCost: 18000,
+    laborCost: 45000,
+    energyCost: 7500,
+    powerConsumption: 38,
+    maxLevel: 5,
+    upgradeCosts: [0, 2300000, 4600000, 9200000, 18400000],
+    capacityMultipliers: [1, 1, 1, 1, 1],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    retailConfig: {
+      maxInventorySlots: 24,
+      inventoryCapacity: 400,
+      customerCapacity: 250,
+      markupRange: [0.05, 0.20],
+      allowedGoodsIds: [
+        GoodsId.CLOTHING,
+        GoodsId.DESIGNER_CLOTHING,
+        GoodsId.SMARTPHONE,
+        GoodsId.COMPUTER,
+        GoodsId.APPLIANCES,
+        GoodsId.FURNITURE,
+        GoodsId.JEWELRY,
+        GoodsId.LUXURY_WATCH,
+        GoodsId.PROCESSED_FOOD,
+        GoodsId.ORGANIC_FOOD,
+        GoodsId.PET_FOOD,
+        GoodsId.MEDICAL_DEVICE,
+        GoodsId.GENERIC_DRUG,
+        GoodsId.OTC_DRUG,
+      ],
+    },
+    description: '一站式综合百货商场，覆盖中高端品类',
+  },
 ];
 export const RETAIL_BUILDINGS_LIST = RETAIL_BUILDINGS;
 
-// 合并所有建筑（41种建筑，ID 0-40连续）
+// 合并所有建筑（50种建筑，ID 0-49连续）
 export const ALL_BUILDINGS: BuildingTypeDefinition[] = [
   ...EXTRACTION_BUILDINGS,
   ...PROCESSING_BUILDINGS,
@@ -1784,6 +1128,9 @@ export const BUILDINGS_BY_INDUSTRY: Record<string, BuildingTypeDefinition[]> = {
   
   // 奢侈品产业链：珠宝、奢侈品
   luxury: ALL_BUILDINGS.filter(b => [37, 38].includes(b.id)),
+
+  // 零售产业链：便利店/超市/电器/4S店/服装/家具/药房/奢侈品店/能源服务/综合百货
+  retail: ALL_BUILDINGS.filter(b => b.id >= 40 && b.id <= 49),
 };
 
 // 建筑ID常量
@@ -1835,6 +1182,15 @@ export const BuildingId = {
   POWER_PLANT: 39,
   // 零售
   CONVENIENCE_STORE: 40,
+  SUPERMARKET: 41,
+  ELECTRONICS_STORE: 42,
+  CAR_DEALERSHIP: 43,
+  CLOTHING_STORE: 44,
+  FURNITURE_MALL: 45,
+  PHARMACY: 46,
+  LUXURY_STORE: 47,
+  ENERGY_SERVICE_STORE: 48,
+  DEPARTMENT_STORE: 49,
 } as const;
 
 /**
@@ -1895,72 +1251,6 @@ export function getBuildingPowerConsumption(buildingTypeId: number): number {
   return building?.powerConsumption ?? 0;
 }
 
-/**
- * 获取建筑的生产配置
- * @param buildingTypeId 建筑类型ID
- * @param outputModeId 可选的产品模式ID，如果提供则返回该模式的生产配置
- */
-export function getBuildingProduction(buildingTypeId: number, outputModeId?: number): {
-  inputs: ProductionIO[];
-  outputs: ProductionIO[];
-  ticksRequired: number;
-  laborRequired: number;
-  energyRequired: number;
-} | undefined {
-  const building = BUILDINGS_BY_ID.get(buildingTypeId);
-  if (!building) return undefined;
-  
-  const production = building.production;
-  
-  // 如果指定了模式ID且建筑有多产品模式，则返回指定模式的配置
-  if (outputModeId !== undefined && production.outputModes && production.outputModes.length > 0) {
-    const mode = production.outputModes.find(m => m.modeId === outputModeId);
-    if (mode) {
-      return {
-        inputs: mode.inputs,
-        outputs: mode.outputs,
-        ticksRequired: mode.ticksRequired ?? production.ticksRequired,
-        laborRequired: mode.laborRequired ?? production.laborRequired,
-        energyRequired: mode.energyRequired ?? production.energyRequired,
-      };
-    }
-  }
-  
-  // 返回默认配置
-  return {
-    inputs: production.inputs,
-    outputs: production.outputs,
-    ticksRequired: production.ticksRequired,
-    laborRequired: production.laborRequired,
-    energyRequired: production.energyRequired,
-  };
-}
-
-/**
- * 获取建筑的指定产品模式
- */
-export function getBuildingOutputMode(buildingTypeId: number, modeId: number): OutputMode | undefined {
-  const building = BUILDINGS_BY_ID.get(buildingTypeId);
-  if (!building?.production.outputModes) return undefined;
-  return building.production.outputModes.find(m => m.modeId === modeId);
-}
-
-/**
- * 获取建筑可用的产品模式列表
- */
-export function getAvailableOutputModes(buildingTypeId: number, level: number): OutputMode[] {
-  const building = BUILDINGS_BY_ID.get(buildingTypeId);
-  if (!building?.production.outputModes) return [];
-  return building.production.outputModes.filter(m => (m.unlockLevel ?? 1) <= level);
-}
-
-/**
- * 检查建筑是否有多产品模式
- */
-export function hasMultipleOutputModes(buildingTypeId: number): boolean {
-  const building = BUILDINGS_BY_ID.get(buildingTypeId);
-  return (building?.production.outputModes?.length ?? 0) > 1;
-}
 
 /**
  * 获取建筑总数

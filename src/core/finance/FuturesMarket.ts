@@ -4,6 +4,8 @@
  */
 
 import { TICKS_PER_DAY, TICKS_PER_MONTH } from '@/core/constants';
+import { GoodsId } from '@/data/goods';
+import { GameWorld } from '@/core/world/GameWorld';
 
 // ==================== 类型定义 ====================
 
@@ -122,19 +124,19 @@ interface GoodsFuturesConfig {
 
 const FUTURES_CONFIGS: GoodsFuturesConfig[] = [
   // 大宗商品期货
-  { goodsId: 0, name: '铁矿石期货', contractSize: 100, tickSize: 0.5, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 1000, isPhysicalDelivery: true },
-  { goodsId: 1, name: '铜期货', contractSize: 50, tickSize: 1, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 500, isPhysicalDelivery: true },
-  { goodsId: 3, name: '煤炭期货', contractSize: 100, tickSize: 0.5, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 2000, isPhysicalDelivery: true },
-  { goodsId: 4, name: '原油期货', contractSize: 1000, tickSize: 0.01, initialMarginPct: 0.12, maintenanceMarginPct: 0.08, maxPositionLimit: 500, isPhysicalDelivery: false },
-  { goodsId: 5, name: '天然气期货', contractSize: 500, tickSize: 0.001, initialMarginPct: 0.15, maintenanceMarginPct: 0.1, maxPositionLimit: 300, isPhysicalDelivery: false },
+  { goodsId: GoodsId.IRON_ORE, name: '铁矿石期货', contractSize: 100, tickSize: 0.5, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 1000, isPhysicalDelivery: true },
+  { goodsId: GoodsId.COPPER_ORE, name: '铜期货', contractSize: 50, tickSize: 1, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 500, isPhysicalDelivery: true },
+  { goodsId: GoodsId.COAL, name: '煤炭期货', contractSize: 100, tickSize: 0.5, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 2000, isPhysicalDelivery: true },
+  { goodsId: GoodsId.CRUDE_OIL, name: '原油期货', contractSize: 1000, tickSize: 0.01, initialMarginPct: 0.12, maintenanceMarginPct: 0.08, maxPositionLimit: 500, isPhysicalDelivery: false },
+  { goodsId: GoodsId.NATURAL_GAS, name: '天然气期货', contractSize: 500, tickSize: 0.001, initialMarginPct: 0.15, maintenanceMarginPct: 0.1, maxPositionLimit: 300, isPhysicalDelivery: false },
   
   // 农产品期货
-  { goodsId: 8, name: '粮食期货', contractSize: 50, tickSize: 0.25, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 1000, isPhysicalDelivery: true },
-  { goodsId: 7, name: '棉花期货', contractSize: 20, tickSize: 0.5, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 500, isPhysicalDelivery: true },
+  { goodsId: GoodsId.GRAIN, name: '粮食期货', contractSize: 50, tickSize: 0.25, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 1000, isPhysicalDelivery: true },
+  { goodsId: GoodsId.COTTON, name: '棉花期货', contractSize: 20, tickSize: 0.5, initialMarginPct: 0.08, maintenanceMarginPct: 0.05, maxPositionLimit: 500, isPhysicalDelivery: true },
   
   // 金属期货
-  { goodsId: 14, name: '钢材期货', contractSize: 10, tickSize: 1, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 800, isPhysicalDelivery: true },
-  { goodsId: 15, name: '铜材期货', contractSize: 5, tickSize: 5, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 400, isPhysicalDelivery: true },
+  { goodsId: GoodsId.STEEL, name: '钢材期货', contractSize: 10, tickSize: 1, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 800, isPhysicalDelivery: true },
+  { goodsId: GoodsId.COPPER, name: '铜材期货', contractSize: 5, tickSize: 5, initialMarginPct: 0.1, maintenanceMarginPct: 0.07, maxPositionLimit: 400, isPhysicalDelivery: true },
 ];
 
 const FUTURES_CONFIG_MAP: Map<number, GoodsFuturesConfig> = new Map(
@@ -154,6 +156,82 @@ export class FuturesMarket {
   
   private positionsByCompany: Map<number, Set<number>> = new Map();
   private contractsByGoods: Map<number, Set<number>> = new Map();
+
+  reset(): void {
+    this.contracts.clear();
+    this.positions.clear();
+    this.orders.clear();
+    this.positionsByCompany.clear();
+    this.contractsByGoods.clear();
+    this.nextContractId = 1;
+    this.nextPositionId = 1;
+    this.nextOrderId = 1;
+  }
+
+  private estimateAdditionalMargin(
+    companyId: number,
+    contractId: number,
+    orderPosition: ContractPosition,
+    contracts: number,
+  ): number {
+    const contract = this.contracts.get(contractId);
+    if (!contract) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const currentPosition = this.getCompanyPosition(companyId, contractId);
+    if (!currentPosition) {
+      return contracts * contract.initialMargin;
+    }
+
+    if (currentPosition.position === orderPosition) {
+      return contracts * contract.initialMargin;
+    }
+
+    return Math.max(0, contracts - currentPosition.contracts) * contract.initialMargin;
+  }
+
+  private markPositionToPrice(
+    world: GameWorld,
+    position: FuturesPosition,
+    markPrice: number,
+    contract: FuturesContract,
+  ): void {
+    const nextUnrealized = this.calculatePnL(
+      position.position,
+      position.entryPrice,
+      markPrice,
+      position.contracts,
+      contract,
+    );
+    const pnlDelta = nextUnrealized - position.unrealizedPnL;
+
+    world.companies.cash[position.companyId] += pnlDelta;
+    position.unrealizedPnL = nextUnrealized;
+  }
+
+  private closePositionAtPrice(
+    world: GameWorld,
+    position: FuturesPosition,
+    closePrice: number,
+    currentTick: number,
+  ): void {
+    const contract = this.contracts.get(position.contractId);
+    if (!contract || !position.isOpen) {
+      return;
+    }
+
+    this.markPositionToPrice(world, position, closePrice, contract);
+    world.companies.cash[position.companyId] += position.marginUsed;
+
+    position.realizedPnL += position.unrealizedPnL;
+    position.unrealizedPnL = 0;
+    position.marginUsed = 0;
+    position.contracts = 0;
+    position.isOpen = false;
+    position.closedTick = currentTick;
+    position.closePrice = closePrice;
+  }
   
   /**
    * 创建新的期货合约（每月到期）
@@ -230,6 +308,7 @@ export class FuturesMarket {
    * 下期货订单
    */
   placeOrder(
+    world: GameWorld,
     companyId: number,
     contractId: number,
     position: ContractPosition,
@@ -245,10 +324,16 @@ export class FuturesMarket {
     const config = FUTURES_CONFIG_MAP.get(contract.goodsId);
     if (config) {
       const currentPosition = this.getCompanyPosition(companyId, contractId);
-      const totalContracts = (currentPosition?.contracts ?? 0) + contracts;
+      const totalContracts = currentPosition && currentPosition.position !== position
+        ? Math.max(0, contracts - currentPosition.contracts)
+        : (currentPosition?.contracts ?? 0) + contracts;
       if (totalContracts > config.maxPositionLimit) {
         return null;  // 超过持仓限制
       }
+    }
+
+    if (world.companies.cash[companyId] < this.estimateAdditionalMargin(companyId, contractId, position, contracts)) {
+      return null;
     }
     
     const orderId = this.nextOrderId++;
@@ -271,7 +356,7 @@ export class FuturesMarket {
     
     // 市价单立即成交（简化处理）
     if (orderType === 'market') {
-      this.fillOrder(orderId, contract.settlementPrice, currentTick);
+      this.fillOrder(world, orderId, contract.settlementPrice, currentTick);
     }
     
     return order;
@@ -280,7 +365,7 @@ export class FuturesMarket {
   /**
    * 成交订单
    */
-  fillOrder(orderId: number, fillPrice: number, currentTick: number): boolean {
+  fillOrder(world: GameWorld, orderId: number, fillPrice: number, currentTick: number): boolean {
     const order = this.orders.get(orderId);
     if (!order || order.status !== 'pending') return false;
     
@@ -295,44 +380,97 @@ export class FuturesMarket {
     let position = this.getCompanyPosition(order.companyId, order.contractId);
     
     if (position) {
+      this.markPositionToPrice(world, position, fillPrice, contract);
+
       if (position.position === order.position) {
         // 加仓
+        const additionalMargin = order.contracts * contract.initialMargin;
+        if (world.companies.cash[order.companyId] < additionalMargin) {
+          order.status = 'cancelled';
+          return false;
+        }
+
         const totalCost = position.entryPrice * position.contracts + fillPrice * order.contracts;
+        world.companies.cash[order.companyId] -= additionalMargin;
         position.contracts += order.contracts;
         position.entryPrice = totalCost / position.contracts;
         position.marginUsed = position.contracts * contract.initialMargin;
+        position.unrealizedPnL = this.calculatePnL(
+          position.position,
+          position.entryPrice,
+          fillPrice,
+          position.contracts,
+          contract,
+        );
+        contract.openInterest += order.contracts;
       } else {
         // 平仓或反向
+        const previousContracts = position.contracts;
+        const closedContracts = Math.min(order.contracts, previousContracts);
+        const releasedMargin = previousContracts > 0
+          ? position.marginUsed * (closedContracts / previousContracts)
+          : 0;
+        const closedPnl = this.calculatePnL(position.position, position.entryPrice, fillPrice, closedContracts, contract);
+
+        position.realizedPnL += closedPnl;
+        world.companies.cash[order.companyId] += releasedMargin;
+        contract.openInterest = Math.max(0, contract.openInterest - closedContracts);
+
         if (order.contracts >= position.contracts) {
           // 完全平仓或反向
-          const closedContracts = position.contracts;
-          const pnl = this.calculatePnL(position.position, position.entryPrice, fillPrice, closedContracts, contract);
-          position.realizedPnL += pnl;
-          
           const remainingContracts = order.contracts - closedContracts;
           if (remainingContracts > 0) {
             // 反向开仓
+            const newMargin = remainingContracts * contract.initialMargin;
+            if (world.companies.cash[order.companyId] < newMargin) {
+              order.status = 'cancelled';
+              position.contracts = 0;
+              position.marginUsed = 0;
+              position.unrealizedPnL = 0;
+              position.isOpen = false;
+              position.closedTick = currentTick;
+              position.closePrice = fillPrice;
+              return false;
+            }
+
+            world.companies.cash[order.companyId] -= newMargin;
             position.position = order.position;
             position.contracts = remainingContracts;
             position.entryPrice = fillPrice;
+            position.unrealizedPnL = 0;
             position.marginUsed = remainingContracts * contract.initialMargin;
+            contract.openInterest += remainingContracts;
           } else {
             // 完全平仓
             position.contracts = 0;
+            position.marginUsed = 0;
+            position.unrealizedPnL = 0;
             position.isOpen = false;
             position.closedTick = currentTick;
             position.closePrice = fillPrice;
           }
         } else {
           // 部分平仓
-          const pnl = this.calculatePnL(position.position, position.entryPrice, fillPrice, order.contracts, contract);
-          position.realizedPnL += pnl;
-          position.contracts -= order.contracts;
+          position.contracts -= closedContracts;
           position.marginUsed = position.contracts * contract.initialMargin;
+          position.unrealizedPnL = this.calculatePnL(
+            position.position,
+            position.entryPrice,
+            fillPrice,
+            position.contracts,
+            contract,
+          );
         }
       }
     } else {
       // 新开仓
+      const requiredMargin = order.contracts * contract.initialMargin;
+      if (world.companies.cash[order.companyId] < requiredMargin) {
+        order.status = 'cancelled';
+        return false;
+      }
+
+      world.companies.cash[order.companyId] -= requiredMargin;
       const positionId = this.nextPositionId++;
       position = {
         id: positionId,
@@ -344,7 +482,7 @@ export class FuturesMarket {
         entryTick: currentTick,
         unrealizedPnL: 0,
         realizedPnL: 0,
-        marginUsed: order.contracts * contract.initialMargin,
+        marginUsed: requiredMargin,
         isOpen: true,
       };
       
@@ -354,12 +492,6 @@ export class FuturesMarket {
         this.positionsByCompany.set(order.companyId, new Set());
       }
       this.positionsByCompany.get(order.companyId)!.add(positionId);
-    }
-    
-    // 更新未平仓量
-    if (order.position === ContractPosition.LONG) {
-      contract.openInterest += order.contracts;
-    } else {
       contract.openInterest += order.contracts;
     }
     
@@ -384,7 +516,7 @@ export class FuturesMarket {
   /**
    * 更新持仓盈亏
    */
-  updatePositionsPnL(currentPrices: Map<number, number>): void {
+  updatePositionsPnL(world: GameWorld, currentPrices: Map<number, number>): void {
     for (const [, position] of this.positions) {
       if (!position.isOpen) continue;
       
@@ -392,46 +524,34 @@ export class FuturesMarket {
       if (!contract) continue;
       
       const currentPrice = currentPrices.get(contract.goodsId) ?? contract.settlementPrice;
-      position.unrealizedPnL = this.calculatePnL(
-        position.position,
-        position.entryPrice,
-        currentPrice,
-        position.contracts,
-        contract
-      );
+      this.markPositionToPrice(world, position, currentPrice, contract);
     }
   }
   
   /**
    * 处理合约到期
    */
-  handleExpiry(currentTick: number, spotPrices: Map<number, number>): void {
+  handleExpiry(world: GameWorld, currentTick: number, spotPrices: Map<number, number>): number {
+    let expiredContracts = 0;
+
     for (const [contractId, contract] of this.contracts) {
       if (currentTick >= contract.expiryTick) {
         // 结算所有持仓
         for (const [, position] of this.positions) {
           if (position.contractId === contractId && position.isOpen) {
             const spotPrice = spotPrices.get(contract.goodsId) ?? contract.settlementPrice;
-            const pnl = this.calculatePnL(
-              position.position,
-              position.entryPrice,
-              spotPrice,
-              position.contracts,
-              contract
-            );
-            position.realizedPnL += pnl;
-            position.unrealizedPnL = 0;
-            position.isOpen = false;
-            position.closedTick = currentTick;
-            position.closePrice = spotPrice;
+            this.closePositionAtPrice(world, position, spotPrice, currentTick);
           }
         }
         
         // 移除到期合约
         this.contracts.delete(contractId);
         this.contractsByGoods.get(contract.goodsId)?.delete(contractId);
+        expiredContracts++;
       }
     }
+
+    return expiredContracts;
   }
   
   /**
@@ -488,26 +608,47 @@ export class FuturesMarket {
    */
   checkMarginCall(companyId: number, currentCash: number): { isMarginCall: boolean; shortfall: number } {
     const positions = this.getCompanyPositions(companyId);
-    let totalMarginRequired = 0;
+    let maintenanceRequirement = 0;
+    let reservedMargin = 0;
     
     for (const position of positions) {
       const contract = this.contracts.get(position.contractId);
       if (!contract) continue;
-      
-      // 如果亏损超过初始保证金-维持保证金的差额，需要追加保证金
-      if (position.unrealizedPnL < 0) {
-        const maintenanceMargin = position.contracts * contract.maintenanceMargin;
-        const marginDeficit = Math.abs(position.unrealizedPnL) - (position.marginUsed - maintenanceMargin);
-        if (marginDeficit > 0) {
-          totalMarginRequired += marginDeficit;
-        }
-      }
+
+      maintenanceRequirement += position.contracts * contract.maintenanceMargin;
+      reservedMargin += position.marginUsed;
     }
     
-    const isMarginCall = totalMarginRequired > currentCash;
-    const shortfall = Math.max(0, totalMarginRequired - currentCash);
+    const equityAvailable = currentCash + reservedMargin;
+    const isMarginCall = equityAvailable < maintenanceRequirement;
+    const shortfall = Math.max(0, maintenanceRequirement - equityAvailable);
     
     return { isMarginCall, shortfall };
+  }
+
+  forceLiquidateCompany(
+    world: GameWorld,
+    companyId: number,
+    currentPrices: Map<number, number>,
+    currentTick: number,
+  ): number {
+    const positions = this.getCompanyPositions(companyId);
+    let liquidatedPositions = 0;
+
+    for (const position of positions) {
+      const contract = this.contracts.get(position.contractId);
+      if (!contract) {
+        continue;
+      }
+
+      const currentPrice = currentPrices.get(contract.goodsId) ?? contract.settlementPrice;
+      const openContracts = position.contracts;
+      this.closePositionAtPrice(world, position, currentPrice, currentTick);
+      contract.openInterest = Math.max(0, contract.openInterest - openContracts);
+      liquidatedPositions++;
+    }
+
+    return liquidatedPositions;
   }
 }
 

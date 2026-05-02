@@ -69,7 +69,7 @@ const checkHasSaveGame = (): boolean => {
 };
 
 const App: React.FC = () => {
-  const { initGame, startGame, initialized, paused, ui, setTheme, setSpeed, pauseGame, resumeGame, setCurrentPage, hideNewsDialog, navigateToNews } = useGameStore();
+  const { initGame, loadGame, startGame, initialized, paused, ui, setTheme, setSpeed, pauseGame, resumeGame, setCurrentPage, hideNewsDialog, navigateToNews } = useGameStore();
   const currentPage = ui.currentPage;
   const sidebarCollapsed = ui.sidebarCollapsed;
   const showNewsDialog = ui.showNewsDialog;
@@ -252,14 +252,12 @@ const App: React.FC = () => {
   const handleContinue = useCallback(() => {
     const saves = getSaveList();
     if (saves.length > 0) {
-      // 加载最近的存档
       const latestSave = saves[0];
-      console.log('继续游戏，加载存档:', latestSave.name);
-      // TODO: 实际加载存档逻辑
-      // gameStore.loadGame(latestSave.id);
-      setScreen('game');
+      if (loadGame(latestSave.id)) {
+        setScreen('game');
+      }
     }
-  }, []);
+  }, [loadGame]);
 
   // 主菜单回调 - 加载存档
   const handleLoadGame = useCallback(() => {
@@ -270,12 +268,13 @@ const App: React.FC = () => {
 
   // 加载指定存档
   const handleLoadSave = useCallback((saveId: string) => {
-    console.log('加载存档:', saveId);
-    // TODO: 实际加载存档逻辑
-    // gameStore.loadGame(saveId);
+    if (!loadGame(saveId)) {
+      return;
+    }
+
     setShowLoadDialog(false);
     setScreen('game');
-  }, []);
+  }, [loadGame]);
 
   // 主菜单回调 - 设置
   const handleSettings = useCallback(() => {

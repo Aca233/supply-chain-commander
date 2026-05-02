@@ -1,0 +1,214 @@
+- generic [ref=e97]:
+  - complementary [ref=e98]:
+    - navigation [ref=e99]:
+      - generic [ref=e100]:
+        - button "📊 仪表盘" [ref=e101] [cursor=pointer]:
+          - generic [ref=e102]: 📊
+          - generic [ref=e103]: 仪表盘
+        - button "🏭 生产管理" [ref=e104] [cursor=pointer]:
+          - generic [ref=e105]: 🏭
+          - generic [ref=e106]: 生产管理
+        - button "🔗 产业链" [ref=e107] [cursor=pointer]:
+          - generic [ref=e108]: 🔗
+          - generic [ref=e109]: 产业链
+        - button "💹 市场交易" [ref=e110] [cursor=pointer]:
+          - generic [ref=e111]: 💹
+          - generic [ref=e112]: 市场交易
+        - button "🏪 零售管理" [ref=e113] [cursor=pointer]:
+          - generic [ref=e114]: 🏪
+          - generic [ref=e115]: 零售管理
+        - button "📈 财务报表" [ref=e116] [cursor=pointer]:
+          - generic [ref=e117]: 📈
+          - generic [ref=e118]: 财务报表
+        - button "🏛️ 竞争与投资" [ref=e119] [cursor=pointer]:
+          - generic [ref=e120]: 🏛️
+          - generic [ref=e121]: 竞争与投资
+        - button "📰 商业周刊" [ref=e122] [cursor=pointer]:
+          - generic [ref=e123]: 📰
+          - generic [ref=e124]: 商业周刊
+        - button "⚙️ 设置" [active] [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: ⚙️
+          - generic [ref=e127]: 设置
+      - button "← 收起侧栏" [ref=e619] [cursor=pointer]:
+        - generic [ref=e620]: ←
+        - generic [ref=e621]: 收起侧栏
+  - generic [ref=e128]:
+    - banner [ref=e129]:
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - generic [ref=e134]: SC
+          - heading "供应链指挥官" [level=1] [ref=e135]
+        - generic [ref=e136]:
+          - generic [ref=e137]:
+            - text: 游戏时间：
+            - generic [ref=e138]: 第1年 2月12日
+          - generic [ref=e139]:
+            - button "1x" [ref=e140] [cursor=pointer]
+            - button "2x" [ref=e141] [cursor=pointer]
+            - button "4x" [ref=e142] [cursor=pointer]
+            - button "8x" [ref=e143] [cursor=pointer]
+          - button "⏸" [ref=e144] [cursor=pointer]
+        - generic [ref=e145]:
+          - generic [ref=e146]:
+            - generic [ref=e147]: 现金
+            - generic [ref=e148]: ¥17.08M
+          - button "☀️" [ref=e149] [cursor=pointer]:
+            - generic [ref=e150]: ☀️
+          - generic [ref=e152]: 👤
+    - main [ref=e153]:
+      - generic [ref=e895]:
+        - heading "⚙️ 设置" [level=1] [ref=e896]
+        - generic [ref=e897]:
+          - tablist [ref=e898]:
+            - tab "🎮 游戏" [selected] [ref=e899] [cursor=pointer]:
+              - generic [ref=e900]: 🎮
+              - generic [ref=e901]: 游戏
+            - tab "💾 存档" [ref=e902] [cursor=pointer]:
+              - generic [ref=e903]: 💾
+              - generic [ref=e904]: 存档
+            - tab "📈 市场" [ref=e905] [cursor=pointer]:
+              - generic [ref=e906]: 📈
+              - generic [ref=e907]: 市场
+            - tab "📊 性能" [ref=e908] [cursor=pointer]:
+              - generic [ref=e909]: 📊
+              - generic [ref=e910]: 性能
+            - tab "🎛️ 平衡" [ref=e911] [cursor=pointer]:
+              - generic [ref=e912]: 🎛️
+              - generic [ref=e913]: 平衡
+            - tab "🤖 AI" [ref=e914] [cursor=pointer]:
+              - generic [ref=e915]: 🤖
+              - generic [ref=e916]: AI
+            - tab "ℹ️ 关于" [ref=e917] [cursor=pointer]:
+              - generic [ref=e918]: ℹ️
+              - generic [ref=e919]: 关于
+          - tabpanel "🎮 游戏" [ref=e920]:
+            - generic [ref=e921]:
+              - heading "🎯 游戏选项" [level=3] [ref=e923]
+              - generic [ref=e924]:
+                - generic [ref=e925]:
+                  - generic [ref=e926]:
+                    - generic [ref=e927]: 默认游戏速度
+                    - generic [ref=e928]: 设置游戏启动时的默认速度
+                  - combobox [ref=e929] [cursor=pointer]:
+                    - generic: 1x 正常
+                    - img [ref=e930]
+                - generic [ref=e932]:
+                  - generic [ref=e933]:
+                    - generic [ref=e934]: ⚖️ 破产资产处理
+                    - generic [ref=e935]: 破产事件会按天推进竞拍、确认成交和重组冷却，不再直接静默清算。
+                  - generic [ref=e936]:
+                    - generic [ref=e937]:
+                      - generic [ref=e938]: 默认参与模式
+                      - generic [ref=e939]: 自动参与会预出价，但成交仍需你手动确认
+                    - combobox [ref=e940] [cursor=pointer]:
+                      - generic: 只提示
+                      - img [ref=e941]
+                  - generic [ref=e943]:
+                    - generic [ref=e944]:
+                      - generic [ref=e945]: 单次事件预算上限
+                      - generic [ref=e946]: 超过后不再为该破产事件自动生成预出价
+                    - spinbutton [ref=e949]: "0"
+                  - generic [ref=e950]:
+                    - generic [ref=e951]:
+                      - generic [ref=e952]: 单个资产预算上限
+                      - generic [ref=e953]: 超过该金额时，自动参与不会继续为单个标的加价
+                    - spinbutton [ref=e956]: "0"
+                  - generic [ref=e957]:
+                    - generic [ref=e958]:
+                      - generic [ref=e959]: 自动关注同行业资产
+                      - generic [ref=e960]: 只影响自动参与的候选范围，不会跳过你的确认步骤
+                    - switch [ref=e961] [cursor=pointer]
+                - generic [ref=e962]:
+                  - generic [ref=e963]:
+                    - generic [ref=e964]: 自动存档
+                    - generic [ref=e965]: 定期自动保存游戏进度
+                  - switch [checked] [ref=e966] [cursor=pointer]
+                - generic [ref=e967]:
+                  - generic [ref=e968]:
+                    - generic [ref=e969]: 商业周刊自动生成
+                    - generic [ref=e970]: 关闭后将不再自动生成新的商业周刊
+                  - switch [checked] [ref=e971] [cursor=pointer]
+                - generic [ref=e972]:
+                  - generic [ref=e973]:
+                    - generic [ref=e974]: 自动存档间隔
+                    - generic [ref=e975]: 每隔多长时间自动保存一次
+                  - combobox [ref=e976] [cursor=pointer]:
+                    - generic: 1分钟
+                    - img [ref=e977]
+                - generic [ref=e979]:
+                  - generic [ref=e980]:
+                    - generic [ref=e981]: 最大自动存档数
+                    - generic [ref=e982]: 超过此数量后删除最旧的存档
+                  - combobox [ref=e983] [cursor=pointer]:
+                    - generic: 5个
+                    - img [ref=e984]
+            - generic [ref=e986]:
+              - heading "🎨 外观设置" [level=3] [ref=e988]
+              - generic [ref=e990]:
+                - generic [ref=e991]:
+                  - generic [ref=e992]: 主题模式
+                  - generic [ref=e993]: 切换深色/浅色主题
+                - generic [ref=e994]:
+                  - button "☀️ 浅色" [ref=e995] [cursor=pointer]
+                  - button "🌙 深色" [ref=e996] [cursor=pointer]
+            - generic [ref=e997]:
+              - heading "🔊 音效设置" [level=3] [ref=e999]
+              - generic [ref=e1000]:
+                - generic [ref=e1001]:
+                  - generic [ref=e1002]:
+                    - generic [ref=e1003]: 🔔
+                    - generic [ref=e1004]:
+                      - generic [ref=e1005]: 启用音效
+                      - generic [ref=e1006]: 开启/关闭所有游戏音效
+                  - switch [checked] [ref=e1007] [cursor=pointer]
+                - generic [ref=e1008]:
+                  - generic [ref=e1009]:
+                    - generic [ref=e1010]:
+                      - generic [ref=e1011]: 🎚️
+                      - generic [ref=e1012]:
+                        - generic [ref=e1013]: 主音量
+                        - generic [ref=e1014]: 控制所有音效的总体音量
+                    - generic [ref=e1015]:
+                      - slider [ref=e1016] [cursor=pointer]: "70"
+                      - generic [ref=e1017]: 70%
+                  - generic [ref=e1018]:
+                    - generic [ref=e1019]:
+                      - generic [ref=e1020]: 🎮
+                      - generic [ref=e1021]:
+                        - generic [ref=e1022]: 音效音量
+                        - generic [ref=e1023]: 交易、建筑等游戏事件音效
+                    - generic [ref=e1024]:
+                      - slider [ref=e1025] [cursor=pointer]: "80"
+                      - generic [ref=e1026]: 80%
+                  - generic [ref=e1027]:
+                    - generic [ref=e1028]:
+                      - generic [ref=e1029]: 🖱️
+                      - generic [ref=e1030]:
+                        - generic [ref=e1031]: 界面音效
+                        - generic [ref=e1032]: 按钮点击、页面切换等界面音效
+                    - generic [ref=e1033]:
+                      - slider [ref=e1034] [cursor=pointer]: "60"
+                      - generic [ref=e1035]: 60%
+                - generic [ref=e1036]:
+                  - generic [ref=e1037]: 测试音效
+                  - generic [ref=e1038]:
+                    - button "🖱️ 点击" [ref=e1039] [cursor=pointer]
+                    - button "✅ 成功" [ref=e1040] [cursor=pointer]
+                    - button "❌ 错误" [ref=e1041] [cursor=pointer]
+                    - button "💰 金币" [ref=e1042] [cursor=pointer]
+                    - button "🏗️ 建造" [ref=e1043] [cursor=pointer]
+                - generic [ref=e1044]:
+                  - paragraph [ref=e1045]: 💡 音效设置会自动保存，下次启动游戏时会恢复。
+                  - paragraph [ref=e1046]: ⚠️ 浏览器需要用户首次点击后才能播放音效。
+            - generic [ref=e1047]:
+              - heading "🌐 语言设置" [level=3] [ref=e1049]
+              - generic [ref=e1051]:
+                - generic [ref=e1052]:
+                  - generic [ref=e1053]: 界面语言
+                  - generic [ref=e1054]: 选择游戏界面语言
+                - combobox [ref=e1055] [cursor=pointer]:
+                  - generic: 简体中文
+                  - img [ref=e1056]
+  - button "!" [ref=e469] [cursor=pointer]:
+    - img [ref=e470]
+    - generic [ref=e473]: "!"

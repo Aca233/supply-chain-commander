@@ -23,12 +23,19 @@ const DEFAULT_CONFIG: LLMConfig = {
   stream: true,
 };
 
+function getStorage(): Storage | null {
+  return typeof localStorage === 'undefined' ? null : localStorage;
+}
+
 /**
  * 加载 LLM 配置
  */
 export function loadLLMConfig(): LLMConfig {
+  const storage = getStorage();
+  if (!storage) return { ...DEFAULT_CONFIG };
+
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = storage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       return { ...DEFAULT_CONFIG, ...parsed };
@@ -43,10 +50,13 @@ export function loadLLMConfig(): LLMConfig {
  * 保存 LLM 配置
  */
 export function saveLLMConfig(config: Partial<LLMConfig>): void {
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
     const current = loadLLMConfig();
     const updated = { ...current, ...config };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    storage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch (e) {
     console.error('Failed to save LLM config:', e);
   }
@@ -71,8 +81,11 @@ export function getDefaultConfig(): LLMConfig {
  * 清除 LLM 配置
  */
 export function clearLLMConfig(): void {
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    storage.removeItem(STORAGE_KEY);
   } catch (e) {
     console.error('Failed to clear LLM config:', e);
   }

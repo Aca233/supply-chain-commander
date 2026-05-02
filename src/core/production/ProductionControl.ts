@@ -10,6 +10,7 @@ export type ProductionControlMode =
   | typeof PRODUCTION_CONTROL_MODE_MANUAL;
 
 export const PRODUCTION_EFFICIENCY_MIN = 0.3;
+export const AUTO_PRODUCTION_EFFICIENCY_MIN = 0.05;
 export const PRODUCTION_EFFICIENCY_MAX = 1.5;
 export const DEFAULT_MANUAL_EFFICIENCY_TARGET = 1.0;
 
@@ -62,6 +63,13 @@ export function clampManualEfficiencyTarget(value: number): number {
     return DEFAULT_MANUAL_EFFICIENCY_TARGET;
   }
   return Math.max(PRODUCTION_EFFICIENCY_MIN, Math.min(PRODUCTION_EFFICIENCY_MAX, value));
+}
+
+function clampAutomaticEfficiencyTarget(value: number): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_MANUAL_EFFICIENCY_TARGET;
+  }
+  return Math.max(AUTO_PRODUCTION_EFFICIENCY_MIN, Math.min(PRODUCTION_EFFICIENCY_MAX, value));
 }
 
 export function hydrateProductionControlState(world: GameWorld): void {
@@ -172,7 +180,7 @@ export function applyAutomaticEfficiencySafely(world: GameWorld, buildingId: num
     return false;
   }
 
-  world.buildings.efficiencies[buildingId] = clampManualEfficiencyTarget(targetEfficiency);
+  world.buildings.efficiencies[buildingId] = clampAutomaticEfficiencyTarget(targetEfficiency);
   return true;
 }
 

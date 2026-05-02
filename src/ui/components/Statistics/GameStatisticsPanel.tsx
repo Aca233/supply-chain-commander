@@ -39,11 +39,12 @@ interface MilestoneItem {
 // ==================== 辅助函数 ====================
 
 function formatNumber(value: number): string {
-  if (value >= 1000000000) {
+  const absValue = Math.abs(value);
+  if (absValue >= 1000000000) {
     return (value / 1000000000).toFixed(2) + 'B';
-  } else if (value >= 1000000) {
+  } else if (absValue >= 1000000) {
     return (value / 1000000).toFixed(2) + 'M';
-  } else if (value >= 1000) {
+  } else if (absValue >= 1000) {
     return (value / 1000).toFixed(1) + 'K';
   }
   return value.toFixed(0);

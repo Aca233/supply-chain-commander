@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { GOODS_COUNT } from '@/core/constants';
+import { AI_SELL_ORDER_EXPIRY, GOODS_COUNT } from '@/core/constants';
+import { processRetailDelivery } from '@/core/economy/RetailSystem';
 import { createBuyOrder, getOrderBookView, resetOrderPool } from '@/core/market/OrderBook';
 import { initializeBuildingProductionMethods } from '@/core/production/ProductionMethods';
 import { createGameWorld } from '@/core/world/GameWorld';
-import { addBuilding } from '@/core/world/WorldInitializer';
+import { addBuilding, initializeWorld } from '@/core/world/WorldInitializer';
 import { BuildingId } from '@/data/buildings';
 import { ALL_GOODS, GoodsId } from '@/data/goods';
 
@@ -35,7 +36,7 @@ function createFoodFactoryPlayerWorld() {
   world.companies.cash[1] = 1_000_000;
 
   addBuilding(world, 0, BuildingId.FOOD_FACTORY, 0);
-  world.companies.inventories[0 * GOODS_COUNT + GoodsId.GRAIN] = 500;
+  world.companies.inventories[0 * GOODS_COUNT + GoodsId.GRAIN] = 5000;
 
   return world;
 }
@@ -70,6 +71,7 @@ describe('PlayerAutoTrader day model', () => {
 
     expect(result.sellOrders).toBeGreaterThan(0);
     expect(grainSellOrders.length).toBeGreaterThan(0);
+    expect(world.orders.expiries[grainSellOrders[0].idx]).toBe(world.tick + AI_SELL_ORDER_EXPIRY);
   });
 
   it('takes an attractive buy order when inventory exceeds one current-model production day', () => {
@@ -81,10 +83,78 @@ describe('PlayerAutoTrader day model', () => {
 
     const result = executePlayerAutoTrade(world);
     const grainSellOrders = getOrderBookView(world, GoodsId.GRAIN).sellOrders.filter(
-      (order) => order.companyId === 0 && order.price === 20,
+      (order) => order.companyId === 0,
     );
+    const matchedSellOrder = grainSellOrders.find((order) => order.remaining === 300);
 
     expect(result.sellOrders).toBeGreaterThan(0);
-    expect(grainSellOrders.some((order) => order.remaining === 300)).toBe(true);
+    expect(matchedSellOrder).toBeDefined();
+    expect(matchedSellOrder?.price).toBeLessThanOrEqual(ALL_GOODS[GoodsId.GRAIN].basePrice * 1.5);
+    expect(world.orders.expiries[matchedSellOrder!.idx]).toBe(world.tick + AI_SELL_ORDER_EXPIRY);
+  });
+
+  it('keeps food inventory for owned retail delivery instead of auto-posting a sell order', () => {
+    const world = initializeWorld();
+    world.tick = 300;
+
+    const retailId = 0;
+    const goodsId = GoodsId.FOOD;
+    const retailBuildingId = world.retail.buildingIds[retailId];
+    const companyInvIdx = goodsId;
+    const retailInvIdx = retailId * GOODS_COUNT + goodsId;
+
+    expect(world.retail.owners[retailId]).toBe(0);
+
+    world.buildings.isActive[retailBuildingId] = 1;
+    world.retail.inventories[retailInvIdx] = 0;
+    world.companies.inventories[companyInvIdx] = 20;
+    world.companies.inventoryReserved[companyInvIdx] = 0;
+
+    executePlayerAutoTrade(world);
+
+    const playerFoodSellOrders = getOrderBookView(world, goodsId).sellOrders.filter(
+      (order) => order.companyId === 0,
+    );
+
+    expect(playerFoodSellOrders).toHaveLength(0);
+
+    processRetailDelivery(world);
+
+    expect(world.retail.inventories[retailInvIdx]).toBe(20);
+    expect(world.companies.inventories[companyInvIdx]).toBe(0);
+  });
+
+  it('does not take external buy orders with food inventory reserved for owned retail stores', () => {
+    const world = initializeWorld();
+    world.tick = 400;
+
+    const retailId = 0;
+    const goodsId = GoodsId.FOOD;
+    const retailBuildingId = world.retail.buildingIds[retailId];
+    const companyInvIdx = goodsId;
+    const retailInvIdx = retailId * GOODS_COUNT + goodsId;
+
+    expect(world.retail.owners[retailId]).toBe(0);
+
+    world.buildings.isActive[retailBuildingId] = 1;
+    world.retail.inventories[retailInvIdx] = 0;
+    world.companies.inventories[companyInvIdx] = 20;
+    world.companies.inventoryReserved[companyInvIdx] = 0;
+
+    const buyOrderId = createBuyOrder(world, 1, goodsId, 20, 100, 30);
+    expect(buyOrderId).not.toBeNull();
+
+    executePlayerAutoTrade(world);
+
+    const playerFoodSellOrders = getOrderBookView(world, goodsId).sellOrders.filter(
+      (order) => order.companyId === 0,
+    );
+
+    expect(playerFoodSellOrders).toHaveLength(0);
+
+    processRetailDelivery(world);
+
+    expect(world.retail.inventories[retailInvIdx]).toBe(20);
+    expect(world.companies.inventories[companyInvIdx]).toBe(0);
   });
 });

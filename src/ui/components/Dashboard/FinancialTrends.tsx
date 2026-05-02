@@ -38,9 +38,9 @@ export const FinancialTrends: React.FC<FinancialTrendsProps> = ({ data, dailyPro
   }, [data]);
 
   const formatMoney = (value: number): string => {
-    if (value >= 1000000) {
+    if (Math.abs(value) >= 1000000) {
       return `¥${(value / 1000000).toFixed(2)}M`;
-    } else if (value >= 1000) {
+    } else if (Math.abs(value) >= 1000) {
       return `¥${(value / 1000).toFixed(1)}K`;
     }
     return `¥${value.toFixed(0)}`;

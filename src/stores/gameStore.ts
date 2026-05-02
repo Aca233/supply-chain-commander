@@ -29,25 +29,6 @@ import { getPriceTrend, PriceTrend, getPriceSummary, PriceSummary } from '@/core
 import { getBuildingProductionStatus, BuildingProductionStatus, getBuildingProductionStatusWithMethods, getInventoryQualityName, getInventoryQualityPriceMultiplier } from '@/core/production/ProductionEngine';
 import { QUALITY_INFO, QualityGrade } from '@/core/economy/QualitySystem';
 import {
-  SubsidiaryBuildingDef,
-  InstalledSubsidiary,
-  CombinedSubsidiaryEffects,
-  getAvailableSubsidiaries,
-  getSubsidiaryDef,
-  getInstalledSubsidiaries,
-  canInstallSubsidiary,
-  installSubsidiary,
-  uninstallSubsidiary,
-  repairSubsidiary,
-  calculateRepairCost,
-  calculateCombinedEffects,
-  getTotalSubsidiarySlots,
-  getUsedSubsidiarySlots,
-  getAvailableSubsidiarySlots,
-  calculateDailySubsidiaryMaintenance,
-  formatEffectDescription,
-} from '@/core/production/SubsidiaryBuildings';
-import {
   perfMonitor,
   PerformanceSnapshot,
   FPSData,
@@ -125,7 +106,7 @@ import {
   ControlRight,
 } from '@/core/finance/OwnershipControl';
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
-import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding, getBuildingProduction } from '@/data/buildings';
+import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '@/data/buildings';
 import { getBaseMaterials, getBuildTime } from '@/data/buildingMaterials';
 import {
   getCompanyConstructionQueue,
@@ -147,25 +128,46 @@ import {
   registerRetailStore,
 } from '@/core/economy/RetailSystem';
 import {
-  ProductionMethod,
-  ProductionSlotType,
-  BuildingSlotConfig,
-  SLOT_CONFIGS_BY_BUILDING,
-  METHODS_BY_ID,
-  getMethodDisplayInfo,
-  getSlotTypeName,
-  getSlotTypeIcon,
-  isMethodAvailable,
-  isMethodUnlocked,
-  calculateSwitchCost,
-  getMaxSwitchCooldown,
-  hasBuildingSpecificMethods,
-  getBuildingSpecificSlots,
   getBuildingConfig,
   getSlotAvailableMethods,
-  getMethodByIdNew,
+  getMethodById,
   getBuildingSlotCount,
 } from '@/core/production/ProductionMethods';
+
+// UI bridge：组件层依赖的 slot config 形状
+export interface UiBuildingSlotConfig {
+  buildingTypeId: number;
+  slots: {
+    slotType: string;
+    availableMethods: number[];
+    defaultMethod: number;
+  }[];
+}
+
+// UI bridge：方式视图（Vic3 风格 delta）
+export interface UiProductionMethod {
+  id: number;
+  key: string;
+  name: string;
+  slotType: string;
+  inputDelta: Array<{ goodsId: number; amount: number }>;
+  outputDelta: Array<{ goodsId: number; amount: number }>;
+  laborDelta: number;
+  energyDelta: number;
+  requiredLevel: number;
+  switchCost: number;
+  switchCooldown: number;
+  description: string;
+}
+
+export interface UiMethodInfo {
+  name: string;
+  description: string;
+  slotType: string;
+  requiredLevel: number;
+  switchCost: number;
+  switchCooldown: number;
+}
 import {
   PRODUCTION_CONTROL_MODE_AUTO,
   PRODUCTION_CONTROL_MODE_MANUAL,
@@ -293,6 +295,7 @@ interface GameState {
 interface GameActions {
   // 初始化
   initGame: () => void;
+  loadGame: (saveId: string) => boolean;
   
   // 游戏控制
   startGame: () => void;
@@ -307,10 +310,9 @@ interface GameActions {
   cancelPlayerOrder: (orderIdx: number) => boolean;
   
   // 建筑
-  buildBuilding: (buildingTypeId: number, outputModeId?: number) => number | null;
+  buildBuilding: (buildingTypeId: number, slotMethods?: number[]) => number | null;
   upgradeBuilding: (buildingId: number) => boolean;
   toggleBuildingActive: (buildingId: number) => boolean;
-  setOutputMode: (buildingId: number, outputModeId: number) => boolean;
   getBuildingProductionControl: (buildingId: number) => BuildingProductionControlView | null;
   setBuildingProductionControlAuto: (buildingId: number, autoAdjustEnabled: boolean) => boolean;
   setBuildingManualProductionTarget: (buildingId: number, manualTarget: number) => boolean;
@@ -343,11 +345,11 @@ interface GameActions {
   dismissNotification: (id: number) => void;
   
   // 生产方式槽位
-  getBuildingSlotConfig: (buildingTypeId: number) => BuildingSlotConfig | null;
+  getBuildingSlotConfig: (buildingTypeId: number) => UiBuildingSlotConfig | null;
   getBuildingCurrentMethods: (buildingId: number) => number[];
-  getAvailableMethodsForSlot: (buildingTypeId: number, slotIndex: number, buildingLevel: number) => ProductionMethod[];
+  getAvailableMethodsForSlot: (buildingTypeId: number, slotIndex: number, buildingLevel: number) => UiProductionMethod[];
   changeBuildingSlotMethod: (buildingId: number, slotIndex: number, methodId: number) => { success: boolean; reason?: string };
-  getMethodInfo: (methodId: number) => ReturnType<typeof getMethodDisplayInfo>;
+  getMethodInfo: (methodId: number) => UiMethodInfo | null;
   
   // 数据获取
   getWorld: () => GameWorld | null;
@@ -421,16 +423,6 @@ interface GameActions {
   exportPerformanceJSON: (options?: Partial<ExportOptions>) => void;
   exportPerformanceCSV: (options?: Partial<ExportOptions>) => void;
   
-  // ============ 附属建筑系统 (新增) ============
-  getAvailableSubsidiaries: (buildingId: number) => SubsidiaryBuildingDef[];
-  getInstalledSubsidiaries: (buildingId: number) => Array<InstalledSubsidiary & { slotIndex: number; def: SubsidiaryBuildingDef | undefined }>;
-  getBuildingSubsidiaryEffects: (buildingId: number) => CombinedSubsidiaryEffects | null;
-  getBuildingSubsidiarySlots: (buildingId: number) => { total: number; used: number; available: number };
-  installBuildingSubsidiary: (buildingId: number, subsidiaryId: number) => { success: boolean; reason?: string };
-  uninstallBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; reason?: string };
-  repairBuildingSubsidiary: (buildingId: number, slotIndex: number) => { success: boolean; cost: number; reason?: string };
-  getSubsidiaryMaintenanceCost: (buildingId: number) => number;
-  
   // ============ 建造队列系统 (新增) ============
   getConstructionQueue: () => Array<{
     taskId: number;
@@ -503,6 +495,16 @@ function syncPlayerFinancialState(
   state.playerFinancialSnapshot = snapshot;
 }
 
+function countCompanyBuildings(world: GameWorld, ownerCompanyId: number): number {
+  let buildingCount = 0;
+  for (let i = 0; i < world.buildings.count; i++) {
+    if (world.buildings.owners[i] === ownerCompanyId) {
+      buildingCount++;
+    }
+  }
+  return buildingCount;
+}
+
 let notificationId = 0;
 
 // 将world和gameLoop保存在store外部，避免被immer冻结
@@ -520,6 +522,15 @@ const HISTORY_UPDATE_INTERVAL = TICKS_PER_DAY; // 按天记录财务历史，和
 let cachedPlayerBuildingCount = 0;
 let cachedBuildingCountTick = -100;
 const BUILDING_COUNT_CACHE_INTERVAL = 24; // 每24tick更新一次建筑计数
+
+function refreshPlayerBuildingCount(world: GameWorld, currentTick: number, force = false): number {
+  if (force || currentTick - cachedBuildingCountTick >= BUILDING_COUNT_CACHE_INTERVAL) {
+    cachedBuildingCountTick = currentTick;
+    cachedPlayerBuildingCount = countCompanyBuildings(world, 0);
+  }
+
+  return cachedPlayerBuildingCount;
+}
 
 /**
  * 创建游戏Store
@@ -642,19 +653,7 @@ export const useGameStore = create<GameState & GameActions>()(
             // 更新玩家数据（从外部引用读取）
             if (worldRef) {
               syncPlayerFinancialState(state, worldRef, currentTick);
-              
-              // 优化：使用缓存的建筑数量，仅在特定间隔更新
-              if (currentTick - cachedBuildingCountTick >= BUILDING_COUNT_CACHE_INTERVAL) {
-                cachedBuildingCountTick = currentTick;
-                let buildingCount = 0;
-                for (let i = 0; i < worldRef.buildings.count; i++) {
-                  if (worldRef.buildings.owners[i] === 0) {
-                    buildingCount++;
-                  }
-                }
-                cachedPlayerBuildingCount = buildingCount;
-              }
-              state.playerBuildings = cachedPlayerBuildingCount;
+              state.playerBuildings = refreshPlayerBuildingCount(worldRef, currentTick);
             }
             
             state.performance = gameLoop.getPerformanceReport();
@@ -726,13 +725,49 @@ export const useGameStore = create<GameState & GameActions>()(
           }
         });
       });
-      
+
+      lastUIUpdateTick = world.tick;
+
       set((state) => {
         state.initialized = true;
+        syncPlayerFinancialState(state, world, world.tick);
         state.tick = world.tick;
         state.gameDate = formatGameDate(world.tick);
-        syncPlayerFinancialState(state, world, world.tick);
+        state.playerBuildings = refreshPlayerBuildingCount(world, world.tick, true);
       });
+    },
+
+    loadGame: (saveId) => {
+      if (!worldRef || !gameLoopRef) {
+        get().initGame();
+      }
+
+      if (!worldRef) {
+        return false;
+      }
+
+      gameLoopRef?.pause();
+      const saveData = saveManager.load(saveId, worldRef);
+      if (!saveData) {
+        return false;
+      }
+
+      lastUIUpdateTick = worldRef.tick;
+
+      set((state) => {
+        state.initialized = true;
+        state.paused = true;
+        state.lastTickResult = null;
+        state.financialHistory = [];
+        state.tick = worldRef!.tick;
+        state.gameDate = formatGameDate(worldRef!.tick);
+        syncPlayerFinancialState(state, worldRef, worldRef!.tick);
+        state.playerBuildings = refreshPlayerBuildingCount(worldRef!, worldRef!.tick, true);
+        state.performance = gameLoopRef?.getPerformanceReport() ?? null;
+        state.ui.currentPage = 'dashboard';
+      });
+
+      return true;
     },
     
     // ==================== 游戏控制 ====================
@@ -828,7 +863,7 @@ export const useGameStore = create<GameState & GameActions>()(
     },
     
     // ==================== 建筑 ====================
-    buildBuilding: (buildingTypeId, outputModeId = 0) => {
+    buildBuilding: (buildingTypeId, slotMethods) => {
       if (!worldRef) return null;
       
       try {
@@ -882,7 +917,7 @@ export const useGameStore = create<GameState & GameActions>()(
         }
         
         // 添加到建造队列
-        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, outputModeId);
+        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, slotMethods);
         
         if (!result.success) {
           // 退还建造费用
@@ -1035,58 +1070,6 @@ export const useGameStore = create<GameState & GameActions>()(
       return true;
     },
     
-    setOutputMode: (buildingId, outputModeId) => {
-      if (!worldRef) return false;
-      
-      // 检查建筑所有权
-      if (worldRef.buildings.owners[buildingId] !== 0) {
-        get().addNotification('error', '无法修改不属于你的建筑');
-        return false;
-      }
-      
-      const typeId = worldRef.buildings.types[buildingId];
-      const building = ALL_BUILDINGS.find(b => b.id === typeId);
-      
-      if (!building) {
-        get().addNotification('error', '建筑类型无效');
-        return false;
-      }
-      
-      // 检查outputMode是否支持
-      const production = building.production;
-      if (!production) {
-        get().addNotification('error', '该建筑没有生产配置');
-        return false;
-      }
-      
-      // 验证outputModeId有效性
-      if (outputModeId !== 0 && production.outputModes) {
-        const validMode = production.outputModes.find(m => m.modeId === outputModeId);
-        if (!validMode) {
-          get().addNotification('error', '该建筑不支持此产品模式');
-          return false;
-        }
-      }
-      
-      // 切换产品模式
-      worldRef.buildings.outputModeIds[buildingId] = outputModeId;
-      
-      // 清空缓冲区（切换模式后需要重新生产）
-      for (let i = 0; i < 8; i++) {
-        worldRef.buildings.inputBuffers[buildingId * 8 + i] = 0;
-        worldRef.buildings.outputBuffers[buildingId * 8 + i] = 0;
-      }
-      // 重置生产进度
-      worldRef.buildings.progress[buildingId] = 0;
-      
-      // 获取模式名称
-      const modeName = outputModeId === 0
-        ? '默认模式'
-        : production.outputModes?.find(m => m.modeId === outputModeId)?.name || '未知模式';
-      get().addNotification('success', `已切换到「${modeName}」`);
-      
-      return true;
-    },
 
     getBuildingProductionControl: (buildingId: number) => {
       if (!worldRef) return null;
@@ -1333,25 +1316,19 @@ export const useGameStore = create<GameState & GameActions>()(
     
     // ==================== 生产方式槽位 ====================
     getBuildingSlotConfig: (buildingTypeId) => {
-      // 先检查是否使用新系统
-      if (hasBuildingSpecificMethods(buildingTypeId)) {
-        const newConfig = getBuildingConfig(buildingTypeId);
-        if (newConfig) {
-          // 转换为旧格式以保持UI兼容
+      const newConfig = getBuildingConfig(buildingTypeId);
+      if (!newConfig) return null;
+      return {
+        buildingTypeId,
+        slots: newConfig.slots.map((slot: { id: string }) => {
+          const methods = getSlotAvailableMethods(buildingTypeId, slot.id);
           return {
-            buildingTypeId,
-            slots: newConfig.slots.map((slot: { id: string }, _i: number) => {
-              const methods = getSlotAvailableMethods(buildingTypeId, slot.id);
-              return {
-                slotType: 'process' as ProductionSlotType, // 占位
-                availableMethods: methods.map((m: { id: number }) => m.id),
-                defaultMethod: methods[0]?.id || 0,
-              };
-            }),
+            slotType: 'process',
+            availableMethods: methods.map((m: { id: number }) => m.id),
+            defaultMethod: methods[0]?.id || 0,
           };
-        }
-      }
-      return SLOT_CONFIGS_BY_BUILDING.get(buildingTypeId) || null;
+        }),
+      };
     },
     
     getBuildingCurrentMethods: (buildingId) => {
@@ -1371,71 +1348,28 @@ export const useGameStore = create<GameState & GameActions>()(
     },
     
     getAvailableMethodsForSlot: (buildingTypeId, slotIndex, buildingLevel) => {
-      // 检查是否使用新系统
-      if (hasBuildingSpecificMethods(buildingTypeId)) {
-        const newConfig = getBuildingConfig(buildingTypeId);
-        if (newConfig && slotIndex < newConfig.slots.length) {
-          const slot = newConfig.slots[slotIndex];
-          const newMethods = getSlotAvailableMethods(buildingTypeId, slot.id) as Array<{
-            id: number;
-            key: string;
-            name: string;
-            outputModifiers: Array<{ goodsId: number | 'all'; multiplier: number }>;
-            inputModifiers: Array<{ goodsId: number | 'all'; multiplier: number }>;
-            laborMultiplier: number;
-            energyMultiplier: number;
-            qualityBonus: number;
-            requiredLevel: number;
-            switchCost: number;
-            switchCooldown: number;
-          }>;
-          
-          // 转换为旧格式
-          return newMethods
-            .filter(m => m.requiredLevel <= buildingLevel)
-            .map(m => ({
-              id: m.id,
-              key: m.key,
-              name: m.name,
-              slotType: 'process' as ProductionSlotType,
-              outputMultipliers: new Map(
-                m.outputModifiers.map(mod => [
-                  typeof mod.goodsId === 'number' ? mod.goodsId : 0,
-                  mod.multiplier
-                ])
-              ),
-              inputMultipliers: new Map(
-                m.inputModifiers.map(mod => [
-                  typeof mod.goodsId === 'number' ? mod.goodsId : 0,
-                  mod.multiplier
-                ])
-              ),
-              laborMultiplier: m.laborMultiplier,
-              energyMultiplier: m.energyMultiplier,
-              qualityBonus: m.qualityBonus,
-              requiredLevel: m.requiredLevel,
-              switchCost: m.switchCost,
-              switchCooldown: m.switchCooldown,
-            })) as ProductionMethod[];
-        }
-        return [];
-      }
-      
-      // 旧系统
-      const config = SLOT_CONFIGS_BY_BUILDING.get(buildingTypeId);
-      if (!config || slotIndex >= config.slots.length) return [];
-      
-      const slot = config.slots[slotIndex];
-      const methods: ProductionMethod[] = [];
-      
-      for (const methodId of slot.availableMethods) {
-        const method = METHODS_BY_ID.get(methodId);
-        if (method && isMethodUnlocked(buildingLevel, methodId)) {
-          methods.push(method);
-        }
-      }
-      
-      return methods;
+      const newConfig = getBuildingConfig(buildingTypeId);
+      if (!newConfig || slotIndex >= newConfig.slots.length) return [];
+
+      const slot = newConfig.slots[slotIndex];
+      const methods = getSlotAvailableMethods(buildingTypeId, slot.id);
+
+      return methods
+        .filter(m => m.requiredLevel <= buildingLevel)
+        .map<UiProductionMethod>(m => ({
+          id: m.id,
+          key: m.key,
+          name: m.name,
+          slotType: 'process',
+          inputDelta: m.inputDelta.map(d => ({ goodsId: d.goodsId, amount: d.amount })),
+          outputDelta: m.outputDelta.map(d => ({ goodsId: d.goodsId, amount: d.amount })),
+          laborDelta: m.laborDelta,
+          energyDelta: m.energyDelta,
+          requiredLevel: m.requiredLevel,
+          switchCost: m.switchCost,
+          switchCooldown: m.switchCooldown,
+          description: m.description,
+        }));
     },
     
     changeBuildingSlotMethod: (buildingId, slotIndex, methodId) => {
@@ -1455,141 +1389,74 @@ export const useGameStore = create<GameState & GameActions>()(
       
       const buildingTypeId = b.types[buildingId];
       const buildingLevel = b.levels[buildingId];
-      
-      // 检查是否使用新系统
-      if (hasBuildingSpecificMethods(buildingTypeId)) {
-        const newConfig = getBuildingConfig(buildingTypeId);
-        
-        if (!newConfig || slotIndex >= newConfig.slots.length) {
-          return { success: false, reason: '无效的槽位索引' };
-        }
-        
-        const slot = newConfig.slots[slotIndex] as { id: string; name: string };
-        
-        // 如果methodId为0，表示清空槽位
-        if (methodId === 0) {
-          const slotOffset = buildingId * MAX_SLOTS;
-          worldRef.buildings.slotMethods[slotOffset + slotIndex] = 0;
-          get().addNotification('info', `已清空「${slot.name}」槽位`);
-          return { success: true };
-        }
-        
-        const newMethod = getMethodByIdNew(methodId) as {
-          id: number;
-          name: string;
-          buildingTypeId: number;
-          slotId: string;
-          requiredLevel: number;
-          switchCost: number;
-        } | null;
-        
-        if (!newMethod) {
-          return { success: false, reason: '无效的生产方式ID' };
-        }
-        
-        // 检查方式是否属于该建筑
-        if (newMethod.buildingTypeId !== buildingTypeId) {
-          return { success: false, reason: '该生产方式不属于此建筑' };
-        }
-        
-        // 检查方式是否属于该槽位
-        if (newMethod.slotId !== slot.id) {
-          return { success: false, reason: '该生产方式不属于此槽位' };
-        }
-        
-        // 检查等级要求
-        if (newMethod.requiredLevel > buildingLevel) {
-          return { success: false, reason: `需要建筑等级 ${newMethod.requiredLevel}` };
-        }
-        
-        // 计算切换成本
-        const switchCost = newMethod.switchCost || 50000;
-        const playerCash = worldRef.companies.cash[0];
-        
-        if (playerCash < switchCost) {
-          return { success: false, reason: `资金不足，切换需要 ${formatCurrency(switchCost)}` };
-        }
-        
-        // 扣费并切换
-        worldRef.companies.cash[0] -= switchCost;
+
+      const newConfig = getBuildingConfig(buildingTypeId);
+      if (!newConfig || slotIndex >= newConfig.slots.length) {
+        return { success: false, reason: '无效的槽位索引' };
+      }
+
+      const slot = newConfig.slots[slotIndex] as { id: string; name: string };
+
+      // methodId === 0 表示清空槽位
+      if (methodId === 0) {
         const slotOffset = buildingId * MAX_SLOTS;
-        worldRef.buildings.slotMethods[slotOffset + slotIndex] = methodId;
-        
-        set((state) => {
-          // 强制增加tick来触发UI刷新
-          state.tick = state.tick + 0.001;
-          syncPlayerFinancialState(state, worldRef, state.tick);
-        });
-        
-        get().addNotification('success', `已切换到「${newMethod.name}」，花费 ${formatCurrency(switchCost)}`);
+        worldRef.buildings.slotMethods[slotOffset + slotIndex] = 0;
+        get().addNotification('info', `已清空「${slot.name}」槽位`);
         return { success: true };
       }
-      
-      // 旧系统
-      // 检查方式是否可用
-      if (!isMethodAvailable(buildingTypeId, slotIndex, methodId)) {
-        return { success: false, reason: '该生产方式不可用于此建筑槽位' };
+
+      const newMethod = getMethodById(methodId) as {
+        id: number;
+        name: string;
+        buildingTypeId: number;
+        slotId: string;
+        requiredLevel: number;
+        switchCost: number;
+      } | null;
+
+      if (!newMethod) {
+        return { success: false, reason: '无效的生产方式ID' };
       }
-      
-      // 检查等级要求
-      if (!isMethodUnlocked(buildingLevel, methodId)) {
-        const method = METHODS_BY_ID.get(methodId);
-        return { success: false, reason: `需要建筑等级 ${method?.requiredLevel || '?'}` };
+      if (newMethod.buildingTypeId !== buildingTypeId) {
+        return { success: false, reason: '该生产方式不属于此建筑' };
       }
-      
-      // 计算切换成本
-      const currentMethods = getBuildingSlotMethodsArray(worldRef, buildingId);
-      const newMethods = [...currentMethods];
-      newMethods[slotIndex] = methodId;
-      
-      const switchCost = calculateSwitchCost(currentMethods, newMethods);
+      if (newMethod.slotId !== slot.id) {
+        return { success: false, reason: '该生产方式不属于此槽位' };
+      }
+      if (newMethod.requiredLevel > buildingLevel) {
+        return { success: false, reason: `需要建筑等级 ${newMethod.requiredLevel}` };
+      }
+
+      const switchCost = newMethod.switchCost || 50000;
       const playerCash = worldRef.companies.cash[0];
-      
       if (playerCash < switchCost) {
         return { success: false, reason: `资金不足，切换需要 ${formatCurrency(switchCost)}` };
       }
-      
-      // 扣费并切换
+
       worldRef.companies.cash[0] -= switchCost;
-      const success = setBuildingSlotMethod(worldRef, buildingId, slotIndex, methodId);
-      
-      if (success) {
-        set((state) => {
-          syncPlayerFinancialState(state, worldRef, state.tick);
-        });
-        
-        const method = METHODS_BY_ID.get(methodId);
-        get().addNotification('success', `已切换到「${method?.name || '未知方式'}」，花费 ${formatCurrency(switchCost)}`);
-        return { success: true };
-      } else {
-        // 恢复现金
-        worldRef.companies.cash[0] += switchCost;
-        return { success: false, reason: '切换失败' };
-      }
+      const slotOffset = buildingId * MAX_SLOTS;
+      worldRef.buildings.slotMethods[slotOffset + slotIndex] = methodId;
+
+      set((state) => {
+        state.tick = state.tick + 0.001;
+        syncPlayerFinancialState(state, worldRef, state.tick);
+      });
+
+      get().addNotification('success', `已切换到「${newMethod.name}」，花费 ${formatCurrency(switchCost)}`);
+      return { success: true };
     },
     
-    getMethodInfo: (methodId) => {
-      // 先检查新系统
-      const newMethod = getMethodByIdNew(methodId) as {
-        name: string;
-        description?: string;
-        effects?: string[];
-        requiredLevel: number;
-        switchCost: number;
-        switchCooldown: number;
-      } | null;
-      if (newMethod) {
-        return {
-          name: newMethod.name,
-          description: newMethod.description || '',
-          effects: newMethod.effects || [],
-          slotType: 'process' as ProductionSlotType, // 占位
-          requiredLevel: newMethod.requiredLevel,
-          switchCost: newMethod.switchCost,
-          switchCooldown: newMethod.switchCooldown,
-        };
-      }
-      return getMethodDisplayInfo(methodId);
+    getMethodInfo: (methodId): UiMethodInfo | null => {
+      const method = getMethodById(methodId);
+      if (!method) return null;
+      return {
+        name: method.name,
+        description: method.description || '',
+        slotType: 'process',
+        requiredLevel: method.requiredLevel,
+        switchCost: method.switchCost,
+        switchCooldown: method.switchCooldown,
+      };
     },
     
     // ==================== 数据获取 ====================
@@ -2045,171 +1912,6 @@ export const useGameStore = create<GameState & GameActions>()(
     
     exportPerformanceCSV: (options?: Partial<ExportOptions>) => {
       downloadPerformanceCSV(options);
-    },
-    
-    // ==================== 附属建筑系统 ====================
-    getAvailableSubsidiaries: (buildingId: number) => {
-      if (!worldRef) return [];
-      
-      const b = worldRef.buildings;
-      if (buildingId >= b.count) return [];
-      
-      const buildingTypeId = b.types[buildingId];
-      const buildingLevel = b.levels[buildingId];
-      
-      return getAvailableSubsidiaries(buildingTypeId, buildingLevel);
-    },
-    
-    getInstalledSubsidiaries: (buildingId: number) => {
-      if (!worldRef) return [];
-      return getInstalledSubsidiaries(worldRef, buildingId);
-    },
-    
-    getBuildingSubsidiaryEffects: (buildingId: number) => {
-      if (!worldRef) return null;
-      return calculateCombinedEffects(worldRef, buildingId);
-    },
-    
-    getBuildingSubsidiarySlots: (buildingId: number) => {
-      if (!worldRef) return { total: 0, used: 0, available: 0 };
-      
-      const b = worldRef.buildings;
-      if (buildingId >= b.count) return { total: 0, used: 0, available: 0 };
-      
-      const level = b.levels[buildingId];
-      const total = getTotalSubsidiarySlots(level);
-      const used = getUsedSubsidiarySlots(worldRef, buildingId);
-      
-      return {
-        total,
-        used,
-        available: total - used,
-      };
-    },
-    
-    installBuildingSubsidiary: (buildingId: number, subsidiaryId: number) => {
-      if (!worldRef) return { success: false, reason: '游戏未初始化' };
-      
-      const b = worldRef.buildings;
-      
-      // 检查建筑是否存在
-      if (buildingId >= b.count) {
-        return { success: false, reason: '建筑不存在' };
-      }
-      
-      // 检查是否是玩家建筑
-      if (b.owners[buildingId] !== 0) {
-        return { success: false, reason: '无法修改非玩家建筑的附属设施' };
-      }
-      
-      // 获取附属建筑定义
-      const def = getSubsidiaryDef(subsidiaryId);
-      if (!def) {
-        return { success: false, reason: '附属建筑不存在' };
-      }
-      
-      // 检查是否可以安装
-      const check = canInstallSubsidiary(worldRef, buildingId, subsidiaryId);
-      if (!check.canInstall) {
-        return { success: false, reason: check.reason };
-      }
-      
-      // 检查资金
-      const playerCash = worldRef.companies.cash[0];
-      if (playerCash < def.buildCost) {
-        return { success: false, reason: `资金不足，需要 ${formatCurrency(def.buildCost)}` };
-      }
-      
-      // 扣费
-      worldRef.companies.cash[0] -= def.buildCost;
-      
-      // 安装
-      const result = installSubsidiary(worldRef, buildingId, subsidiaryId);
-      
-      if (result.success) {
-        set((state) => {
-          // 强制触发 tick 更新以刷新 UI
-          state.tick = state.tick + 0.001;
-          syncPlayerFinancialState(state, worldRef, state.tick);
-        });
-        soundManager.playBuildComplete();
-        get().addNotification('success', `已安装「${def.name}」，花费 ${formatCurrency(def.buildCost)}`);
-      } else {
-        // 恢复资金
-        worldRef.companies.cash[0] += def.buildCost;
-        get().addNotification('error', `安装失败：${result.reason || '未知错误'}`);
-      }
-      
-      return result;
-    },
-    
-    uninstallBuildingSubsidiary: (buildingId: number, slotIndex: number) => {
-      if (!worldRef) return { success: false, reason: '游戏未初始化' };
-      
-      const b = worldRef.buildings;
-      
-      // 检查是否是玩家建筑
-      if (b.owners[buildingId] !== 0) {
-        return { success: false, reason: '无法修改非玩家建筑的附属设施' };
-      }
-      
-      const result = uninstallSubsidiary(worldRef, buildingId, slotIndex);
-      
-      if (result.success) {
-        soundManager.playOrderCancel();
-        get().addNotification('info', '附属设施已拆除');
-      }
-      
-      return result;
-    },
-    
-    repairBuildingSubsidiary: (buildingId: number, slotIndex: number) => {
-      if (!worldRef) return { success: false, cost: 0, reason: '游戏未初始化' };
-      
-      const b = worldRef.buildings;
-      
-      // 检查是否是玩家建筑
-      if (b.owners[buildingId] !== 0) {
-        return { success: false, cost: 0, reason: '无法修改非玩家建筑的附属设施' };
-      }
-      
-      // 先计算维修成本（不执行维修）
-      const costResult = calculateRepairCost(worldRef, buildingId, slotIndex);
-      
-      if (!costResult.canRepair) {
-        return { success: false, cost: 0, reason: costResult.reason };
-      }
-      
-      // 检查资金
-      const playerCash = worldRef.companies.cash[0];
-      if (playerCash < costResult.cost) {
-        return { success: false, cost: costResult.cost, reason: `资金不足，维修需要 ${formatCurrency(costResult.cost)}` };
-      }
-      
-      // 扣费
-      worldRef.companies.cash[0] -= costResult.cost;
-      
-      // 执行维修
-      const result = repairSubsidiary(worldRef, buildingId, slotIndex);
-      
-      if (result.success) {
-        set((state) => {
-          syncPlayerFinancialState(state, worldRef, state.tick);
-        });
-        
-        soundManager.playUpgrade();
-        get().addNotification('success', `维修完成，花费 ${formatCurrency(costResult.cost)}`);
-      } else {
-        // 恢复资金
-        worldRef.companies.cash[0] += costResult.cost;
-      }
-      
-      return result;
-    },
-    
-    getSubsidiaryMaintenanceCost: (buildingId: number) => {
-      if (!worldRef) return 0;
-      return calculateDailySubsidiaryMaintenance(worldRef, buildingId);
     },
     
     // ==================== 建造队列系统 ====================

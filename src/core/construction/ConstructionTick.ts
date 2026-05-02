@@ -8,8 +8,26 @@ import { ConstructionStatus, DemolitionStatus } from '../world/GameWorld';
 import { GOODS_COUNT, MAX_CONCURRENT_CONSTRUCTIONS, MAX_CONCURRENT_DEMOLITIONS } from '../constants';
 import { getBuildingConstructionConfig, MaterialRequirement, getBaseMaterials, getBuildTime } from '../../data/buildingMaterials';
 import { ALL_BUILDINGS, BUILDINGS_BY_ID, BuildingTypeDefinition, isRetailBuilding } from '../../data/buildings';
+import { drainMarketSupply } from '../economy/MarketStats';
 import { registerRetailStore } from '../economy/RetailSystem';
 import { initializeBuildingProductionControl } from '../production/ProductionControl';
+import { getDefaultSlotMethods } from '../production/ProductionMethods';
+import { resolveLegacyOutputModeToSlotMethods } from '../production/legacyOutputModeBridge';
+
+function normalizeConstructionSlotMethods(
+  buildingTypeId: number,
+  selection?: number | number[],
+): number[] {
+  if (Array.isArray(selection) && selection.length > 0) {
+    return [...selection];
+  }
+
+  if (typeof selection === 'number') {
+    return resolveLegacyOutputModeToSlotMethods(buildingTypeId, selection);
+  }
+
+  return getDefaultSlotMethods(buildingTypeId);
+}
 
 /**
  * 建造/拆除系统tick结果
@@ -101,10 +119,11 @@ function processConstructionTick(world: GameWorld): {
         // 检查材料是否已预留完毕
         const buildingTypeId = construction.buildingTypeIds[queueIdx];
         const targetLevel = construction.targetLevels[queueIdx];
-        const config = getBuildingConstructionConfig(buildingTypeId);
-        
-        if (!config) {
-          // 配置不存在，取消建造
+          const config = getBuildingConstructionConfig(buildingTypeId);
+          const buildTime = getBuildTime(buildingTypeId);
+          
+          if (!config) {
+            // 配置不存在，取消建造
           construction.statuses[queueIdx] = ConstructionStatus.CANCELLED;
           construction.isActive[queueIdx] = 0;
           cancelled++;
@@ -175,7 +194,7 @@ function processConstructionTick(world: GameWorld): {
           // 开始建造
           construction.statuses[queueIdx] = ConstructionStatus.IN_PROGRESS;
           construction.startTicks[queueIdx] = world.tick;
-          construction.estimatedEndTicks[queueIdx] = world.tick + config.buildTime;
+          construction.estimatedEndTicks[queueIdx] = world.tick + buildTime;
           activeCount++;
         }
       }
@@ -187,12 +206,13 @@ function processConstructionTick(world: GameWorld): {
         
         const buildingTypeId = construction.buildingTypeIds[queueIdx];
         const config = getBuildingConstructionConfig(buildingTypeId);
+        const buildTime = getBuildTime(buildingTypeId);
         
         if (!config) continue;
         
         // 更新进度
         const elapsed = world.tick - construction.startTicks[queueIdx];
-        const progress = Math.min(1, elapsed / config.buildTime);
+        const progress = Math.min(1, elapsed / buildTime);
         construction.progress[queueIdx] = progress;
         
         // 检查是否完成
@@ -210,6 +230,7 @@ function processConstructionTick(world: GameWorld): {
               const inventoryIdx = matCompanyId * GOODS_COUNT + goodsId;
               companies.inventories[inventoryIdx] -= quantity;
               companies.inventoryReserved[inventoryIdx] -= quantity;
+              drainMarketSupply(world, goodsId, quantity);
               
               reservedMaterials.isReserved[i] = 0;
               materialsConsumed++;
@@ -232,29 +253,34 @@ function processConstructionTick(world: GameWorld): {
             // 创建新建筑
             if (buildingsData.count < buildingsData.maxCount) {
               const newBuildingId = buildingsData.count++;
+              const isRetail = isRetailBuilding(buildingTypeId);
+
               buildingsData.types[newBuildingId] = buildingTypeId;
               buildingsData.owners[newBuildingId] = companyId;
               buildingsData.levels[newBuildingId] = 1;
               buildingsData.efficiencies[newBuildingId] = 1.0;
               buildingsData.isActive[newBuildingId] = 1;
               buildingsData.progress[newBuildingId] = 0;
-              
-              // 设置产品模式ID - 优先使用建造时指定的模式，否则使用默认模式(0)
-              let outputModeId = construction.outputModeIds[queueIdx];
-              if (outputModeId < 0) {
-                // 没有指定模式，使用默认模式0
-                outputModeId = 0;
+
+              if (isRetail) {
+                registerRetailStore(world, newBuildingId, { initialInventoryRatio: 0 });
+              } else {
+                const queueSlotOffset = queueIdx * 5;
+                const buildingSlotOffset = newBuildingId * 5;
+                for (let i = 0; i < 5; i++) {
+                  buildingsData.slotMethods[buildingSlotOffset + i] =
+                    construction.slotMethods[queueSlotOffset + i] ?? 0;
+                }
+                initializeBuildingProductionControl(world, newBuildingId);
               }
-              buildingsData.outputModeIds[newBuildingId] = outputModeId;
-              initializeBuildingProductionControl(world, newBuildingId);
-              
+
               // 【性能优化】更新公司建筑计数
               world.companies.buildingCounts[companyId]++;
-              
+
               newBuildings.push(newBuildingId);
-              
+
               // 关键日志：建筑创建成功
-              console.log(`[建造系统] ✓ 新建筑#${newBuildingId} 创建成功 (类型${buildingTypeId}, 公司${companyId})`);
+              console.log(`[建造系统] ✓ 新建筑#${newBuildingId} 创建成功 (类型${buildingTypeId}, 公司${companyId}${isRetail ? ', 零售已注册' : ''})`);
             } else {
               // 建筑数量已满！
               console.error(`[建造系统] ✗ 建筑数量已达上限 ${buildingsData.maxCount}！无法创建新建筑`);
@@ -359,7 +385,7 @@ function processDemolitionTick(world: GameWorld): {
           // 拆除时间 = 建造时间的一半
           const buildingTypeId = demolition.buildingTypeIds[queueIdx];
           const config = getBuildingConstructionConfig(buildingTypeId);
-          const demolishTime = config ? Math.floor(config.buildTime / 2) : 24;
+          const demolishTime = config ? Math.max(1, Math.floor(getBuildTime(buildingTypeId) / 2)) : 1;
           demolition.estimatedEndTicks[queueIdx] = world.tick + demolishTime;
           
           // 停止建筑运营
@@ -376,7 +402,7 @@ function processDemolitionTick(world: GameWorld): {
         
         const buildingTypeId = demolition.buildingTypeIds[queueIdx];
         const config = getBuildingConstructionConfig(buildingTypeId);
-        const demolishTime = config ? Math.floor(config.buildTime / 2) : 24;
+        const demolishTime = config ? Math.max(1, Math.floor(getBuildTime(buildingTypeId) / 2)) : 1;
         
         // 更新进度
         const elapsed = world.tick - demolition.startTicks[queueIdx];
@@ -712,7 +738,7 @@ export function startConstruction(
   world: GameWorld,
   companyId: number,
   buildingTypeId: number,
-  outputModeId: number = 0
+  selection?: number | number[],
 ): {
   success: boolean;
   queueIdx?: number;
@@ -741,10 +767,8 @@ export function startConstruction(
   
   // 获取建造配置
   const config = getBuildingConstructionConfig(buildingTypeId);
-  const buildTime = config?.buildTime || getBuildTime(buildingTypeId);
-  
-  // 使用指定的产品模式ID
-  const finalOutputModeId = outputModeId;
+  const buildTime = getBuildTime(buildingTypeId);
+  const slotMethods = normalizeConstructionSlotMethods(buildingTypeId, selection);
   
   // 添加到队列
   construction.isActive[freeSlot] = 1;
@@ -756,7 +780,11 @@ export function startConstruction(
   construction.progress[freeSlot] = 0;
   construction.startTicks[freeSlot] = world.tick;
   construction.estimatedEndTicks[freeSlot] = world.tick + buildTime;
-  construction.outputModeIds[freeSlot] = finalOutputModeId; // 存储产品模式ID
+
+  const queueSlotOffset = freeSlot * 5;
+  for (let i = 0; i < 5; i++) {
+    construction.slotMethods[queueSlotOffset + i] = slotMethods[i] ?? 0;
+  }
   
   return { success: true, queueIdx: freeSlot };
 }

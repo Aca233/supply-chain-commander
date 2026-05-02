@@ -4,8 +4,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
-import { GOODS_COUNT } from '@/core/constants';
+import { ALL_GOODS, GoodsId } from '@/data/goods';
 
 /**
  * 替代关系类型
@@ -44,390 +43,155 @@ export interface SubstitutionEffect {
  * 预定义的替代关系矩阵
  */
 const SUBSTITUTION_RELATIONS: SubstitutionRelation[] = [
-  // ===== 手机类替代 =====
   {
-    goodsA: 38, // 智能手机
-    goodsB: 55, // 高端手机
+    goodsA: GoodsId.SMARTPHONE,
+    goodsB: GoodsId.COMPUTER,
     type: 'substitute',
-    elasticity: 1.2,
-    qualityDiff: 0.3,
-    functionalSimilarity: 0.9,
+    elasticity: 0.5,
+    qualityDiff: 0.2,
+    functionalSimilarity: 0.55,
   },
   {
-    goodsA: 38, // 智能手机
-    goodsB: 56, // 平价手机
-    type: 'substitute',
-    elasticity: 1.5,
-    qualityDiff: -0.4,
-    functionalSimilarity: 0.85,
-  },
-  {
-    goodsA: 55, // 高端手机
-    goodsB: 56, // 平价手机
-    type: 'substitute',
-    elasticity: 0.8,
-    qualityDiff: -0.7,
-    functionalSimilarity: 0.7,
-  },
-  
-  // ===== 汽车类替代 =====
-  {
-    goodsA: 41, // 汽车
-    goodsB: 42, // 电动汽车
+    goodsA: GoodsId.CAR,
+    goodsB: GoodsId.ELECTRIC_CAR,
     type: 'substitute',
     elasticity: 1.3,
-    qualityDiff: 0.2,
+    qualityDiff: 0.25,
     functionalSimilarity: 0.95,
   },
-  
-  // ===== 能源替代 =====
   {
-    goodsA: 3,  // 煤炭
-    goodsB: 5,  // 天然气
+    goodsA: GoodsId.CAR,
+    goodsB: GoodsId.LUXURY_CAR,
+    type: 'substitute',
+    elasticity: 0.9,
+    qualityDiff: 0.8,
+    functionalSimilarity: 0.9,
+  },
+  {
+    goodsA: GoodsId.ELECTRIC_CAR,
+    goodsB: GoodsId.LUXURY_CAR,
+    type: 'substitute',
+    elasticity: 0.8,
+    qualityDiff: 0.55,
+    functionalSimilarity: 0.8,
+  },
+  {
+    goodsA: GoodsId.COAL,
+    goodsB: GoodsId.NATURAL_GAS,
     type: 'substitute',
     elasticity: 0.6,
     qualityDiff: 0.3,
     functionalSimilarity: 0.7,
   },
   {
-    goodsA: 25, // 燃油
-    goodsB: 57, // 电力
+    goodsA: GoodsId.FUEL,
+    goodsB: GoodsId.ELECTRICITY,
     type: 'substitute',
     elasticity: 0.4,
-    qualityDiff: 0.4,
+    qualityDiff: 0.35,
     functionalSimilarity: 0.5,
   },
-  
-  // ===== 食品替代 =====
   {
-    goodsA: 8,  // 粮食
-    goodsB: 24, // 加工食品
+    goodsA: GoodsId.PROCESSED_FOOD,
+    goodsB: GoodsId.FOOD,
     type: 'substitute',
     elasticity: 0.7,
-    qualityDiff: 0.3,
-    functionalSimilarity: 0.6,
-  },
-  {
-    goodsA: 24, // 加工食品
-    goodsB: 44, // 食品
-    type: 'substitute',
-    elasticity: 0.9,
-    qualityDiff: 0.2,
+    qualityDiff: 0.1,
     functionalSimilarity: 0.8,
   },
-  
-  // ===== 材料替代 =====
   {
-    goodsA: 14, // 钢材
-    goodsB: 16, // 铝材
+    goodsA: GoodsId.FOOD,
+    goodsB: GoodsId.ORGANIC_FOOD,
     type: 'substitute',
-    elasticity: 0.5,
-    qualityDiff: 0.1,
-    functionalSimilarity: 0.6,
+    elasticity: 1.1,
+    qualityDiff: 0.6,
+    functionalSimilarity: 0.9,
   },
   {
-    goodsA: 18, // 塑料
-    goodsB: 17, // 玻璃
+    goodsA: GoodsId.FROZEN_FOOD,
+    goodsB: GoodsId.CANNED_FOOD,
     type: 'substitute',
-    elasticity: 0.3,
-    qualityDiff: 0.1,
-    functionalSimilarity: 0.4,
-  },
-  
-  // ===== 互补品 =====
-  {
-    goodsA: 38, // 智能手机
-    goodsB: 28, // 电池
-    type: 'complement',
-    elasticity: -0.4,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
+    elasticity: 0.7,
+    qualityDiff: 0.2,
+    functionalSimilarity: 0.7,
   },
   {
-    goodsA: 41, // 汽车
-    goodsB: 25, // 燃油
-    type: 'complement',
-    elasticity: -0.6,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  {
-    goodsA: 42, // 电动汽车
-    goodsB: 57, // 电力
-    type: 'complement',
-    elasticity: -0.5,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  {
-    goodsA: 42, // 电动汽车
-    goodsB: 28, // 电池
-    type: 'complement',
-    elasticity: -0.7,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  {
-    goodsA: 39, // 电脑
-    goodsB: 27, // 芯片
-    type: 'complement',
-    elasticity: -0.5,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  
-  // ==================== 农业产业链替代关系 ====================
-  // 蛋白质替代
-  {
-    goodsA: 63, // 肉类
-    goodsB: 62, // 水产
+    goodsA: GoodsId.SEAFOOD,
+    goodsB: GoodsId.MEAT,
     type: 'substitute',
     elasticity: 0.8,
     qualityDiff: 0,
     functionalSimilarity: 0.7,
   },
   {
-    goodsA: 63, // 肉类
-    goodsB: 61, // 家禽
+    goodsA: GoodsId.CLOTHING,
+    goodsB: GoodsId.DESIGNER_CLOTHING,
     type: 'substitute',
-    elasticity: 0.6,
-    qualityDiff: -0.1,
-    functionalSimilarity: 0.8,
-  },
-  // 食品品质替代
-  {
-    goodsA: 44, // 普通食品
-    goodsB: 68, // 有机食品
-    type: 'substitute',
-    elasticity: 1.2,
-    qualityDiff: 0.6,
+    elasticity: 1.6,
+    qualityDiff: 0.75,
     functionalSimilarity: 0.9,
   },
   {
-    goodsA: 24, // 加工食品
-    goodsB: 65, // 冷冻食品
+    goodsA: GoodsId.GENERIC_DRUG,
+    goodsB: GoodsId.PATENT_DRUG,
     type: 'substitute',
-    elasticity: 0.9,
-    qualityDiff: 0.1,
-    functionalSimilarity: 0.85,
+    elasticity: 1.3,
+    qualityDiff: 0.55,
+    functionalSimilarity: 0.9,
   },
   {
-    goodsA: 65, // 冷冻食品
-    goodsB: 66, // 罐头食品
+    goodsA: GoodsId.GENERIC_DRUG,
+    goodsB: GoodsId.OTC_DRUG,
     type: 'substitute',
     elasticity: 0.7,
-    qualityDiff: 0.2,
+    qualityDiff: -0.15,
     functionalSimilarity: 0.7,
   },
-  // 蔬菜水果替代
   {
-    goodsA: 58, // 蔬菜
-    goodsB: 59, // 水果
-    type: 'substitute',
-    elasticity: 0.4,
-    qualityDiff: 0,
-    functionalSimilarity: 0.5,
-  },
-  // 乳制品互补
-  {
-    goodsA: 64, // 乳制品
-    goodsB: 60, // 牲畜
-    type: 'complement',
-    elasticity: -0.3,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  
-  // ==================== 医药产业链替代关系 ====================
-  // 药品替代
-  {
-    goodsA: 74, // 仿制药
-    goodsB: 75, // 专利药
-    type: 'substitute',
-    elasticity: 1.5,
-    qualityDiff: 0.5,
-    functionalSimilarity: 0.95,
-  },
-  {
-    goodsA: 74, // 仿制药
-    goodsB: 76, // 非处方药
-    type: 'substitute',
-    elasticity: 0.6,
-    qualityDiff: -0.2,
-    functionalSimilarity: 0.6,
-  },
-  // 医疗设备互补
-  {
-    goodsA: 78, // 诊断设备
-    goodsB: 77, // 医用耗材
+    goodsA: GoodsId.SOLAR_SYSTEM,
+    goodsB: GoodsId.ENERGY_STORAGE,
     type: 'complement',
     elasticity: -0.5,
     qualityDiff: 0,
     functionalSimilarity: 0,
   },
   {
-    goodsA: 79, // 手术设备
-    goodsB: 77, // 医用耗材
-    type: 'complement',
-    elasticity: -0.6,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  
-  // ==================== 军工产业链替代关系 ====================
-  // 武器替代
-  {
-    goodsA: 84, // 轻武器
-    goodsB: 85, // 重武器
-    type: 'substitute',
-    elasticity: 0.3,
-    qualityDiff: 0.5,
-    functionalSimilarity: 0.4,
-  },
-  // 军用电子互补
-  {
-    goodsA: 86, // 军用车辆
-    goodsB: 83, // 军用电子
-    type: 'complement',
-    elasticity: -0.7,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  {
-    goodsA: 87, // 战斗机
-    goodsB: 83, // 军用电子
-    type: 'complement',
-    elasticity: -0.8,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  
-  // ==================== 奢侈品产业链替代关系 ====================
-  // 服装替代
-  {
-    goodsA: 43, // 普通服装
-    goodsB: 93, // 设计师服装
-    type: 'substitute',
-    elasticity: 1.8,
-    qualityDiff: 0.7,
-    functionalSimilarity: 0.9,
-  },
-  // 汽车档次替代
-  {
-    goodsA: 41, // 普通汽车
-    goodsB: 95, // 豪华汽车
-    type: 'substitute',
-    elasticity: 1.5,
-    qualityDiff: 0.8,
-    functionalSimilarity: 0.95,
-  },
-  {
-    goodsA: 42, // 电动汽车
-    goodsB: 95, // 豪华汽车
-    type: 'substitute',
-    elasticity: 1.2,
-    qualityDiff: 0.5,
-    functionalSimilarity: 0.85,
-  },
-  // 珠宝互补
-  {
-    goodsA: 54, // 珠宝
-    goodsB: 90, // 黄金
+    goodsA: GoodsId.MEDICAL_DEVICE,
+    goodsB: GoodsId.MEDICAL_SUPPLIES,
     type: 'complement',
     elasticity: -0.6,
     qualityDiff: 0,
     functionalSimilarity: 0,
   },
   {
-    goodsA: 54, // 珠宝
-    goodsB: 91, // 钻石
+    goodsA: GoodsId.JEWELRY,
+    goodsB: GoodsId.GOLD,
+    type: 'complement',
+    elasticity: -0.6,
+    qualityDiff: 0,
+    functionalSimilarity: 0,
+  },
+  {
+    goodsA: GoodsId.JEWELRY,
+    goodsB: GoodsId.DIAMOND,
     type: 'complement',
     elasticity: -0.7,
     qualityDiff: 0,
     functionalSimilarity: 0,
   },
-  // 奢侈腕表互补
   {
-    goodsA: 94, // 奢侈腕表
-    goodsB: 90, // 黄金
+    goodsA: GoodsId.LUXURY_WATCH,
+    goodsB: GoodsId.GOLD,
     type: 'complement',
     elasticity: -0.4,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  
-  // ==================== 科技产业链替代关系 ====================
-  // 计算设备替代
-  {
-    goodsA: 39, // 电脑
-    goodsB: 99, // AI服务器
-    type: 'substitute',
-    elasticity: 0.5,
-    qualityDiff: 0.6,
-    functionalSimilarity: 0.6,
-  },
-  {
-    goodsA: 99, // AI服务器
-    goodsB: 100, // 量子计算机
-    type: 'substitute',
-    elasticity: 0.3,
-    qualityDiff: 0.9,
-    functionalSimilarity: 0.5,
-  },
-  // VR与手机替代
-  {
-    goodsA: 38, // 智能手机
-    goodsB: 103, // VR设备
-    type: 'substitute',
-    elasticity: 0.4,
-    qualityDiff: 0.3,
-    functionalSimilarity: 0.4,
-  },
-  // 机器人互补
-  {
-    goodsA: 102, // 智能机器人
-    goodsB: 96, // AI芯片
-    type: 'complement',
-    elasticity: -0.6,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  {
-    goodsA: 102, // 智能机器人
-    goodsB: 28, // 电池
-    type: 'complement',
-    elasticity: -0.5,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  // AI服务器互补
-  {
-    goodsA: 99, // AI服务器
-    goodsB: 96, // AI芯片
-    type: 'complement',
-    elasticity: -0.8,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  // 量子计算机互补
-  {
-    goodsA: 100, // 量子计算机
-    goodsB: 97, // 量子组件
-    type: 'complement',
-    elasticity: -0.9,
-    qualityDiff: 0,
-    functionalSimilarity: 0,
-  },
-  // VR设备互补
-  {
-    goodsA: 103, // VR设备
-    goodsB: 30, // 屏幕
-    type: 'complement',
-    elasticity: -0.5,
     qualityDiff: 0,
     functionalSimilarity: 0,
   },
 ];
+
+export function getAllSubstitutionRelations(): readonly SubstitutionRelation[] {
+  return SUBSTITUTION_RELATIONS;
+}
 
 // 建立查询索引
 const relationsByGoods = new Map<number, SubstitutionRelation[]>();

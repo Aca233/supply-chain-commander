@@ -119,8 +119,7 @@ function matchOrdersForGoodsOptimized(
     const buyRemaining = o.remainings[buyIdx];
     const sellRemaining = o.remainings[sellIdx];
     const matchQty = Math.min(buyRemaining, sellRemaining);
-    // 时间优先：成交价取先挂单方的价格
-    const matchPrice = o.createdTicks[buyIdx] < o.createdTicks[sellIdx] ? buyPrice : sellPrice;
+    const matchPrice = (buyPrice + sellPrice) / 2;
     const totalValue = matchQty * matchPrice;
 
     // 执行成交
@@ -256,8 +255,7 @@ function matchOrdersForGoods(
     const buyRemaining = o.remainings[buyIdx];
     const sellRemaining = o.remainings[sellIdx];
     const matchQty = Math.min(buyRemaining, sellRemaining);
-    // 时间优先：成交价取先挂单方的价格
-    const matchPrice = o.createdTicks[buyIdx] < o.createdTicks[sellIdx] ? buyPrice : sellPrice;
+    const matchPrice = (buyPrice + sellPrice) / 2;
     const totalValue = matchQty * matchPrice;
     
     const buyInvIdx = buyCompanyId * GOODS_COUNT + goodsId;

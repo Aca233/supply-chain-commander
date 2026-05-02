@@ -24,8 +24,35 @@ import { getPriceCache } from '../market/PriceCache';
 import { updateWorldDemands, CONSUMER_TIERS, DemandModifiers } from './DemandCurve';
 import { applyMarketSubstitution } from './SubstitutionSystem';
 import { perfMonitor } from '../performance/PerformanceMonitor';
+import { getDemandPressure, syncDemandPressureFromDemand } from './MarketStats';
 
 // 使用constants.ts中定义的统一平滑系数 SUPPLY_DEMAND_SMOOTHING
+
+// 收紧极端区间：原 [0.3, 5.0] 在长期供需失衡下会把价格锁死在地板/天花板上。
+// [0.45, 3.5] 仍允许 ±250% 波动，但留出 AI 调价空间。
+const EXTREME_SHORTAGE_PRICE_RATIO = 3.5;
+const EXTREME_SURPLUS_PRICE_RATIO = 0.45;
+
+function calculateMarketPriceBounds(
+  baseValue: number,
+  demand: number,
+  supply: number,
+): { minPrice: number; maxPrice: number } {
+  const safeSupply = Math.max(supply, 0.001);
+  const safeDemand = Math.max(demand, 0.001);
+  const demandSupplyRatio = safeDemand / safeSupply;
+
+  const shortageStress = Math.max(0, Math.min(1, Math.log10(demandSupplyRatio) / 2));
+  const surplusStress = Math.max(0, Math.min(1, Math.log10(1 / demandSupplyRatio) / 2));
+
+  const maxRatio = MAX_PRICE_RATIO + (EXTREME_SHORTAGE_PRICE_RATIO - MAX_PRICE_RATIO) * shortageStress;
+  const minRatio = MIN_PRICE_RATIO - (MIN_PRICE_RATIO - EXTREME_SURPLUS_PRICE_RATIO) * surplusStress;
+
+  return {
+    minPrice: baseValue * minRatio,
+    maxPrice: baseValue * maxRatio,
+  };
+}
 
 /**
  * 瓦尔拉斯均衡价格搜索
@@ -69,19 +96,23 @@ export function findEquilibriumPrice(
 export function stabilizePrice(
   currentPrice: number,
   targetPrice: number,
-  basePrice: number
+  basePrice: number,
+  reversionRate: number = MEAN_REVERSION_RATE,
 ): number {
   // 计算目标变化率
-  let changeRate = (targetPrice - currentPrice) / currentPrice;
-  
-  // 限制变化幅度
-  changeRate = Math.max(-MAX_TICK_PRICE_CHANGE, Math.min(MAX_TICK_PRICE_CHANGE, changeRate));
+  const changeRate = (targetPrice - currentPrice) / currentPrice;
   
   // 均值回归
-  const reversionPull = (basePrice - currentPrice) / currentPrice * MEAN_REVERSION_RATE;
+  const reversionPull = (basePrice - currentPrice) / currentPrice * reversionRate;
+
+  // 限制总变化幅度，避免均值回归绕过单tick价格上限
+  const totalChangeRate = Math.max(
+    -MAX_TICK_PRICE_CHANGE,
+    Math.min(MAX_TICK_PRICE_CHANGE, changeRate + reversionPull),
+  );
   
   // 应用变化
-  return currentPrice * (1 + changeRate + reversionPull);
+  return currentPrice * (1 + totalChangeRate);
 }
 
 /**
@@ -114,70 +145,26 @@ export function updateAllPrices(world: GameWorld): PriceUpdateResult {
   // 只处理实际使用的商品
 for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
   const supply = g.supplies[i];
-  const demand = g.demands[i];
+  const demand = getDemandPressure(world, i);
   const currentPrice = g.prices[i];
   const baseValue = g.baseValues[i];
   
   // 从缓存获取成交量（O(1)）
   const volume24h = allVolume[i];
   
-  // === 【P0修复v2】无成交时的价格稳定机制 ===
+  // 无成交时仍向基准价缓慢回归，避免商品价格被锁死在 MIN/MAX_PRICE_RATIO 边界。
+  // Why: 长周期模拟显示 51 项商品长年触地板 0.45×、3 项触天花板 3.5×，根因是 volume24h=0 时
+  //      之前直接 continue 不更新价格，导致历史漂移结果永久固化。
+  // How: 用 NO_TRADE_REVERSION_MULTIPLIER 加强回归，仍只衰减供给压力。
   if (volume24h === 0) {
-    // 计算价格偏离程度 (-1 到 +∞)
-    // 负值表示低于基准价，正值表示高于基准价
-    const priceDeviation = (currentPrice - baseValue) / baseValue;
-    
-    // 使用渐进式回归：偏离越大，回归越慢（防止跳跃）
-    // 偏离小时快速回归，偏离大时缓慢回归
-    // 这样避免了所有商品以相同速率变化的问题
-    const deviationAbs = Math.abs(priceDeviation);
-    
-    // 基础回归强度：小偏离时使用较高回归率
-    // 大偏离时降低回归率，防止价格跳跃
-    let reversionStrength: number;
-    if (deviationAbs < 0.1) {
-      // 偏离<10%: 快速回归
-      reversionStrength = MEAN_REVERSION_RATE * 2.0;
-    } else if (deviationAbs < 0.3) {
-      // 偏离10-30%: 中等回归
-      reversionStrength = MEAN_REVERSION_RATE * 1.0;
-    } else if (deviationAbs < 0.5) {
-      // 偏离30-50%: 缓慢回归
-      reversionStrength = MEAN_REVERSION_RATE * 0.5;
-    } else {
-      // 偏离>50% (触及价格边界): 最小回归
-      // 这是正常的市场均衡状态，不需要强制回归
-      reversionStrength = MEAN_REVERSION_RATE * 0.1;
-    }
-    
-    // 计算回归方向和幅度
-    // 注意：这里不使用固定的clamp，而是让回归强度自然控制变化幅度
-    const reversionPull = (baseValue - currentPrice) / currentPrice * reversionStrength;
-    
-    // 应用变化（不再使用固定clamp）
-    let newPrice = currentPrice * (1 + reversionPull);
-    
-    // 价格边界约束
-    const maxPrice = baseValue * MAX_PRICE_RATIO;
-    const minPrice = baseValue * MIN_PRICE_RATIO;
-    newPrice = Math.max(minPrice, Math.min(maxPrice, newPrice));
-    
-    const actualChange = (newPrice - currentPrice) / currentPrice;
-    totalChange += Math.abs(actualChange);
-    
-    if (actualChange > result.maxIncrease.change) {
-      result.maxIncrease = { goodsId: i, change: actualChange };
-    }
-    if (actualChange < result.maxDecrease.change) {
-      result.maxDecrease = { goodsId: i, change: actualChange };
-    }
-    
-    g.prices[i] = newPrice;
-    
-    // 平滑供给数据（需求由updateWorldDemands平滑处理，此处不再重复）
     g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
-
-    result.updatedCount++;
+    if (baseValue > 0 && currentPrice > 0) {
+      const noTradeRate = MEAN_REVERSION_RATE * NO_TRADE_REVERSION_MULTIPLIER;
+      const targetChange = (baseValue - currentPrice) / currentPrice * noTradeRate;
+      const tickCap = NO_TRADE_MAX_MONTHLY_CHANGE / 30;
+      const cappedChange = Math.max(-tickCap, Math.min(tickCap, targetChange));
+      g.prices[i] = currentPrice * (1 + cappedChange);
+    }
     continue;
   }
 
@@ -204,19 +191,29 @@ for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
     
     // 从缓存获取VWAP（O(1)）
     const vwap = allVWAP[i];
-    
+
+    // VWAP 主导价格：有真实成交时，市场价直接以 VWAP 为锚点
+    // Why: 长周期诊断证明 supply/demand 算法对中间品系统性高估 0.3-1.0x、对上游原料低估 0.2-0.3x
+    //      VWAP 是真实成交均价，远比 supply/demand 比值反映真实市场状态。
+    // How: volume24h>=10 时让 VWAP 占 80% 权重；流动性低时退化到原算法。
     if (vwap > 0 && volume24h > 0) {
-      const vwapPull = (vwap - currentPrice) / currentPrice * 0.15;
-      const vwapWeight = Math.min(0.85, 0.2 + Math.log10(volume24h + 1) * 0.1);
+      const vwapPull = (vwap - currentPrice) / currentPrice;
+      // 流动性越高，VWAP 越主导：volume>=100 时 0.80 权重，封顶
+      const vwapWeight = Math.min(0.80, 0.3 + Math.log10(volume24h + 1) * 0.2);
       targetChange = targetChange * (1 - vwapWeight) + vwapPull * vwapWeight;
     }
     
+    const imbalance = Math.abs(Math.log10(Math.max(ratio, 0.001)));
+    const marketReversionRate = imbalance > 0.5 ? 0 : MEAN_REVERSION_RATE;
     const targetPrice = currentPrice * (1 + targetChange);
-    let newPrice = stabilizePrice(currentPrice, targetPrice, baseValue);
+    let newPrice = stabilizePrice(currentPrice, targetPrice, baseValue, marketReversionRate);
     
-    const maxPrice = baseValue * MAX_PRICE_RATIO;
-    const minPrice = baseValue * MIN_PRICE_RATIO;
-    newPrice = Math.max(minPrice, Math.min(maxPrice, newPrice));
+    const { minPrice, maxPrice } = calculateMarketPriceBounds(baseValue, demand, supply);
+    const tickLimitedMinPrice = currentPrice * (1 - MAX_TICK_PRICE_CHANGE);
+    const tickLimitedMaxPrice = currentPrice * (1 + MAX_TICK_PRICE_CHANGE);
+    const effectiveMinPrice = Math.min(minPrice, tickLimitedMaxPrice);
+    const effectiveMaxPrice = Math.max(maxPrice, tickLimitedMinPrice);
+    newPrice = Math.max(effectiveMinPrice, Math.min(effectiveMaxPrice, newPrice));
     
     const actualChange = (newPrice - currentPrice) / currentPrice;
     totalChange += Math.abs(actualChange);
@@ -446,6 +443,9 @@ export function simulateConsumerDemand(
   
   // 应用商品替代效应：当某商品价格变化时，需求会转移到替代品
   applyMarketSubstitution(world);
+
+  // gross demand 用于 UI/AI，pressure 用于价格与短缺。
+  syncDemandPressureFromDemand(world);
 }
 
 /**

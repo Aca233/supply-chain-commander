@@ -1,0 +1,341 @@
+- generic [ref=e97]:
+  - complementary [ref=e98]:
+    - navigation [ref=e99]:
+      - generic [ref=e100]:
+        - button "📊 仪表盘" [ref=e101] [cursor=pointer]:
+          - generic [ref=e102]: 📊
+          - generic [ref=e103]: 仪表盘
+        - button "🏭 生产管理" [ref=e104] [cursor=pointer]:
+          - generic [ref=e105]: 🏭
+          - generic [ref=e106]: 生产管理
+        - button "🔗 产业链" [ref=e107] [cursor=pointer]:
+          - generic [ref=e108]: 🔗
+          - generic [ref=e109]: 产业链
+        - button "💹 市场交易" [ref=e110] [cursor=pointer]:
+          - generic [ref=e111]: 💹
+          - generic [ref=e112]: 市场交易
+        - button "🏪 零售管理" [ref=e113] [cursor=pointer]:
+          - generic [ref=e114]: 🏪
+          - generic [ref=e115]: 零售管理
+        - button "📈 财务报表" [ref=e116] [cursor=pointer]:
+          - generic [ref=e117]: 📈
+          - generic [ref=e118]: 财务报表
+        - button "🏛️ 竞争与投资" [ref=e119] [cursor=pointer]:
+          - generic [ref=e120]: 🏛️
+          - generic [ref=e121]: 竞争与投资
+        - button "📰 商业周刊" [ref=e122] [cursor=pointer]:
+          - generic [ref=e123]: 📰
+          - generic [ref=e124]: 商业周刊
+        - button "⚙️ 设置" [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: ⚙️
+          - generic [ref=e127]: 设置
+  - generic [ref=e128]:
+    - banner [ref=e129]:
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - button "Toggle navigation" [ref=e132] [cursor=pointer]: ☰
+          - generic [ref=e134]: SC
+          - heading "供应链指挥官" [level=1] [ref=e135]
+        - generic [ref=e136]:
+          - generic [ref=e137]:
+            - text: 游戏时间：
+            - generic [ref=e138]: 第1年 1月29日
+          - generic [ref=e139]:
+            - button "1x" [ref=e140] [cursor=pointer]
+            - button "2x" [ref=e141] [cursor=pointer]
+            - button "4x" [ref=e142] [cursor=pointer]
+            - button "8x" [ref=e143] [cursor=pointer]
+          - button "⏸" [ref=e144] [cursor=pointer]
+        - generic [ref=e145]:
+          - generic [ref=e146]:
+            - generic [ref=e147]: 现金
+            - generic [ref=e148]: ¥17.36M
+          - button "☀️" [ref=e149] [cursor=pointer]:
+            - generic [ref=e150]: ☀️
+          - generic [ref=e152]: 👤
+    - main [ref=e153]:
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - heading "控制台" [level=2] [ref=e156]
+          - generic [ref=e157]:
+            - generic [ref=e158]: 第1年 1月29日
+            - generic [ref=e159]: 28.45ms/tick
+        - generic [ref=e160]:
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - paragraph [ref=e164]: 净资产
+              - paragraph [ref=e165]: ¥20.21M
+            - generic [ref=e166]: 💎
+          - generic [ref=e168]:
+            - generic [ref=e169]:
+              - paragraph [ref=e170]: 现金
+              - paragraph [ref=e171]: ¥17.36M
+            - generic [ref=e172]: 💰
+          - generic [ref=e174]:
+            - generic [ref=e175]:
+              - paragraph [ref=e176]: 日利润
+              - paragraph [ref=e177]: ¥-292.7K
+            - generic [ref=e178]: 📉
+          - generic [ref=e180]:
+            - generic [ref=e181]:
+              - paragraph [ref=e182]: 建筑数量
+              - paragraph [ref=e183]: 4座
+              - paragraph [ref=e184]: 3座运行中
+            - generic [ref=e185]: 🏭
+          - generic [ref=e187]:
+            - generic [ref=e188]:
+              - paragraph [ref=e189]: 投资市值
+              - paragraph [ref=e190]: ¥0
+            - generic [ref=e191]: 📊
+          - generic [ref=e193]:
+            - generic [ref=e194]:
+              - paragraph [ref=e195]: 信用评级
+              - paragraph [ref=e196]: AA
+              - paragraph [ref=e197]: "信用分: 700"
+            - generic [ref=e198]: ⭐
+        - generic [ref=e199]:
+          - generic [ref=e200]:
+            - generic [ref=e201]:
+              - heading "🔔 告警中心" [level=3] [ref=e203]
+              - generic [ref=e206]:
+                - paragraph [ref=e207]: ✅
+                - paragraph [ref=e208]: 一切正常
+                - paragraph [ref=e209]: 当前无需关注的问题
+            - generic [ref=e210]:
+              - generic [ref=e211]:
+                - heading "📈 财务趋势" [level=3] [ref=e212]
+                - generic [ref=e214]: 日收益:¥-292.7K
+              - generic [ref=e215]:
+                - generic [ref=e216]:
+                  - paragraph [ref=e217]: 累计收入
+                  - paragraph [ref=e218]: ¥4.77M
+                - generic [ref=e219]:
+                  - paragraph [ref=e220]: 累计支出
+                  - paragraph [ref=e221]: ¥5.41M
+                - generic [ref=e222]:
+                  - paragraph [ref=e223]: 累计利润
+                  - paragraph [ref=e224]: ¥-642.4K
+              - generic [ref=e228]:
+                - heading "现金余额趋势" [level=3] [ref=e229]
+                - generic [ref=e230]:
+                  - generic [ref=e231]: ¥17357556.17
+                  - generic [ref=e232]: ▼1.29%
+            - generic [ref=e237]:
+              - generic [ref=e238]:
+                - heading "🏭 生产概览" [level=3] [ref=e239]
+                - button "查看详情 →" [ref=e240] [cursor=pointer]
+              - generic [ref=e241]:
+                - generic [ref=e242]:
+                  - generic [ref=e243]:
+                    - generic [ref=e244]: 产能利用率
+                    - generic [ref=e245]: 🟢 优秀
+                  - generic [ref=e246]:
+                    - generic [ref=e247]: "100.0"
+                    - generic [ref=e248]: "%"
+                - generic [ref=e251]:
+                  - generic [ref=e253]: 总产出/tick
+                  - generic [ref=e254]:
+                    - generic [ref=e255]: 24.6K
+                    - generic [ref=e256]: 单位
+              - generic [ref=e257]:
+                - paragraph [ref=e258]: 主要产出
+                - generic [ref=e259]:
+                  - generic [ref=e260] [cursor=pointer]:
+                    - generic [ref=e261]: "1"
+                    - img "粮食" [ref=e262]
+                    - generic [ref=e264]: 粮食
+                    - generic [ref=e265]: 11.2K/tick
+                  - generic [ref=e266] [cursor=pointer]:
+                    - generic [ref=e267]: "2"
+                    - img "钢材" [ref=e268]
+                    - generic [ref=e270]: 钢材
+                    - generic [ref=e271]: 7.8K/tick
+                  - generic [ref=e272] [cursor=pointer]:
+                    - generic [ref=e273]: "3"
+                    - img "铁矿石" [ref=e274]
+                    - generic [ref=e276]: 铁矿石
+                    - generic [ref=e277]: 5.6K/tick
+          - generic [ref=e278]:
+            - generic [ref=e279]:
+              - generic [ref=e280]:
+                - heading "📊 市场动态" [level=3] [ref=e281]
+                - button "查看详情 →" [ref=e282] [cursor=pointer]
+              - generic [ref=e283]:
+                - generic [ref=e284]:
+                  - paragraph [ref=e285]: "18"
+                  - paragraph [ref=e286]: 上涨
+                - generic [ref=e287]:
+                  - paragraph [ref=e288]: "4"
+                  - paragraph [ref=e289]: 持平
+                - generic [ref=e290]:
+                  - paragraph [ref=e291]: "58"
+                  - paragraph [ref=e292]: 下跌
+              - generic [ref=e293]:
+                - generic [ref=e294]:
+                  - paragraph [ref=e295]: 📈 涨幅榜
+                  - generic [ref=e296]:
+                    - generic "点击买入 加工食品" [ref=e297] [cursor=pointer]:
+                      - img "加工食品" [ref=e298]
+                      - generic [ref=e300]: 加工食品
+                      - generic [ref=e301]: +14.2%
+                    - generic "点击买入 罐头食品" [ref=e302] [cursor=pointer]:
+                      - img "罐头食品" [ref=e303]
+                      - generic [ref=e305]: 罐头食品
+                      - generic [ref=e306]: +5.9%
+                    - generic "点击买入 零食" [ref=e307] [cursor=pointer]:
+                      - img "零食" [ref=e308]
+                      - generic [ref=e310]: 零食
+                      - generic [ref=e311]: +4.8%
+                - generic [ref=e312]:
+                  - paragraph [ref=e313]: 📉 跌幅榜
+                  - generic [ref=e314]:
+                    - generic "点击卖出 黄金" [ref=e315] [cursor=pointer]:
+                      - img "黄金" [ref=e316]
+                      - generic [ref=e318]: 黄金
+                      - generic [ref=e319]: "-33.5%"
+                    - generic "点击卖出 燃油汽车" [ref=e320] [cursor=pointer]:
+                      - img "燃油汽车" [ref=e321]
+                      - generic [ref=e323]: 燃油汽车
+                      - generic [ref=e324]: "-30.8%"
+                    - generic "点击卖出 风机叶片" [ref=e325] [cursor=pointer]:
+                      - img "风机叶片" [ref=e326]
+                      - generic [ref=e328]: 风机叶片
+                      - generic [ref=e329]: "-26.6%"
+              - generic [ref=e330]:
+                - paragraph [ref=e331]: 💡 交易机会
+                - generic [ref=e332]:
+                  - generic [ref=e333] [cursor=pointer]:
+                    - generic [ref=e334]: 买
+                    - img "乳制品" [ref=e335]
+                    - generic [ref=e337]: 乳制品
+                    - generic [ref=e338]: "-20.3%"
+                  - generic [ref=e339] [cursor=pointer]:
+                    - generic [ref=e340]: 买
+                    - img "黄金" [ref=e341]
+                    - generic [ref=e343]: 黄金
+                    - generic [ref=e344]: "-33.5%"
+                  - generic [ref=e345] [cursor=pointer]:
+                    - generic [ref=e346]: 买
+                    - img "航空部件" [ref=e347]
+                    - generic [ref=e349]: 航空部件
+                    - generic [ref=e350]: "-26.3%"
+                  - generic [ref=e351] [cursor=pointer]:
+                    - generic [ref=e352]: 买
+                    - img "风机叶片" [ref=e353]
+                    - generic [ref=e355]: 风机叶片
+                    - generic [ref=e356]: "-26.6%"
+                  - generic [ref=e357] [cursor=pointer]:
+                    - generic [ref=e358]: 买
+                    - img "冷冻食品" [ref=e359]
+                    - generic [ref=e361]: 冷冻食品
+                    - generic [ref=e362]: "-23.4%"
+              - generic [ref=e364]:
+                - generic [ref=e365]: 我的挂单
+                - generic [ref=e366]:
+                  - generic [ref=e367]:
+                    - generic [ref=e368]: 买 0
+                    - text: /
+                    - generic [ref=e369]: 卖 1
+                  - generic [ref=e370]: ¥257
+            - generic [ref=e371]:
+              - generic [ref=e372]:
+                - heading "📦 库存概览" [level=3] [ref=e373]
+                - button "去交易 →" [ref=e374] [cursor=pointer]
+              - generic [ref=e375]:
+                - generic [ref=e376]:
+                  - paragraph [ref=e377]: ¥850.8K
+                  - paragraph [ref=e378]: 总价值
+                - generic [ref=e379]:
+                  - paragraph [ref=e380]: "6"
+                  - paragraph [ref=e381]: 商品种类
+              - generic [ref=e382]:
+                - button "全部商品" [ref=e383] [cursor=pointer]
+                - button "按分类" [ref=e384] [cursor=pointer]
+              - generic [ref=e386]:
+                - generic [ref=e387] [cursor=pointer]:
+                  - img "钢材" [ref=e388]
+                  - generic [ref=e390]:
+                    - generic [ref=e391]:
+                      - generic [ref=e392]: 钢材
+                      - generic [ref=e393]: 基础加工
+                      - generic [ref=e394]: 标准
+                    - generic [ref=e395]:
+                      - generic [ref=e396]: 1209 单位
+                      - generic [ref=e397]: "@ ¥460.72"
+                  - paragraph [ref=e399]: ¥557.0K
+                - generic [ref=e400] [cursor=pointer]:
+                  - img "铁矿石" [ref=e401]
+                  - generic [ref=e403]:
+                    - generic [ref=e404]:
+                      - generic [ref=e405]: 铁矿石
+                      - generic [ref=e406]: 原材料
+                      - generic [ref=e407]: 标准
+                    - generic [ref=e408]:
+                      - generic [ref=e409]: 2972 单位
+                      - generic [ref=e410]: "@ ¥50.48"
+                  - paragraph [ref=e412]: ¥150.0K
+                - generic [ref=e413] [cursor=pointer]:
+                  - img "煤炭" [ref=e414]
+                  - generic [ref=e416]:
+                    - generic [ref=e417]:
+                      - generic [ref=e418]: 煤炭
+                      - generic [ref=e419]: 原材料
+                      - generic [ref=e420]: 标准
+                    - generic [ref=e421]:
+                      - generic [ref=e422]: 833 单位
+                      - generic [ref=e423]: "@ ¥160.41"
+                  - paragraph [ref=e425]: ¥133.6K
+                - generic [ref=e426] [cursor=pointer]:
+                  - img "粮食" [ref=e427]
+                  - generic [ref=e429]:
+                    - generic [ref=e430]:
+                      - generic [ref=e431]: 粮食
+                      - generic [ref=e432]: 原材料
+                      - generic [ref=e433]: 标准
+                    - generic [ref=e434]:
+                      - generic [ref=e435]: 626 单位
+                      - generic [ref=e436]: "@ ¥15.48"
+                  - paragraph [ref=e438]: ¥9.7K
+                - generic [ref=e439] [cursor=pointer]:
+                  - img "食品" [ref=e440]
+                  - generic [ref=e442]:
+                    - generic [ref=e443]:
+                      - generic [ref=e444]: 食品
+                      - generic [ref=e445]: 最终产品
+                      - generic [ref=e446]: 标准
+                    - generic [ref=e447]:
+                      - generic [ref=e448]: 14 单位
+                      - generic [ref=e449]: "@ ¥18.81"
+                  - paragraph [ref=e451]: ¥263
+                - generic [ref=e452] [cursor=pointer]:
+                  - img "木材" [ref=e453]
+                  - generic [ref=e455]:
+                    - generic [ref=e456]:
+                      - generic [ref=e457]: 木材
+                      - generic [ref=e458]: 原材料
+                      - generic [ref=e459]: 标准
+                    - generic [ref=e460]:
+                      - generic [ref=e461]: 9 单位
+                      - generic [ref=e462]: "@ ¥22.13"
+                  - paragraph [ref=e464]: ¥199
+            - generic [ref=e465]:
+              - generic [ref=e466]:
+                - heading "💼 投资组合" [level=3] [ref=e467]
+                - button "查看详情 →" [ref=e468] [cursor=pointer]
+              - generic [ref=e469]:
+                - generic [ref=e470]:
+                  - paragraph [ref=e471]: ¥0
+                  - paragraph [ref=e472]: 市值
+                - generic [ref=e473]:
+                  - paragraph [ref=e474]: +¥0
+                  - paragraph [ref=e475]: 盈亏
+                - generic [ref=e476]:
+                  - paragraph [ref=e477]: +0.0%
+                  - paragraph [ref=e478]: 收益率
+              - generic [ref=e481]:
+                - paragraph [ref=e482]: 📈
+                - paragraph [ref=e483]: 暂无持仓
+                - paragraph [ref=e484]: 在股票市场购买股票
+  - button "!" [ref=e485] [cursor=pointer]:
+    - img [ref=e486]
+    - generic [ref=e489]: "!"

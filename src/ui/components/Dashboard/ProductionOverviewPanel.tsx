@@ -25,7 +25,7 @@ export const ProductionOverviewPanel: React.FC<ProductionOverviewPanelProps> = (
   const efficiencyStyle = getEfficiencyStyle(stats.capacityUtilization);
 
   const formatOutput = (value: number): string => {
-    if (value >= 1000) {
+    if (Math.abs(value) >= 1000) {
       return `${(value / 1000).toFixed(1)}K`;
     }
     return value.toFixed(1);

@@ -1,0 +1,377 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - navigation:
+          - generic:
+            - button:
+              - generic: 📊
+              - generic: 仪表盘
+            - button:
+              - generic: 🏭
+              - generic: 生产管理
+            - button:
+              - generic: 🔗
+              - generic: 产业链
+            - button:
+              - generic: 💹
+              - generic: 市场交易
+            - button:
+              - generic: 🏪
+              - generic: 零售管理
+            - button:
+              - generic: 📈
+              - generic: 财务报表
+            - button:
+              - generic: 🏛️
+              - generic: 竞争与投资
+            - button:
+              - generic: 📰
+              - generic: 商业周刊
+            - button:
+              - generic: ⚙️
+              - generic: 设置
+      - generic:
+        - banner:
+          - generic:
+            - generic:
+              - button: ☰
+              - generic:
+                - generic: SC
+              - heading [level=1]: 供应链指挥官
+            - generic:
+              - generic:
+                - text: 游戏时间：
+                - generic: 第1年 1月2日
+              - generic:
+                - button: 1x
+                - button: 2x
+                - button: 4x
+                - button: 8x
+              - button: ⏸
+            - generic:
+              - generic:
+                - generic: 现金
+                - generic: ¥17.59M
+              - button:
+                - generic: ☀️
+              - generic:
+                - generic: 👤
+        - main:
+          - generic:
+            - generic:
+              - heading [level=2]: 控制台
+              - generic:
+                - generic: 第1年 1月2日
+                - generic: 62.10ms/tick
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 净资产
+                    - paragraph: ¥20.07M
+                  - generic: 💎
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 现金
+                    - paragraph: ¥17.59M
+                  - generic: 💰
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 日利润
+                    - paragraph: ¥-414.9K
+                  - generic: 📉
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 建筑数量
+                    - paragraph: 4座
+                    - paragraph: 3座运行中
+                  - generic: 🏭
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 投资市值
+                    - paragraph: ¥0
+                  - generic: 📊
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: 信用评级
+                    - paragraph: AA
+                    - paragraph: "信用分: 700"
+                  - generic: ⭐
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - heading [level=3]: 🔔 告警中心
+                  - generic:
+                    - generic:
+                      - generic:
+                        - paragraph: ✅
+                        - paragraph: 一切正常
+                        - paragraph: 当前无需关注的问题
+                - generic:
+                  - generic:
+                    - heading [level=3]: 📈 财务趋势
+                    - generic:
+                      - generic: 日收益:¥-414.9K
+                  - generic:
+                    - generic:
+                      - paragraph: 累计收入
+                      - paragraph: ¥0
+                    - generic:
+                      - paragraph: 累计支出
+                      - paragraph: ¥414.9K
+                    - generic:
+                      - paragraph: 累计利润
+                      - paragraph: ¥-414.9K
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - heading [level=3]: 现金余额趋势
+                          - generic:
+                            - generic: ¥17585098.52
+                - generic:
+                  - generic:
+                    - heading [level=3]: 🏭 生产概览
+                    - button: 查看详情 →
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: 产能利用率
+                        - generic: 🟢 优秀
+                      - generic:
+                        - generic: "100.0"
+                        - generic: "%"
+                    - generic:
+                      - generic:
+                        - generic: 总产出/tick
+                      - generic:
+                        - generic: "880.0"
+                        - generic: 单位
+                  - generic:
+                    - paragraph: 主要产出
+                    - generic:
+                      - generic:
+                        - generic: "1"
+                        - img
+                        - generic: 粮食
+                        - generic: 400.0/tick
+                      - generic:
+                        - generic: "2"
+                        - img
+                        - generic: 钢材
+                        - generic: 280.0/tick
+                      - generic:
+                        - generic: "3"
+                        - img
+                        - generic: 铁矿石
+                        - generic: 200.0/tick
+              - generic:
+                - generic:
+                  - generic:
+                    - heading [level=3]: 📊 市场动态
+                    - button: 查看详情 →
+                  - generic:
+                    - generic:
+                      - paragraph: "0"
+                      - paragraph: 上涨
+                    - generic:
+                      - paragraph: "4"
+                      - paragraph: 持平
+                    - generic:
+                      - paragraph: "76"
+                      - paragraph: 下跌
+                  - generic:
+                    - generic:
+                      - paragraph: 📈 涨幅榜
+                      - generic:
+                        - generic:
+                          - img
+                          - generic: 豪华汽车
+                          - generic: +0.0%
+                        - generic:
+                          - img
+                          - generic: 光伏系统
+                          - generic: +0.0%
+                        - generic:
+                          - img
+                          - generic: 储能系统
+                          - generic: +0.0%
+                    - generic:
+                      - paragraph: 📉 跌幅榜
+                      - generic:
+                        - generic:
+                          - img
+                          - generic: 仿制药
+                          - generic: "-2.0%"
+                        - generic:
+                          - img
+                          - generic: 食品
+                          - generic: "-2.0%"
+                        - generic:
+                          - img
+                          - generic: 零食
+                          - generic: "-2.0%"
+                  - generic:
+                    - paragraph: 💡 交易机会
+                    - generic:
+                      - paragraph: 当前无明显机会
+                  - generic:
+                    - generic:
+                      - generic: 我的挂单
+                      - generic:
+                        - generic:
+                          - generic: 买 0
+                          - text: /
+                          - generic: 卖 0
+                        - generic: ¥0
+                - generic:
+                  - generic:
+                    - heading [level=3]: 📦 库存概览
+                    - button: 去交易 →
+                  - generic:
+                    - generic:
+                      - paragraph: ¥480.3K
+                      - paragraph: 总价值
+                    - generic:
+                      - paragraph: "6"
+                      - paragraph: 商品种类
+                  - generic:
+                    - button: 全部商品
+                    - button: 按分类
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 煤炭
+                            - generic: 原材料
+                            - generic: 标准
+                          - generic:
+                            - generic: 1200 单位
+                            - generic: "@ ¥156.80"
+                        - generic:
+                          - paragraph: ¥188.2K
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 钢材
+                            - generic: 基础加工
+                            - generic: 标准
+                          - generic:
+                            - generic: 280 单位
+                            - generic: "@ ¥509.60"
+                        - generic:
+                          - paragraph: ¥142.7K
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 铁矿石
+                            - generic: 原材料
+                            - generic: 标准
+                          - generic:
+                            - generic: 2200 单位
+                            - generic: "@ ¥49.00"
+                        - generic:
+                          - paragraph: ¥107.8K
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 铜矿石
+                            - generic: 原材料
+                            - generic: 标准
+                          - generic:
+                            - generic: 300 单位
+                            - generic: "@ ¥78.40"
+                        - generic:
+                          - paragraph: ¥23.5K
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 粮食
+                            - generic: 原材料
+                            - generic: 标准
+                          - generic:
+                            - generic: 900 单位
+                            - generic: "@ ¥14.70"
+                        - generic:
+                          - paragraph: ¥13.2K
+                      - generic:
+                        - img
+                        - generic:
+                          - generic:
+                            - generic: 木材
+                            - generic: 原材料
+                            - generic: 标准
+                          - generic:
+                            - generic: 200 单位
+                            - generic: "@ ¥24.50"
+                        - generic:
+                          - paragraph: ¥4.9K
+                - generic:
+                  - generic:
+                    - heading [level=3]: 💼 投资组合
+                    - button: 查看详情 →
+                  - generic:
+                    - generic:
+                      - paragraph: ¥0
+                      - paragraph: 市值
+                    - generic:
+                      - paragraph: +¥0
+                      - paragraph: 盈亏
+                    - generic:
+                      - paragraph: +0.0%
+                      - paragraph: 收益率
+                  - generic:
+                    - generic:
+                      - generic:
+                        - paragraph: 📈
+                        - paragraph: 暂无持仓
+                        - paragraph: 在股票市场购买股票
+      - button:
+        - img
+        - generic:
+          - generic: "!"
+  - dialog "🎮 欢迎来到供应链指挥官！" [ref=e58]:
+    - heading "🎮 欢迎来到供应链指挥官！" [level=2] [ref=e60]
+    - generic [ref=e61]:
+      - paragraph [ref=e62]: 这是一款经济模拟游戏，你将经营一家公司，通过生产、交易和投资来扩展你的商业帝国。
+      - generic [ref=e63]:
+        - generic [ref=e65]:
+          - generic [ref=e66]: 📚
+          - generic [ref=e67]:
+            - paragraph [ref=e68]: 游戏基础
+            - paragraph [ref=e69]: 了解游戏的基本操作和界面
+        - generic [ref=e71]:
+          - generic [ref=e72]: 🏭
+          - generic [ref=e73]:
+            - paragraph [ref=e74]: 生产系统
+            - paragraph [ref=e75]: 学习如何建造和管理生产建筑
+        - generic [ref=e77]:
+          - generic [ref=e78]: 📊
+          - generic [ref=e79]:
+            - paragraph [ref=e80]: 市场交易
+            - paragraph [ref=e81]: 学习如何在市场上买卖商品
+        - generic [ref=e83]:
+          - generic [ref=e84]: 💰
+          - generic [ref=e85]:
+            - paragraph [ref=e86]: 财务管理
+            - paragraph [ref=e87]: 学习如何管理公司财务
+      - paragraph [ref=e88]: 教程将引导你了解游戏的各个系统
+    - generic [ref=e89]:
+      - button "我已了解，跳过教程" [active] [ref=e90] [cursor=pointer]
+      - button "开始教程 🚀" [ref=e91] [cursor=pointer]
+    - button "Close" [ref=e92] [cursor=pointer]:
+      - img [ref=e93]
+      - generic [ref=e95]: Close

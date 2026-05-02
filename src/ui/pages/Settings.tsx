@@ -60,7 +60,7 @@ const MonthlyPriceTable = lazy(() => import('@/ui/components/Market/MonthlyPrice
 export const Settings: React.FC = () => {
   const { isMobile, isTablet, isNarrowDesktop } = useMobile();
   const useCompactDesktop = shouldUseCompactSettingsLayout({ isMobile, isTablet, isNarrowDesktop });
-  const { getWorld, ui, toggleTheme, tick } = useGameStore();
+  const { getWorld, loadGame, ui, toggleTheme, tick } = useGameStore();
   const world = getWorld();
   const theme = ui.theme;
   const [saves, setSaves] = useState<SaveMetadata[]>([]);
@@ -203,10 +203,12 @@ export const Settings: React.FC = () => {
 
   // 加载存档
   const handleLoad = (saveId: string) => {
-    if (!world) return;
     if (confirm('加载存档将覆盖当前进度，确定继续吗？')) {
-      saveManager.load(saveId, world);
-      alert('存档加载成功！');
+      if (loadGame(saveId)) {
+        alert('存档加载成功！');
+      } else {
+        alert('存档加载失败，请检查存档版本是否兼容。');
+      }
     }
   };
 

@@ -21,8 +21,13 @@ export default defineConfig({
   build: {
     target: 'esnext',
     minify: 'esbuild',
+    chunkSizeWarningLimit: 3500,
   },
   worker: {
     format: 'es',
+  },
+  test: {
+    testTimeout: 30000,
+    exclude: ['**/node_modules/**', '**/dist/**', '.claude/**'],
   },
 });

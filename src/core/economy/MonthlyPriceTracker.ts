@@ -7,6 +7,11 @@ import { GameWorld, tickToDate } from '../world/GameWorld';
 import { ACTUAL_GOODS_COUNT, GOODS_COUNT, TICKS_PER_DAY, MAX_SUPPLY_DEMAND_RATIO } from '../constants';
 import { ALL_GOODS, GOODS_BY_ID } from '@/data/goods';
 import { getPriceCache } from '../market/PriceCache';
+import { forEachRetainedTradeOldestFirst } from '../market/TradeLedger';
+
+function getStorage(): Storage | null {
+  return typeof localStorage === 'undefined' ? null : localStorage;
+}
 
 // ==================== 类型定义 ====================
 
@@ -118,6 +123,7 @@ class PriceExtremeTracker {
   private tradeCounts: Uint32Array;
   private supplyDemandRatioSum: Float32Array;
   private supplyDemandCount: Uint32Array;
+  private processedTradeCount: number;
   
   constructor() {
     this.highs = new Float32Array(GOODS_COUNT);
@@ -127,6 +133,7 @@ class PriceExtremeTracker {
     this.tradeCounts = new Uint32Array(GOODS_COUNT);
     this.supplyDemandRatioSum = new Float32Array(GOODS_COUNT);
     this.supplyDemandCount = new Uint32Array(GOODS_COUNT);
+    this.processedTradeCount = 0;
     this.reset();
   }
   
@@ -138,12 +145,47 @@ class PriceExtremeTracker {
     this.tradeCounts.fill(0);
     this.supplyDemandRatioSum.fill(0);
     this.supplyDemandCount.fill(0);
+    this.processedTradeCount = 0;
+  }
+
+  resetFrom(world: GameWorld): void {
+    this.reset();
+    this.processedTradeCount = world.trades.count;
   }
   
   update(world: GameWorld): void {
     const g = world.goods;
     const priceCache = getPriceCache();
     priceCache.update(world);
+    const t = world.trades;
+    const retainedStart = Math.max(0, t.count - t.maxTrades);
+    const startLogicalIndex = Math.max(this.processedTradeCount, retainedStart);
+    const newTradeVolumes = new Float32Array(GOODS_COUNT);
+
+    forEachRetainedTradeOldestFirst(world, (tradeIdx, logicalIndex) => {
+      if (logicalIndex < startLogicalIndex) return;
+
+      const goodsId = t.goodsIds[tradeIdx];
+      if (goodsId >= ACTUAL_GOODS_COUNT) return;
+
+      const quantity = t.quantities[tradeIdx];
+      const tradePrice = t.prices[tradeIdx];
+      if (quantity <= 0 || tradePrice <= 0) return;
+
+      newTradeVolumes[goodsId] += quantity;
+      this.volumes[goodsId] += quantity;
+      this.values[goodsId] += quantity * tradePrice;
+      this.tradeCounts[goodsId]++;
+
+      if (tradePrice > this.highs[goodsId]) {
+        this.highs[goodsId] = tradePrice;
+      }
+
+      if (tradePrice < this.lows[goodsId]) {
+        this.lows[goodsId] = tradePrice;
+      }
+    });
+    this.processedTradeCount = t.count;
     
     for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
       const price = g.prices[i];
@@ -158,23 +200,16 @@ class PriceExtremeTracker {
         this.lows[i] = price;
       }
       
-      // 累计成交量和成交额（从PriceCache获取）
-      const volume1h = priceCache.getVolume1h(i);
-      const stats = priceCache.getStats(i);
-      if (stats && volume1h > 0) {
-        this.volumes[i] += volume1h;
-        this.values[i] += volume1h * (stats.vwap || price);
-        this.tradeCounts[i]++;
-      }
-      
-      // 累计供需比（限制在合理范围内）
+      // 累计供需比（限制在合理范围内），并把真实成交作为已满足需求纳入口径
       const supply = g.supplies[i];
       const demand = g.demands[i];
-      if (supply > 0 || demand > 0) {
-        // 计算供需比，使用更安全的分母（至少为1）
-        // 并限制最大值为MAX_SUPPLY_DEMAND_RATIO
-        const safeDenominator = Math.max(supply, 1);
-        const ratio = Math.min(demand / safeDenominator, MAX_SUPPLY_DEMAND_RATIO);
+      const recentVolume = newTradeVolumes[i];
+      if (supply > 0 || demand > 0 || recentVolume > 0) {
+        const fulfilledDemand = recentVolume > 0 ? recentVolume : 0;
+        const effectiveDemand = demand + fulfilledDemand;
+        const effectiveSupply = supply + fulfilledDemand;
+        const safeDenominator = Math.max(effectiveSupply, 1);
+        const ratio = Math.min(effectiveDemand / safeDenominator, MAX_SUPPLY_DEMAND_RATIO);
         this.supplyDemandRatioSum[i] += ratio;
         this.supplyDemandCount[i]++;
       }
@@ -232,6 +267,7 @@ class MonthlyPriceTrackerImpl {
       this.lastYear = date.year;
       this.monthStartTick = world.tick;
       this.captureSnapshot(world);
+      this.extremeTracker.resetFrom(world);
       this.initialized = true;
       return;
     }
@@ -245,7 +281,7 @@ class MonthlyPriceTrackerImpl {
       this.lastMonth = date.month;
       this.lastYear = date.year;
       this.monthStartTick = world.tick;
-      this.extremeTracker.reset();
+      this.extremeTracker.resetFrom(world);
       this.captureSnapshot(world);
     }
     
@@ -549,8 +585,11 @@ class MonthlyPriceTrackerImpl {
   
   /** 从localStorage加载 */
   private loadFromStorage(): void {
+    const storage = getStorage();
+    if (!storage) return;
+
     try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
+      const stored = storage.getItem(this.STORAGE_KEY);
       if (stored) {
         const data = JSON.parse(stored);
         if (Array.isArray(data)) {
@@ -564,8 +603,11 @@ class MonthlyPriceTrackerImpl {
   
   /** 保存到localStorage */
   private saveToStorage(): void {
+    const storage = getStorage();
+    if (!storage) return;
+
     try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.reports));
+      storage.setItem(this.STORAGE_KEY, JSON.stringify(this.reports));
     } catch (e) {
       console.warn('[MonthlyPriceTracker] Failed to save to storage:', e);
     }

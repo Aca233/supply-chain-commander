@@ -6,6 +6,7 @@
 import { GameWorld } from '@/core/world/GameWorld';
 import { GOODS_COUNT } from '@/core/constants';
 import { getStock, getHoldings, Holding } from './StockMarket';
+import { calculateCompanyAssetBreakdown } from './FinancialSnapshot';
 
 /**
  * 收购类型
@@ -120,25 +121,15 @@ export function evaluateCompanyValue(world: GameWorld, companyId: number): {
   enterpriseValue: number;
   fairValue: number;
 } {
-  // 账面价值
-  let bookValue = world.companies.cash[companyId];
-  
-  for (let i = 0; i < GOODS_COUNT; i++) {
-    bookValue += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
-  }
-  
-  for (let i = 0; i < world.buildings.count; i++) {
-    if (world.buildings.owners[i] === companyId) {
-      bookValue += 500000;
-    }
-  }
+  const assetBreakdown = calculateCompanyAssetBreakdown(world, companyId);
+  const bookValue = assetBreakdown.totalAssets;
   
   // 市场价值（如果上市）
   const stock = getStock(companyId);
   const marketValue = stock ? stock.marketCap : bookValue * 1.5;
   
   // 企业价值 = 市值 + 净债务
-  const netDebt = 0; // TODO: 从银行系统获取
+  const netDebt = assetBreakdown.liabilities - assetBreakdown.cash;
   const enterpriseValue = marketValue + netDebt;
   
   // 公允价值 = 账面价值 + 未来盈利折现

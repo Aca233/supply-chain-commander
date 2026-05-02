@@ -24,10 +24,15 @@ vi.mock('@/data/buildings', () => ({
     },
   ],
   isRetailBuilding: () => false,
-  getBuildingProduction: () => ({
+}));
+
+vi.mock('@/core/production/ProductionEngine', () => ({
+  getBuildingRecipeFromInstance: () => ({
     outputs: [{ goodsId: 1, amount: 10 }],
     inputs: [],
     ticksRequired: 1,
+    laborRequired: 0,
+    energyRequired: 0,
   }),
 }));
 
@@ -71,7 +76,6 @@ function createWorld(isActive: 0 | 1) {
   return {
     buildings: {
       types: new Uint8Array([1]),
-      outputModeIds: new Uint8Array([0]),
       levels: new Uint8Array([1]),
       efficiencies: new Float32Array([1]),
       isActive: new Uint8Array([isActive]),
@@ -104,7 +108,7 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥-300/日');
+    expect(html).toContain('¥-13/日');
   });
 
   it('keeps showing positive estimated profit when the building is active', () => {
@@ -122,6 +126,6 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥700/日');
+    expect(html).toContain('¥988/日');
   });
 });

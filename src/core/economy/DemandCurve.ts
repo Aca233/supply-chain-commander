@@ -7,8 +7,10 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { ALL_GOODS, GoodsDefinition, CONSUMER_GOODS, GoodsId } from '@/data/goods';
-import { GOODS_COUNT, DEMAND_SMOOTHING_FACTOR, TICKS_PER_DAY, ACTUAL_GOODS_COUNT, MAX_SUPPLY_DEMAND_RATIO } from '@/core/constants';
-import { ALL_BUILDINGS } from '@/data/buildings';
+import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
+import { GOODS_COUNT, TICKS_PER_DAY, ACTUAL_GOODS_COUNT, MAX_SUPPLY_DEMAND_RATIO, MAX_INPUTS } from '@/core/constants';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
+import { getDemandPressure } from './MarketStats';
 
 /**
  * 消费者层级定义
@@ -392,24 +394,20 @@ function getPerCapitaConsumption(goods: GoodsDefinition, tier: ConsumerTier): nu
 /**
  * 计算品质匹配度
  */
-function calculateQualityMatch(goods: GoodsDefinition, tier: ConsumerTier): number {
-  // 根据商品层级和消费者偏好计算匹配度
-  const goodsTier = goods.tier / 3; // 0-1
-  const preference = tier.qualityPreference;
-  
-  // 偏好匹配：差距越大匹配度越低
-  const mismatch = Math.abs(goodsTier - preference);
-  const matchScore = 1 - mismatch * 0.5;
-  
-  // 特殊商品处理
-  if (goods.key === 'premium-phone' && tier.qualityPreference < 0.5) {
-    return 0.1; // 低收入层很少买高端手机
+function calculateQualityMatch(_goods: GoodsDefinition, _tier: ConsumerTier): number {
+  return 1.0;
+}
+
+function calculateBudgetShareForGoods(goodsDef: GoodsDefinition): number {
+  let weightedBudgetShare = 0;
+  let totalPopulation = 0;
+
+  for (const tier of CONSUMER_TIERS) {
+    weightedBudgetShare += (tier.budgetShares.get(goodsDef.category) ?? 0) * tier.population;
+    totalPopulation += tier.population;
   }
-  if (goods.key === 'budget-phone' && tier.qualityPreference > 0.7) {
-    return 0.2; // 高收入层较少买平价手机
-  }
-  
-  return Math.max(0.1, matchScore);
+
+  return totalPopulation > 0 ? weightedBudgetShare / totalPopulation : 0;
 }
 
 /**
@@ -471,7 +469,7 @@ export function calculateMarketDemand(
     quantity: totalDemand,
     priceElasticity: weightedPriceElasticity / totalWeight,
     incomeElasticity: weightedIncomeElasticity / totalWeight,
-    budgetShare: 0.1, // TODO: 精确计算
+    budgetShare: calculateBudgetShareForGoods(goodsDef),
     tierBreakdown,
   };
 }
@@ -555,16 +553,6 @@ export interface DemandModifiers {
  */
 export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers): void {
   // 不再重置需求为0，而是使用滑动平均
-  // 使用统一的平滑系数（来自constants.ts）
-  const smoothingFactor = DEMAND_SMOOTHING_FACTOR;
-
-  // 非消费品需求由派生需求和机构需求逐tick重建，避免初始化占位值长期污染市场。
-  for (const goods of ALL_GOODS) {
-    if (!goods.isConsumerGood) {
-      world.goods.demands[goods.id] = 0;
-    }
-  }
-  
   // 计算每种消费品的需求
   for (const goods of CONSUMER_GOODS) {
     const result = calculateMarketDemand(world, goods.id);
@@ -655,58 +643,114 @@ export function updateWorldDemands(world: GameWorld, modifiers?: DemandModifiers
  * - 工厂需要：工业机器人、光伏系统、储能系统
  * - 发电站需要：风机叶片、光伏板
  */
+/**
+ * 计算商品当前价格相对基准价的弹性需求乘数
+ * Why: 派生需求与机构需求原本完全无视价格，导致价格触顶后下游仍按 batches 拉满，
+ *      形成"价格 3.5x 钉死、需求不退潮"的死锁。引入弹性后，价格越高需求越低。
+ * 适用范围：B2B 派生需求与机构需求；消费品需求已在 calculateMarketDemand 内应用。
+ */
+function priceElasticityMultiplier(world: GameWorld, goodsId: number): number {
+  const def = ALL_GOODS[goodsId];
+  if (!def) return 1.0;
+  const baseValue = world.goods.baseValues[goodsId] || def.basePrice || 0;
+  const currentPrice = world.goods.prices[goodsId] || 0;
+  if (baseValue <= 0 || currentPrice <= 0) return 1.0;
+  const priceRatio = currentPrice / baseValue;
+  // priceElasticity 通常为负（-0.2 到 -1.5），价格涨则需求降
+  // 防御：若 elasticity 配置为正或缺失，跳过（保持原行为）
+  const elasticity = def.priceElasticity ?? 0;
+  if (elasticity >= 0) return 1.0;
+  // 派生/机构场景全量应用弹性（之前 ×0.7 衰减不够，5 年模拟仍触顶）
+  // 限制乘数范围 [0.1, 2.5]：极端高价时需求最多衰减到 10%，刹车要足够强
+  return Math.max(0.1, Math.min(2.5, Math.pow(priceRatio, elasticity)));
+}
+
+const ELECTRICITY_UNITS_PER_POWER_POINT = 1000;
+
+function calculateOperationalElectricityDemand(world: GameWorld): number {
+  let totalDemand = 0;
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!world.buildings.isActive[buildingId]) continue;
+
+    const buildingTypeId = world.buildings.types[buildingId];
+    if (buildingTypeId === BuildingId.POWER_PLANT) continue;
+
+    const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
+    if (!buildingDef || buildingDef.powerConsumption <= 0) continue;
+
+    const level = Math.max(1, world.buildings.levels[buildingId] || 1);
+    const efficiency = Math.max(0.1, world.buildings.efficiencies[buildingId] || 1);
+    const levelMultiplier = buildingDef.capacityMultipliers[level - 1] ?? 1;
+
+    totalDemand +=
+      buildingDef.powerConsumption *
+      ELECTRICITY_UNITS_PER_POWER_POINT *
+      levelMultiplier *
+      efficiency;
+  }
+
+  return totalDemand * priceElasticityMultiplier(world, GoodsId.ELECTRICITY);
+}
+
 export function calculateDerivedDemand(world: GameWorld): void {
   // 派生需求衰减系数：防止上游需求过度膨胀
   const DERIVED_DEMAND_FACTOR = 0.6;
+  const BUFFER_REPLENISHMENT_DAYS = 3;
   
   // 临时存储派生需求增量
   const derivedDemands = new Float32Array(ACTUAL_GOODS_COUNT);
   
-  // 遍历所有建筑的生产配置
-  for (const building of ALL_BUILDINGS) {
-    const productionVariants = building.production.outputModes?.length
-      ? building.production.outputModes
-      : [building.production];
+  const buildings = world.buildings;
+  const operationalElectricityDemand = calculateOperationalElectricityDemand(world);
 
-    for (const production of productionVariants) {
-      const outputs = production.outputs || [];
-      const inputs = production.inputs || [];
+  if (operationalElectricityDemand > 0) {
+    derivedDemands[GoodsId.ELECTRICITY] += operationalElectricityDemand;
+    world.goods.demands[GoodsId.ELECTRICITY] = Math.max(
+      world.goods.demands[GoodsId.ELECTRICITY],
+      operationalElectricityDemand,
+    );
+  }
 
-      // 跳过无输出的配置（如纯采掘）
-      if (outputs.length === 0) continue;
+  // 只根据真实存在且活跃的建筑生成派生需求，不能用全建筑模板虚构供应链需求。
+  for (let buildingId = 0; buildingId < buildings.count; buildingId++) {
+    if (!buildings.isActive[buildingId]) continue;
 
-      // 计算输出商品的总需求
-      let outputDemandTotal = 0;
-      for (const output of outputs) {
-        outputDemandTotal += world.goods.demands[output.goodsId] || 0;
-      }
+    const production = getBuildingRecipeFromInstance(world, buildingId);
+    if (production.inputs.length === 0 || production.outputs.length === 0) continue;
 
-      // 如果输出商品没有需求，跳过
-      if (outputDemandTotal <= 0) continue;
+    let maxBatches = 0;
+    for (const output of production.outputs) {
+      const demand = world.goods.demands[output.goodsId] || 0;
+      const batchesNeeded = demand / output.amount;
+      maxBatches = Math.max(maxBatches, batchesNeeded);
+    }
 
-      // 计算输出总量（用于比例计算）
-      let outputAmountTotal = 0;
-      for (const output of outputs) {
-        outputAmountTotal += output.amount;
-      }
+    const level = Math.max(1, buildings.levels[buildingId] || 1);
+    const efficiency = Math.max(0.1, buildings.efficiencies[buildingId] || 1);
+    const ticksRequired = Math.max(1, production.ticksRequired || 1);
+    const levelCapacityMultiplier = 1 + (level - 1) * 0.25;
+    const dailyBatchCapacity = Math.max(0, (TICKS_PER_DAY / ticksRequired) * efficiency * levelCapacityMultiplier);
+    const effectiveBatches = maxBatches > 0 ? Math.min(maxBatches, dailyBatchCapacity) : 0;
+    const inputOffset = buildingId * MAX_INPUTS;
 
-      if (outputAmountTotal <= 0) continue;
+    for (let inputIndex = 0; inputIndex < production.inputs.length; inputIndex++) {
+      const input = production.inputs[inputIndex];
+      const currentBuffer = buildings.inputBuffers[inputOffset + inputIndex] || 0;
+      const targetBuffer = (input.amount * 7 * TICKS_PER_DAY) / ticksRequired;
+      const missingBuffer = Math.max(0, targetBuffer - currentBuffer);
+      const missingBufferRatio = targetBuffer > 0
+        ? Math.max(0, Math.min(1, missingBuffer / targetBuffer))
+        : 1;
+      if (missingBufferRatio <= 0) continue;
 
-      // 计算需要的生产批次数（基于需求和产出比例）
-      // 使用最大输出商品的需求/产出比
-      let maxBatches = 0;
-      for (const output of outputs) {
-        const demand = world.goods.demands[output.goodsId] || 0;
-        const batchesNeeded = demand / output.amount;
-        maxBatches = Math.max(maxBatches, batchesNeeded);
-      }
-
-      // 为每个输入商品添加派生需求
-      for (const input of inputs) {
-        // 派生需求 = 批次数 × 输入量 × 衰减系数
-        const derivedDemand = maxBatches * input.amount * DERIVED_DEMAND_FACTOR;
-        derivedDemands[input.goodsId] += derivedDemand;
-      }
+      const elasticityMult = priceElasticityMultiplier(world, input.goodsId);
+      const outputPullDemand =
+        effectiveBatches * input.amount * DERIVED_DEMAND_FACTOR * elasticityMult * missingBufferRatio;
+      const structuralReplenishmentDemand =
+        Math.min(missingBuffer, input.amount * dailyBatchCapacity * BUFFER_REPLENISHMENT_DAYS) * elasticityMult;
+      const derivedDemand = Math.max(outputPullDemand, structuralReplenishmentDemand);
+      derivedDemands[input.goodsId] += derivedDemand;
     }
   }
   
@@ -764,49 +808,55 @@ function addInstitutionalDemand(world: GameWorld, derivedDemands: Float32Array):
   // 经济周期调整系数
   const cycleMultiplier = 0.8 + world.economyStats.cyclePosition * 0.4;
   
-  // 时间增长系数（每年增长10%，上限2倍）
+  // 时间增长系数（每年增长 5%，上限 1.3 倍）
+  // Why: 5 年模拟显示原 2.0 上限把机构需求在 Y5 拉爆，建材成品/电子元件/航空部件/包装材料/抗生素持续触 3.5x
+  // 价格天花板。年增 10%/上限 2x 等同于把市场逼到通胀失控状态；下调到年增 5%/上限 1.3x 后允许中速扩张。
   const yearsElapsed = world.tick / (TICKS_PER_DAY * 360);
-  const growthMultiplier = Math.min(2.0, 1.0 + yearsElapsed * 0.1);
+  const growthMultiplier = Math.min(1.3, 1.0 + yearsElapsed * 0.05);
   
   // 基础需求系数
   const baseFactor = cycleMultiplier * growthMultiplier;
   
   // 机构需求配置表：[商品ID, 基础日需求量, 机构类型描述]
+  // Why: 5 年长周期模拟显示 13 项 B2G/机构品长期触 3.5x 价格天花板，根因是机构需求过猛
+  // 已按 Y5 实测压力差异化下调（触顶最严重的 ×0.4，边缘的 ×0.5-0.6，未触顶保持）
   const institutionalDemands: Array<[number, number, string]> = [
     // 医疗机构需求
-    [GoodsId.VACCINE, 50, '医院-疫苗'],
-    [GoodsId.ANTIBIOTICS, 100, '医院-抗生素'],
-    [GoodsId.MEDICAL_SUPPLIES, 200, '医院-医用耗材'],
+    [GoodsId.VACCINE, 20, '医院-疫苗'],
+    [GoodsId.ANTIBIOTICS, 40, '医院-抗生素'],
+    [GoodsId.MEDICAL_SUPPLIES, 400, '医院-医用耗材'],
     [GoodsId.MEDICAL_DEVICE, 5, '医院-诊断设备'],
     [GoodsId.OTC_DRUG, 150, '医院-基础药品'],
-    
+
     // 航空企业需求
-    [GoodsId.AIRCRAFT_PARTS, 20, '航空-航空部件'],
-    
+    [GoodsId.AIRCRAFT_PARTS, 10, '航空-航空部件'],
+
     // 能源企业需求
-    [GoodsId.SOLAR_PANEL, 100, '能源-光伏板'],
-    [GoodsId.WIND_BLADE, 30, '能源-风机叶片'],
-    [GoodsId.SOLAR_SYSTEM, 10, '能源-光伏系统'],
-    [GoodsId.ENERGY_STORAGE, 8, '能源-储能系统'],
-    
+    [GoodsId.SOLAR_PANEL, 60, '能源-光伏板'],
+    [GoodsId.WIND_BLADE, 15, '能源-风机叶片'],
+    [GoodsId.SOLAR_SYSTEM, 5, '能源-光伏系统'],
+    [GoodsId.ENERGY_STORAGE, 5, '能源-储能系统'],
+
     // 制造企业需求
-    [GoodsId.INDUSTRIAL_ROBOT, 15, '工厂-工业机器人'],
-    [GoodsId.BUILDING_PRODUCTS, 200, '建筑-建材成品'],
-    
+    [GoodsId.INDUSTRIAL_ROBOT, 8, '工厂-工业机器人'],
+    [GoodsId.BUILDING_PRODUCTS, 100, '建筑-建材成品'],
+
     // 物流企业需求
-    [GoodsId.PACKAGING, 500, '物流-包装材料'],
+    [GoodsId.PACKAGING, 200, '物流-包装材料'],
   ];
   
-  // 应用机构需求
+  // 应用机构需求（含价格弹性反馈）
+  // Why: 机构虽是 B2G 必需品，但医院/政府/能源企业有预算约束；价格涨到 3x 时实际采购量会减少
   for (const [goodsId, baseDemand, _desc] of institutionalDemands) {
     if (goodsId < ACTUAL_GOODS_COUNT) {
-      const dailyDemand = baseDemand * baseFactor;
+      const elasticityMult = priceElasticityMultiplier(world, goodsId);
+      const dailyDemand = baseDemand * baseFactor * elasticityMult;
       // 转换为每tick需求（除以24）
       const tickDemand = dailyDemand / TICKS_PER_DAY;
-      
+
       // 累加到派生需求中
       derivedDemands[goodsId] += tickDemand;
-      
+
       // 同时直接更新世界需求（确保需求立即生效）
       const currentDemand = world.goods.demands[goodsId];
       world.goods.demands[goodsId] = Math.max(currentDemand, dailyDemand);
@@ -874,9 +924,10 @@ export function decayUnmetDemand(world: GameWorld): void {
   if (world.tick % TICKS_PER_DAY !== 0) return;
 
   const DECAY_RATE = 0.9;  // 保留90%的未满足需求
+  const pressure = world.goods.demandPressure;
 
   for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
-    let currentDemand = world.goods.demands[i];
+    let currentDemand = pressure[i];
     const supply = world.goods.supplies[i];
 
     // 强制供需比约束
@@ -884,11 +935,11 @@ export function decayUnmetDemand(world: GameWorld): void {
       const currentRatio = currentDemand / supply;
       if (currentRatio > MAX_SUPPLY_DEMAND_RATIO) {
         currentDemand = supply * MAX_SUPPLY_DEMAND_RATIO;
-        world.goods.demands[i] = currentDemand;
+        pressure[i] = currentDemand;
       }
     } else if (currentDemand > 100000) {
       currentDemand = 100000;
-      world.goods.demands[i] = currentDemand;
+      pressure[i] = currentDemand;
     }
 
     // 只对未满足的需求部分进行衰减
@@ -896,7 +947,7 @@ export function decayUnmetDemand(world: GameWorld): void {
       const satisfiedRatio = supply / currentDemand;
       const satisfiedDemand = currentDemand * satisfiedRatio;
       const unsatisfiedDemand = currentDemand * (1 - satisfiedRatio);
-      world.goods.demands[i] = satisfiedDemand + unsatisfiedDemand * DECAY_RATE;
+      pressure[i] = satisfiedDemand + unsatisfiedDemand * DECAY_RATE;
     }
 
     // 供给平滑衰减已移至PriceEngine统一处理，此处仅衰减需求
@@ -908,10 +959,10 @@ export function decayUnmetDemand(world: GameWorld): void {
     let totalSupply = 0;
     let dormantCount = 0;
     for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
-      totalDemand += world.goods.demands[i];
+      totalDemand += getDemandPressure(world, i);
       totalSupply += world.goods.supplies[i];
       if (world.goods.supplies[i] < 1) dormantCount++;
     }
-    console.log(`[需求衰减 T${world.tick}] 总需求:${totalDemand.toFixed(0)}, 总供给:${totalSupply.toFixed(0)}, 零供应:${dormantCount}`);
+    console.log(`[需求衰减 T${world.tick}] 总缺口:${totalDemand.toFixed(0)}, 总供给:${totalSupply.toFixed(0)}, 零供应:${dormantCount}`);
   }
 }

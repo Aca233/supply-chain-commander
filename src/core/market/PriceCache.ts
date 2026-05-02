@@ -3,7 +3,7 @@
  * 批量预计算所有商品的VWAP和Volume，避免重复遍历交易历史
  */
 
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '../constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '../constants';
 import { GameWorld } from '../world/GameWorld';
 import { forEachRetainedTradeNewestFirst } from './TradeLedger';
 
@@ -83,8 +83,8 @@ export class PriceCache {
     }
     
     const t = world.trades;
-    const startTick24h = currentTick - 24;
-    const startTick1h = currentTick - 1;
+    const startTick24h = currentTick - TICKS_PER_DAY;
+    const startTick1h = currentTick - TICKS_PER_DAY;
     
     // 重置临时累加器
     this.tempValue.fill(0);

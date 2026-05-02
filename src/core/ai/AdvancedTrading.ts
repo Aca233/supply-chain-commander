@@ -11,10 +11,12 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { ACTUAL_GOODS_COUNT, AI_BUY_ORDER_EXPIRY, AI_SELL_ORDER_EXPIRY, GOODS_COUNT } from '@/core/constants';
 import { createBuyOrder, createSellOrder, getOrderBookView } from '@/core/market/OrderBook';
-import { AIPersonality } from './AIPersonality';
+import { AIPersonality, getCompanyPersonality } from './AIPersonality';
 import { BEHAVIOR_PATTERNS } from './PersonalityBehaviors';
+import { zicStrategy } from './ZICTrader';
+import { zipStrategy } from './ZIPTrader';
 import { 
   predictPrice, 
   calculateTechnicalIndicators,
@@ -41,7 +43,9 @@ export type TradingStrategyType =
   | 'market_making'      // 做市商
   | 'value_investing'    // 价值投资
   | 'scalping'           // 短线快进快出
-  | 'swing_trading';     // 波段交易
+  | 'swing_trading'      // 波段交易
+  | 'zic'                // BSE Zero-Intelligence Constrained（约束下随机报价）
+  | 'zip';               // BSE Zero-Intelligence Plus（自适应利润率学习）
 
 /**
  * 交易信号
@@ -216,28 +220,31 @@ function selectStrategiesForPersonality(personality: AIPersonality): TradingStra
   
   switch (personality.type) {
     case 'aggressive':
-      strategies.push('momentum', 'trend_following', 'scalping');
+      strategies.push('momentum', 'trend_following', 'scalping', 'zip');
       break;
     case 'conservative':
-      strategies.push('value_investing', 'mean_reversion');
+      strategies.push('value_investing', 'mean_reversion', 'zic');
       break;
     case 'opportunist':
-      strategies.push('arbitrage', 'momentum', 'market_making');
+      strategies.push('arbitrage', 'momentum', 'market_making', 'zip');
       break;
     case 'specialist':
       strategies.push('trend_following', 'swing_trading');
       break;
     case 'diversified':
-      strategies.push('value_investing', 'mean_reversion', 'swing_trading');
+      strategies.push('value_investing', 'mean_reversion', 'swing_trading', 'zic');
       break;
     case 'innovator':
-      strategies.push('momentum', 'trend_following');
+      strategies.push('momentum', 'trend_following', 'zip');
       break;
     case 'cost_leader':
-      strategies.push('mean_reversion', 'scalping');
+      strategies.push('mean_reversion', 'scalping', 'zic');
       break;
     case 'premium':
       strategies.push('value_investing', 'swing_trading');
+      break;
+    case 'pioneer':
+      strategies.push('arbitrage', 'value_investing', 'zip');
       break;
   }
   
@@ -580,14 +587,17 @@ export function generateTradingSignals(
   
   const signals: TradingSignal[] = [];
   
+  // ZIC/ZIP 需要 personality 信息
+  const personality = getCompanyPersonality(world, companyId);
+
   for (const goodsId of goodsIds) {
     const indicators = calculateTechnicalIndicators(world, goodsId);
     const prediction = predictPrice(world, goodsId);
-    
+
     // 应用每个活跃策略
     for (const strategy of session.activeStrategies) {
       let signal: TradingSignal | null = null;
-      
+
       switch (strategy) {
         case 'trend_following':
           signal = trendFollowingStrategy(world, goodsId, indicators, prediction);
@@ -607,8 +617,14 @@ export function generateTradingSignals(
         case 'swing_trading':
           signal = swingTradingStrategy(world, goodsId, indicators, prediction);
           break;
+        case 'zic':
+          if (personality) signal = zicStrategy(world, companyId, goodsId, personality);
+          break;
+        case 'zip':
+          if (personality) signal = zipStrategy(world, companyId, goodsId, personality);
+          break;
       }
-      
+
       if (signal && signal.strength >= 50) {
         signals.push(signal);
       }
@@ -914,7 +930,7 @@ export function executeTakeBuyOrders(
         goodsId,
         sellQuantity,
         buyOrder.price, // 使用买方价格，确保立即成交
-        24 * 3
+        AI_SELL_ORDER_EXPIRY
       );
       
       if (orderId !== null) {
@@ -983,7 +999,7 @@ export function executeTakeSellOrders(
         goodsId,
         buyQuantity,
         sellOrder.price, // 使用卖方价格，确保立即成交
-        24 * 3
+        AI_BUY_ORDER_EXPIRY
       );
       
       if (orderId !== null) {

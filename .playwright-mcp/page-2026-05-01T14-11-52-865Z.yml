@@ -1,0 +1,158 @@
+- generic [ref=e58]:
+  - banner [ref=e1563]:
+    - generic [ref=e1564]:
+      - generic [ref=e1565]:
+        - button "☰" [ref=e1566] [cursor=pointer]:
+          - generic [ref=e1567]: ☰
+        - generic [ref=e1570]: SC
+      - generic [ref=e1571]:
+        - generic [ref=e1572]: 💰¥17.6M
+        - button "▶" [ref=e1573] [cursor=pointer]
+  - main [ref=e1574]:
+    - generic [ref=e1812]:
+      - heading "💼 财务报表" [level=1] [ref=e1813]
+      - generic [ref=e1814]:
+        - generic [ref=e1816]:
+          - generic [ref=e1817]: 💵
+          - generic [ref=e1818]:
+            - paragraph [ref=e1819]: 现金余额
+            - paragraph [ref=e1820]: ¥17,562.6K
+        - generic [ref=e1822]:
+          - generic [ref=e1823]: 🏦
+          - generic [ref=e1824]:
+            - paragraph [ref=e1825]: 总资产
+            - paragraph [ref=e1826]: ¥20,143.9K
+        - generic [ref=e1828]:
+          - generic [ref=e1829]: 📉
+          - generic [ref=e1830]:
+            - paragraph [ref=e1831]: 总负债
+            - paragraph [ref=e1832]: ¥0
+        - generic [ref=e1834]:
+          - generic [ref=e1835]: 💰
+          - generic [ref=e1836]:
+            - paragraph [ref=e1837]: 净资产
+            - paragraph [ref=e1838]: ¥20,143.9K
+      - generic [ref=e1839]:
+        - heading "📈 现金余额" [level=3] [ref=e1841]
+        - generic [ref=e1845]:
+          - heading [level=3]
+          - generic [ref=e1846]:
+            - generic [ref=e1847]: ¥17562568.41
+            - generic [ref=e1848]: ▼0.17%
+      - generic [ref=e1853]:
+        - heading "📋 损益表" [level=3] [ref=e1855]
+        - generic [ref=e1856]:
+          - generic [ref=e1857]:
+            - generic [ref=e1858]: 销售收入
+            - generic [ref=e1859]: ¥509.6K
+          - generic [ref=e1860]:
+            - generic [ref=e1861]: 采购成本
+            - generic [ref=e1862]: ¥-134.6K
+          - generic [ref=e1863]:
+            - generic [ref=e1864]: 净利润
+            - generic [ref=e1865]: ¥375.0K
+      - generic [ref=e1867]:
+        - heading "⚖️ 破产资产处置" [level=3] [ref=e1869]
+        - generic [ref=e1870]:
+          - generic [ref=e1871]:
+            - generic [ref=e1872]:
+              - generic [ref=e1873]: 默认参与模式
+              - combobox [ref=e1874] [cursor=pointer]:
+                - generic: 只提示
+                - img [ref=e1875]
+            - generic [ref=e1878]:
+              - generic [ref=e1879]:
+                - generic [ref=e1880]: 自动关注同行业资产
+                - generic [ref=e1881]: 只影响自动参与策略的预出价筛选，成交前仍需手动确认。
+              - switch [ref=e1882] [cursor=pointer]
+          - generic [ref=e1883]:
+            - generic [ref=e1884]:
+              - generic [ref=e1885]: 单次事件预算上限
+              - spinbutton [ref=e1888]: "0"
+            - generic [ref=e1889]:
+              - generic [ref=e1890]: 单个资产预算上限
+              - spinbutton [ref=e1893]: "0"
+          - generic [ref=e1894]: 当前没有进行中的破产资产处置事件。
+      - generic [ref=e1896]:
+        - generic [ref=e1897]:
+          - generic [ref=e1898]: AA
+          - generic [ref=e1899]:
+            - paragraph [ref=e1900]: 信用评级
+            - paragraph [ref=e1901]: "分数: 750"
+        - generic [ref=e1902]:
+          - paragraph [ref=e1903]: ¥51,025.5K
+          - paragraph [ref=e1904]: 可用额度
+      - generic [ref=e1905]:
+        - generic [ref=e1907]:
+          - heading "🏦 贷款" [level=3] [ref=e1908]
+          - button "申请" [ref=e1909] [cursor=pointer]
+        - paragraph [ref=e1911]: 🎉 无贷款
+  - navigation [ref=e1738]:
+    - generic [ref=e1739]:
+      - button "📊 仪表盘" [ref=e1740] [cursor=pointer]:
+        - generic [ref=e1741]: 📊
+        - generic [ref=e1742]: 仪表盘
+      - button "🏭 生产" [ref=e1743] [cursor=pointer]:
+        - generic [ref=e1744]: 🏭
+        - generic [ref=e1745]: 生产
+      - button "💹 市场" [ref=e1746] [cursor=pointer]:
+        - generic [ref=e1747]: 💹
+        - generic [ref=e1748]: 市场
+      - button "📈 财务" [ref=e1749] [cursor=pointer]:
+        - generic [ref=e1750]: 📈
+        - generic [ref=e1751]: 财务
+      - button "☰ 更多" [ref=e1752] [cursor=pointer]:
+        - generic [ref=e1754]: ☰
+        - generic [ref=e1755]: 更多
+  - generic [ref=e1756]:
+    - generic [ref=e1757]:
+      - generic [ref=e1758]:
+        - generic [ref=e1760]: SC
+        - generic [ref=e1761]:
+          - heading "供应链指挥官" [level=1] [ref=e1762]
+          - paragraph [ref=e1763]: 第1年 2月10日
+      - button "✕" [active] [ref=e1764] [cursor=pointer]
+    - generic [ref=e1765]:
+      - generic [ref=e1766]:
+        - generic [ref=e1767]: 现金
+        - generic [ref=e1768]: ¥17.6M
+      - generic [ref=e1769]:
+        - generic [ref=e1770]: 速度
+        - generic [ref=e1771]:
+          - button "1x" [ref=e1772] [cursor=pointer]
+          - button "2x" [ref=e1773] [cursor=pointer]
+          - button "4x" [ref=e1774] [cursor=pointer]
+          - button "8x" [ref=e1775] [cursor=pointer]
+    - navigation [ref=e1776]:
+      - generic [ref=e1777]:
+        - button "📊 仪表盘" [ref=e1778] [cursor=pointer]:
+          - generic [ref=e1779]: 📊
+          - generic [ref=e1780]: 仪表盘
+        - button "🏭 生产管理" [ref=e1781] [cursor=pointer]:
+          - generic [ref=e1782]: 🏭
+          - generic [ref=e1783]: 生产管理
+        - button "🔗 产业链" [ref=e1784] [cursor=pointer]:
+          - generic [ref=e1785]: 🔗
+          - generic [ref=e1786]: 产业链
+        - button "💹 市场交易" [ref=e1787] [cursor=pointer]:
+          - generic [ref=e1788]: 💹
+          - generic [ref=e1789]: 市场交易
+        - button "🏪 零售管理" [ref=e1790] [cursor=pointer]:
+          - generic [ref=e1791]: 🏪
+          - generic [ref=e1792]: 零售管理
+        - button "📈 财务报表" [ref=e1793] [cursor=pointer]:
+          - generic [ref=e1794]: 📈
+          - generic [ref=e1795]: 财务报表
+        - button "🏛️ 竞争与投资" [ref=e1796] [cursor=pointer]:
+          - generic [ref=e1797]: 🏛️
+          - generic [ref=e1798]: 竞争与投资
+        - button "📰 商业周刊" [ref=e1799] [cursor=pointer]:
+          - generic [ref=e1800]: 📰
+          - generic [ref=e1801]: 商业周刊
+        - button "⚙️ 设置" [ref=e1802] [cursor=pointer]:
+          - generic [ref=e1803]: ⚙️
+          - generic [ref=e1804]: 设置
+    - paragraph [ref=e1806]: v0.1.0-alpha
+  - button "!" [ref=e1807] [cursor=pointer]:
+    - img [ref=e1808]
+    - generic [ref=e1811]: "!"

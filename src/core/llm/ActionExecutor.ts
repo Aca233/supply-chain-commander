@@ -121,11 +121,8 @@ function executeBuildBuilding(store: ReturnType<typeof useGameStore.getState>, a
     return { success: false, message: '建筑定义不存在' };
   }
   
-  // v4.0: 获取默认产品模式ID（使用第一个可用模式）
-  const outputModeId = buildingDef.production?.outputModes?.[0]?.modeId || 0;
-  
   // 执行建造
-  const result = store.buildBuilding(typeId, outputModeId);
+  const result = store.buildBuilding(typeId);
   
   if (result !== null) {
     return { 

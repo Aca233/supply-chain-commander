@@ -14,6 +14,7 @@ describe('format day-based time strings', () => {
 describe('format currency strings', () => {
   it('keeps sub-1K amounts in yuan and uses K for larger values', () => {
     expect(formatCurrency(999)).toBe('¥999');
+    expect(formatCurrency(0.68)).toBe('¥0.68');
     expect(formatCurrency(1000)).toBe('¥1.0K');
     expect(formatCurrency(1200000)).toBe('¥1,200.0K');
   });

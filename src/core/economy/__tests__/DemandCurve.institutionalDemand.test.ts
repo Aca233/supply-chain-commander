@@ -27,8 +27,8 @@ describe('institutional demand mapping', () => {
   it('keeps institutional daily demand aligned with the current day tick model', () => {
     const world = initializeWorld();
     const cycleMultiplier = 0.8 + world.economyStats.cyclePosition * 0.4;
-    const growthMultiplier = Math.min(2.0, 1.0 + (world.tick / (TICKS_PER_DAY * 360)) * 0.1);
-    const expectedVaccineDemand = 50 * cycleMultiplier * growthMultiplier;
+    const growthMultiplier = Math.min(1.3, 1.0 + (world.tick / (TICKS_PER_DAY * 360)) * 0.05);
+    const expectedVaccineDemand = 20 * cycleMultiplier * growthMultiplier;
 
     updateWorldDemands(world);
 

@@ -95,8 +95,8 @@ export const Production: React.FC = () => {
   }, [world, tick]);
 
   // 处理建造建筑
-  const handleBuild = useCallback((buildingTypeId: number, outputModeId: number) => {
-    const buildingId = buildBuilding(buildingTypeId, outputModeId);
+  const handleBuild = useCallback((buildingTypeId: number, slotMethods?: number[]) => {
+    const buildingId = buildBuilding(buildingTypeId, slotMethods);
     if (buildingId !== null) {
       setBuildModalTypeId(null);
       setSelectedBuilding(buildingId);

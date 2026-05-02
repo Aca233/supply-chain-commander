@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 产业链工具函数
  * 用于构建和分析商品之间的生产关系
  *
@@ -6,8 +6,13 @@
  */
 
 import { TICKS_PER_DAY } from '@/core/constants';
+import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
 import { ALL_GOODS, GoodsDefinition, GOODS_BY_ID, GOODS_BY_INDUSTRY } from '@/data/goods';
-import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_ID, getBuildingProduction, BuildingProductionConfig } from '@/data/buildings';
+import { ALL_BUILDINGS, BuildingTypeDefinition, BUILDINGS_BY_ID } from '@/data/buildings';
+import {
+  getBuildingProductionVariants,
+} from '@/core/production/ProductionMethods';
+import type { ComputedRecipe } from '@/core/production/ProductionMethods';
 
 // ==================== 类型定义 ====================
 
@@ -144,9 +149,40 @@ let cachedGoodsByTier: Map<number, GoodsDefinition[]> | null = null;
 
 // ==================== 核心函数 ====================
 
+function toProductionInfo(
+  building: BuildingTypeDefinition,
+  outputModeId: number,
+  outputModeName: string,
+  recipe: ComputedRecipe,
+): ProductionInfo {
+  return {
+    buildingTypeId: building.id,
+    buildingName: building.name,
+    outputModeId,
+    outputModeName,
+    inputs: recipe.inputs,
+    outputs: recipe.outputs,
+  };
+}
+
+function getProductionVariantsForBuilding(building: BuildingTypeDefinition): Array<{
+  outputModeId: number;
+  outputModeName: string;
+  recipe: ComputedRecipe;
+}> {
+  return getBuildingProductionVariants(building.id)
+    .filter((variant) => variant.legacyOutputModeId !== null)
+    .map((variant) => ({
+      outputModeId: variant.legacyOutputModeId ?? 0,
+      outputModeName: variant.name,
+      recipe: variant.recipe,
+    }))
+    .filter(({ recipe }) => recipe.inputs.length > 0 || recipe.outputs.length > 0);
+}
+
 /**
  * 构建商品依赖图
- * v4.0: 使用建筑production配置替代RECIPES
+ * v4.0: 从生产方式注册表枚举建筑变体，保留 outputModeId 仅作兼容标签
  */
 export function buildDependencyGraph(): DependencyGraph {
   if (cachedDependencyGraph) {
@@ -173,72 +209,30 @@ export function buildDependencyGraph(): DependencyGraph {
     reverseAdjacencyList.set(goods.id, []);
   }
 
-  // v4.0: 从建筑production配置中构建边
+  // 从建筑生产变体构建依赖边
   for (const building of ALL_BUILDINGS) {
-    if (!building.production) continue;
-    
-    const production = building.production;
-    const inputs = production.inputs || [];
-    const outputs = production.outputs || [];
-    
-    // 处理默认产出
-    for (const output of outputs) {
-      for (const input of inputs) {
-        // 添加边：input -> output
-        edges.push({
-          source: input.goodsId,
-          target: output.goodsId,
-          buildingTypeId: building.id,
-          outputModeId: 0,  // 默认模式
-          inputAmount: input.amount,
-          outputAmount: output.amount,
-        });
+    for (const { outputModeId, recipe } of getProductionVariantsForBuilding(building)) {
+      for (const output of recipe.outputs) {
+        for (const input of recipe.inputs) {
+          edges.push({
+            source: input.goodsId,
+            target: output.goodsId,
+            buildingTypeId: building.id,
+            outputModeId,
+            inputAmount: input.amount,
+            outputAmount: output.amount,
+          });
 
-        // 更新邻接表
-        const adj = adjacencyList.get(output.goodsId) || [];
-        if (!adj.includes(input.goodsId)) {
-          adj.push(input.goodsId);
-          adjacencyList.set(output.goodsId, adj);
-        }
+          const adj = adjacencyList.get(output.goodsId) || [];
+          if (!adj.includes(input.goodsId)) {
+            adj.push(input.goodsId);
+            adjacencyList.set(output.goodsId, adj);
+          }
 
-        // 更新反向邻接表
-        const revAdj = reverseAdjacencyList.get(input.goodsId) || [];
-        if (!revAdj.includes(output.goodsId)) {
-          revAdj.push(output.goodsId);
-          reverseAdjacencyList.set(input.goodsId, revAdj);
-        }
-      }
-    }
-    
-    // 处理可选产品模式
-    if (production.outputModes) {
-      for (const mode of production.outputModes) {
-        const modeOutputs = mode.outputs || [];
-        for (const output of modeOutputs) {
-          for (const input of inputs) {
-            // 添加边：input -> output
-            edges.push({
-              source: input.goodsId,
-              target: output.goodsId,
-              buildingTypeId: building.id,
-              outputModeId: mode.modeId,
-              inputAmount: input.amount,
-              outputAmount: output.amount,
-            });
-
-            // 更新邻接表
-            const adj = adjacencyList.get(output.goodsId) || [];
-            if (!adj.includes(input.goodsId)) {
-              adj.push(input.goodsId);
-              adjacencyList.set(output.goodsId, adj);
-            }
-
-            // 更新反向邻接表
-            const revAdj = reverseAdjacencyList.get(input.goodsId) || [];
-            if (!revAdj.includes(output.goodsId)) {
-              revAdj.push(output.goodsId);
-              reverseAdjacencyList.set(input.goodsId, revAdj);
-            }
+          const revAdj = reverseAdjacencyList.get(input.goodsId) || [];
+          if (!revAdj.includes(output.goodsId)) {
+            revAdj.push(output.goodsId);
+            reverseAdjacencyList.set(input.goodsId, revAdj);
           }
         }
       }
@@ -360,40 +354,15 @@ export function getDownstreamProducts(
  */
 export function getProductionsProducingGoods(goodsId: number): ProductionInfo[] {
   const result: ProductionInfo[] = [];
-  
+
   for (const building of ALL_BUILDINGS) {
-    if (!building.production) continue;
-    
-    const production = building.production;
-    
-    // 检查默认产出
-    if (production.outputs?.some(o => o.goodsId === goodsId)) {
-      result.push({
-        buildingTypeId: building.id,
-        buildingName: building.name,
-        outputModeId: 0,
-        inputs: production.inputs || [],
-        outputs: production.outputs || [],
-      });
-    }
-    
-    // 检查可选产品模式
-    if (production.outputModes) {
-      for (const mode of production.outputModes) {
-        if (mode.outputs?.some(o => o.goodsId === goodsId)) {
-          result.push({
-            buildingTypeId: building.id,
-            buildingName: building.name,
-            outputModeId: mode.modeId,
-            outputModeName: mode.name,
-            inputs: production.inputs || [],
-            outputs: mode.outputs || [],
-          });
-        }
+    for (const { outputModeId, outputModeName, recipe } of getProductionVariantsForBuilding(building)) {
+      if (recipe.outputs.some(o => o.goodsId === goodsId)) {
+        result.push(toProductionInfo(building, outputModeId, outputModeName, recipe));
       }
     }
   }
-  
+
   return result;
 }
 
@@ -403,41 +372,15 @@ export function getProductionsProducingGoods(goodsId: number): ProductionInfo[] 
  */
 export function getProductionsUsingGoods(goodsId: number): ProductionInfo[] {
   const result: ProductionInfo[] = [];
-  
+
   for (const building of ALL_BUILDINGS) {
-    if (!building.production) continue;
-    
-    const production = building.production;
-    
-    // 检查是否使用该商品作为输入
-    if (production.inputs?.some(i => i.goodsId === goodsId)) {
-      // 添加默认产出
-      if (production.outputs && production.outputs.length > 0) {
-        result.push({
-          buildingTypeId: building.id,
-          buildingName: building.name,
-          outputModeId: 0,
-          inputs: production.inputs,
-          outputs: production.outputs,
-        });
-      }
-      
-      // 添加可选产品模式
-      if (production.outputModes) {
-        for (const mode of production.outputModes) {
-          result.push({
-            buildingTypeId: building.id,
-            buildingName: building.name,
-            outputModeId: mode.modeId,
-            outputModeName: mode.name,
-            inputs: production.inputs,
-            outputs: mode.outputs || [],
-          });
-        }
+    for (const { outputModeId, outputModeName, recipe } of getProductionVariantsForBuilding(building)) {
+      if (recipe.inputs.some(i => i.goodsId === goodsId)) {
+        result.push(toProductionInfo(building, outputModeId, outputModeName, recipe));
       }
     }
   }
-  
+
   return result;
 }
 
@@ -568,7 +511,7 @@ export function calculateProductionPlan(
   );
 
   const dailyOperatingCost = buildingsList.reduce(
-    (sum, item) => sum + (item.building.maintenanceCost + item.building.laborCost + item.building.energyCost) * item.count,
+    (sum, item) => sum + calculateBuildingDefinitionOperatingCostPerTick(item.building).cashExpense * item.count,
     0
   );
 

@@ -6,6 +6,10 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
+import {
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
+import { resolveLegacyOutputModeToSlotMethods } from '@/core/production/legacyOutputModeBridge';
 import { AIDecision, CompanyAssessment } from './AIDecisionEngine';
 import { ALL_BUILDINGS, BuildingId } from '@/data/buildings';
 import { GoodsId } from '@/data/goods';
@@ -366,10 +370,15 @@ export const AI_PERSONALITIES: Record<PersonalityType, AIPersonality> = {
 /**
  * AI公司配置
  * 
- * outputModeId 说明：
- * - 单产品建筑使用 modeId=0
- * - 多产品建筑根据 buildings.ts 中的 outputModes 定义使用对应的 modeId
+ * initialBuildings 在导出前会被归一化为 slotMethods。
+ * raw 配置里仍允许使用 legacy outputModeId，兼容旧表维护方式。
  */
+export interface AIInitialBuildingConfig {
+  typeId: number;
+  count: number;
+  slotMethods: number[];
+}
+
 export interface AICompanyConfig {
   id: number;
   name: string;
@@ -378,11 +387,18 @@ export interface AICompanyConfig {
   focusGoods: number[];
   category: 'extraction' | 'processing' | 'manufacturing' | 'agriculture' | 'pharma' | 'luxury' | 'energy' | 'diversified';
   description?: string;
-  initialBuildings: Array<{
-    typeId: number;
-    outputModeId: number;  // 替代原来的 recipeId
-    count: number;
-  }>;
+  initialBuildings: AIInitialBuildingConfig[];
+}
+
+interface RawAIInitialBuildingConfig {
+  typeId: number;
+  count: number;
+  outputModeId?: number;
+  slotMethods?: number[];
+}
+
+interface RawAICompanyConfig extends Omit<AICompanyConfig, 'initialBuildings'> {
+  initialBuildings: RawAIInitialBuildingConfig[];
 }
 
 /**
@@ -418,6 +434,7 @@ export const OutputModeId = {
   // 肉类加工厂 (BuildingId.MEAT_PROCESSING = 24)
   MEAT_PROCESSING: 0,      // 肉类加工
   MEAT_FROZEN: 1,          // 冷冻食品生产
+  MEAT_CANNED: 2,          // 罐头食品生产
   
   // 建材厂 (BuildingId.BUILDING_MATERIALS_FACTORY = 26)
   BUILDING_MATERIALS: 0,   // 建筑材料生产
@@ -487,9 +504,10 @@ export const OutputModeId = {
 } as const;
 
 /**
- * 预定义AI公司配置（45家）
- * 
- * 重构版本：使用outputModeId替代recipeId
+ * 预定义AI公司配置（119家）
+ *
+ * Raw 配置仍使用 outputModeId 维护多产品建筑选择，
+ * 导出时会统一归一化成 slotMethods。
  * 分类：
  * - 采掘公司 (8家): ID 1-8
  * - 农业公司 (3家): ID 9-11
@@ -499,8 +517,42 @@ export const OutputModeId = {
  * - 奢侈品公司 (2家): ID 37-38
  * - 能源公司 (2家): ID 39-40
  * - 产业链开拓者 (5家): ID 41-45
+ * - 第二供应商扩充 (14家): ID 46-59 — 解决终端品垄断导致的价格锁死
+ *
+ * 翻倍扩展（60家全新独立公司，ID 60-119）：
+ * - 采掘扩充 (8家): ID 60-67 — 紫金/陕煤/洛钼/赣锋/中海油/西部矿业/中金/山东黄金
+ * - 农业扩充 (3家): ID 68-70 — 北大荒/温氏/云南白药种植
+ * - 加工扩充 (10家): ID 71-80 — 鞍钢/武钢/中海石化/万华/信义玻璃/金隅水泥/玖龙/山东如意/双汇/雨润
+ * - 制造扩充 (12家): ID 81-92 — OPPO/vivo/联想/TCL/美的/格力/长城汽车/广汽/一汽/三一重工/沈飞/顾家
+ * - 医药扩充 (3家): ID 93-95 — 国药/哈药/联影
+ * - 奢侈品扩充 (2家): ID 96-97 — 老凤祥/海澜之家
+ * - 能源扩充 (2家): ID 98-99 — 大唐发电/隆基绿能
+ * - 第三供应商 (20家): ID 100-119 — 云南铜业/神火铝业/国机重装/海康威视/大族激光/京东方/国轩高科/协鑫/金风/远景/益海嘉里/伊利/上海家化/太极/振华重工/福田/红豆/光明/五粮液/茅台
  */
-export const AI_COMPANIES: AICompanyConfig[] = [
+function resolveInitialBuildingSlotMethods(
+  buildingTypeId: number,
+  config: RawAIInitialBuildingConfig,
+): number[] {
+  if (config.slotMethods && config.slotMethods.length > 0) {
+    return [...config.slotMethods];
+  }
+
+  initializeBuildingProductionMethods();
+  return resolveLegacyOutputModeToSlotMethods(buildingTypeId, config.outputModeId ?? 0);
+}
+
+function normalizeAICompanyConfig(config: RawAICompanyConfig): AICompanyConfig {
+  return {
+    ...config,
+    initialBuildings: config.initialBuildings.map((building) => ({
+      typeId: building.typeId,
+      count: building.count,
+      slotMethods: resolveInitialBuildingSlotMethods(building.typeId, building),
+    })),
+  };
+}
+
+const RAW_AI_COMPANIES: RawAICompanyConfig[] = [
   // ==================== A. 采掘公司 (8家) ====================
   {
     id: 1,
@@ -611,8 +663,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'agriculture',
     description: '粮食棉花种植',
     initialBuildings: [
-      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_GRAIN, count: 15 },
-      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_COTTON, count: 10 },
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_GRAIN, count: 33 },
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_COTTON, count: 18 },
     ],
   },
   {
@@ -624,9 +676,9 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'agriculture',
     description: '畜牧养殖及肉乳加工',
     initialBuildings: [
-      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 12 },
-      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 6 },
-      { typeId: BuildingId.DAIRY_FACTORY, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 18 },
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 4 },
+      { typeId: BuildingId.DAIRY_FACTORY, outputModeId: 0, count: 1 },
     ],
   },
   {
@@ -693,9 +745,9 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'processing',
     description: '石油炼化',
     initialBuildings: [
-      { typeId: BuildingId.OIL_FIELD, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.REFINERY, outputModeId: 0, count: 14 },
-      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_CHEMICALS, count: 8 },
+      { typeId: BuildingId.OIL_FIELD, outputModeId: 0, count: 4 },
+      { typeId: BuildingId.REFINERY, outputModeId: 0, count: 8 },
+      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_CHEMICALS, count: 5 },
     ],
   },
   {
@@ -733,9 +785,9 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'processing',
     description: '造纸和包装材料生产',
     initialBuildings: [
-      { typeId: BuildingId.LOGGING_CAMP, outputModeId: 0, count: 10 },
+      { typeId: BuildingId.LOGGING_CAMP, outputModeId: 0, count: 6 },
       { typeId: BuildingId.PAPER_MILL, outputModeId: 0, count: 12 },
-      { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_PACKAGING, count: 8 },
+      { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_PACKAGING, count: 1 },
       { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_PRODUCTS, count: 6 },
     ],
   },
@@ -748,7 +800,7 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'processing',
     description: '纺织加工',
     initialBuildings: [
-      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_COTTON, count: 6 },
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_COTTON, count: 15 },
       { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_TEXTILES, count: 10 },
       { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_SILK, count: 4 },
       { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_CLOTHING, count: 6 },
@@ -837,10 +889,11 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     description: '机械零部件制造',
     initialBuildings: [
       { typeId: BuildingId.STEEL_MILL, outputModeId: 0, count: 4 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 6 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 8 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 4 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 4 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_FABRIC, count: 5 },
     ],
   },
   {
@@ -852,10 +905,10 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'manufacturing',
     description: '消费电子产品',
     initialBuildings: [
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 4 },
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 6 },
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_COMPUTER, count: 4 },
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_DRONE, count: 3 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 3 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 4 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_COMPUTER, count: 3 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_DRONE, count: 2 },
     ],
   },
   {
@@ -867,8 +920,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'manufacturing',
     description: '家用电器制造',
     initialBuildings: [
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 4 },
-      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 12 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 3 },
+      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 9 },
     ],
   },
   {
@@ -923,12 +976,12 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'manufacturing',
     description: '光伏板风机叶片制造',
     initialBuildings: [
-      { typeId: BuildingId.SILICON_MINE, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_ALUMINUM, count: 5 },
-      { typeId: BuildingId.GLASS_FACTORY, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 10 },
-      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 8 },
-      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_SOLAR_SYSTEM, count: 5 },
+      { typeId: BuildingId.SILICON_MINE, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_ALUMINUM, count: 4 },
+      { typeId: BuildingId.GLASS_FACTORY, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 7 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 5 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_SOLAR_SYSTEM, count: 3 },
     ],
   },
   {
@@ -954,8 +1007,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'manufacturing',
     description: '工业机器人生产',
     initialBuildings: [
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 4 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 4 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 2 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 2 },
       { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_ROBOT, count: 10 },
     ],
   },
@@ -972,8 +1025,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     initialBuildings: [
       { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 10 },
       { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 4 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 8 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_OTC, count: 6 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_OTC, count: 3 },
     ],
   },
   {
@@ -987,9 +1040,9 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     initialBuildings: [
       { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 8 },
       { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 6 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_ANTIBIOTIC, count: 8 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_VACCINE, count: 8 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_PATENT, count: 6 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_ANTIBIOTIC, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_VACCINE, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_PATENT, count: 3 },
     ],
   },
   {
@@ -1001,10 +1054,10 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'pharma',
     description: '医疗器械制造',
     initialBuildings: [
-      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 5 },
-      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_TEXTILES, count: 4 },
-      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_SUPPLIES, count: 12 },
-      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_DEVICE, count: 8 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 3 },
+      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_TEXTILES, count: 2 },
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_SUPPLIES, count: 6 },
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_DEVICE, count: 4 },
     ],
   },
 
@@ -1018,9 +1071,9 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'luxury',
     description: '珠宝奢侈品制造',
     initialBuildings: [
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_MINING, count: 5 },
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_DIAMOND, count: 4 },
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 4 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_MINING, count: 3 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_DIAMOND, count: 2 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 2 },
       { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_JEWELRY, count: 4 },
     ],
   },
@@ -1033,12 +1086,11 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'luxury',
     description: '高端腕表设计师服装',
     initialBuildings: [
-      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_SILK, count: 4 },
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_DIAMOND, count: 2 },
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 2 },
-      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_CUTTING, count: 4 },
-      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_WATCH, count: 5 },
-      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_DESIGNER, count: 5 },
+      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_SILK, count: 2 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_DIAMOND, count: 1 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 1 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_WATCH, count: 4 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_DESIGNER, count: 4 },
     ],
   },
 
@@ -1067,8 +1119,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'energy',
     description: '清洁能源发电',
     initialBuildings: [
-      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 4 },
-      { typeId: BuildingId.POWER_PLANT, outputModeId: OutputModeId.POWER_SOLAR, count: 12 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 3 },
+      { typeId: BuildingId.POWER_PLANT, outputModeId: OutputModeId.POWER_SOLAR, count: 9 },
     ],
   },
 
@@ -1085,8 +1137,8 @@ export const AI_COMPANIES: AICompanyConfig[] = [
       { typeId: BuildingId.LITHIUM_MINE, outputModeId: 0, count: 12 },
       { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_PRODUCTION, count: 10 },
       { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 8 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 3 },
     ],
   },
   {
@@ -1098,12 +1150,13 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'diversified',
     description: '高端零部件和清洁能源设备生产',
     initialBuildings: [
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 8 },
-      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 8 },
-      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 8 },
-      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 6 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_FABRIC, count: 4 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 5 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 4 },
     ],
   },
   {
@@ -1115,10 +1168,11 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'processing',
     description: '冷冻食品和罐头生产',
     initialBuildings: [
-      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 6 },
+      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 10 },
       { typeId: BuildingId.FISHERY, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 4 },
-      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_FROZEN, count: 10 },
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 3 },
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_FROZEN, count: 6 },
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_CANNED, count: 4 },
     ],
   },
   {
@@ -1130,11 +1184,11 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'pharma',
     description: '医药化工品和医用耗材生产',
     initialBuildings: [
-      { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 10 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 8 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_ANTIBIOTIC, count: 8 },
-      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_VACCINE, count: 8 },
-      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_SUPPLIES, count: 10 },
+      { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 7 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_ANTIBIOTIC, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_VACCINE, count: 5 },
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_SUPPLIES, count: 6 },
     ],
   },
   {
@@ -1146,20 +1200,998 @@ export const AI_COMPANIES: AICompanyConfig[] = [
     category: 'processing',
     description: '基础材料生产',
     initialBuildings: [
-      { typeId: BuildingId.IRON_MINE, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.COPPER_MINE, outputModeId: 0, count: 4 },
-      { typeId: BuildingId.ALUMINUM_MINE, outputModeId: 0, count: 4 },
-      { typeId: BuildingId.COAL_MINE, outputModeId: 0, count: 4 },
-      { typeId: BuildingId.OIL_FIELD, outputModeId: 0, count: 4 },
+      { typeId: BuildingId.IRON_MINE, outputModeId: 0, count: 4 },
+      { typeId: BuildingId.COPPER_MINE, outputModeId: 0, count: 3 },
+      { typeId: BuildingId.ALUMINUM_MINE, outputModeId: 0, count: 2 },
+      { typeId: BuildingId.COAL_MINE, outputModeId: 0, count: 3 },
+      { typeId: BuildingId.OIL_FIELD, outputModeId: 0, count: 2 },
+      { typeId: BuildingId.STEEL_MILL, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_COPPER, count: 3 },
+      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_ALUMINUM, count: 3 },
+      { typeId: BuildingId.REFINERY, outputModeId: 0, count: 3 },
+      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_CHEMICALS, count: 3 },
+      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_RUBBER, count: 2 },
+    ],
+  },
+
+  // ==================== 第二供应商扩充 (ID 46-59) ====================
+  // 解决"终端品 21/24 只有一家厂"导致价格锁死的问题
+  // 每家定位为现有龙头的竞争者，提供供给弹性
+
+  {
+    id: 46,
+    name: '小米科技',
+    personality: 'innovator',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.SMARTPHONE, GoodsId.COMPUTER, GoodsId.APPLIANCES, GoodsId.DRONE],
+    category: 'manufacturing',
+    description: '消费电子第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.SEMICONDUCTOR_FAB, outputModeId: 0, count: 2 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 2 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 3 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_COMPUTER, count: 2 },
+      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 2 },
+    ],
+  },
+  {
+    id: 47,
+    name: '大疆创新',
+    personality: 'specialist',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.DRONE, GoodsId.AIRCRAFT_PARTS],
+    category: 'manufacturing',
+    description: '无人机与航空部件专家',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_AIRCRAFT, count: 5 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MOTOR, count: 1 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_DRONE, count: 6 },
+    ],
+  },
+  {
+    id: 48,
+    name: '上汽集团',
+    personality: 'aggressive',
+    initialCash: 280000000,
+    focusGoods: [GoodsId.CAR, GoodsId.LUXURY_CAR],
+    category: 'manufacturing',
+    description: '燃油车与豪华车第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 5 },
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_FUEL, count: 5 },
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_LUXURY, count: 3 },
+    ],
+  },
+  {
+    id: 49,
+    name: '蔚来汽车',
+    personality: 'innovator',
+    initialCash: 320000000,
+    focusGoods: [GoodsId.ELECTRIC_CAR, GoodsId.BATTERY],
+    category: 'manufacturing',
+    description: '电动汽车第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_PRODUCTION, count: 4 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 3 },
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_ELECTRIC, count: 6 },
+    ],
+  },
+  {
+    id: 50,
+    name: '红星家居',
+    personality: 'diversified',
+    initialCash: 130000000,
+    focusGoods: [GoodsId.FURNITURE, GoodsId.CLOTHING],
+    category: 'manufacturing',
+    description: '家具与服装多元集团',
+    initialBuildings: [
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_PRODUCTION, count: 7 },
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_CLOTHING, count: 5 },
+    ],
+  },
+  {
+    id: 51,
+    name: '蒙牛食品',
+    personality: 'cost_leader',
+    initialCash: 160000000,
+    focusGoods: [GoodsId.FOOD, GoodsId.PET_FOOD, GoodsId.ORGANIC_FOOD, GoodsId.DAIRY],
+    category: 'processing',
+    description: '食品成品与有机食品第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_GRAIN, count: 9 },
+      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 6 },
+      { typeId: BuildingId.DAIRY_FACTORY, outputModeId: 0, count: 1 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_FINAL, count: 4 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_PET, count: 4 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_ORGANIC, count: 4 },
+    ],
+  },
+  {
+    id: 52,
+    name: '阳光电源',
+    personality: 'innovator',
+    initialCash: 260000000,
+    focusGoods: [GoodsId.SOLAR_SYSTEM, GoodsId.ENERGY_STORAGE, GoodsId.SOLAR_PANEL],
+    category: 'manufacturing',
+    description: '光伏与储能系统第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 4 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_STORAGE, count: 4 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_SOLAR_SYSTEM, count: 4 },
+    ],
+  },
+  {
+    id: 53,
+    name: 'ABB机器人',
+    personality: 'innovator',
+    initialCash: 220000000,
+    focusGoods: [GoodsId.INDUSTRIAL_ROBOT, GoodsId.MECHANICAL_PARTS],
+    category: 'manufacturing',
+    description: '工业机器人第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_FABRIC, count: 6 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_ROBOT, count: 7 },
+    ],
+  },
+  {
+    id: 54,
+    name: '中国建材',
+    personality: 'cost_leader',
+    initialCash: 110000000,
+    focusGoods: [GoodsId.BUILDING_PRODUCTS, GoodsId.BUILDING_MATERIALS, GoodsId.CEMENT],
+    category: 'processing',
+    description: '建材成品第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.CEMENT_FACTORY, outputModeId: 0, count: 3 },
+      { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_MATERIALS, count: 3 },
+      { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_PRODUCTS, count: 6 },
+    ],
+  },
+  {
+    id: 55,
+    name: '复星医药',
+    personality: 'specialist',
+    initialCash: 260000000,
+    focusGoods: [GoodsId.PATENT_DRUG, GoodsId.GENERIC_DRUG, GoodsId.OTC_DRUG, GoodsId.PHARMA_BASE],
+    category: 'pharma',
+    description: '专利药与仿制药第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 7 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 5 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 3 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_PATENT, count: 3 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_OTC, count: 3 },
+    ],
+  },
+  {
+    id: 56,
+    name: '鱼跃医疗',
+    personality: 'specialist',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.MEDICAL_DEVICE, GoodsId.MEDICAL_SUPPLIES],
+    category: 'pharma',
+    description: '医疗设备第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_SUPPLIES, count: 3 },
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_DEVICE, count: 5 },
+    ],
+  },
+  {
+    id: 57,
+    name: '周大福',
+    personality: 'premium',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.JEWELRY, GoodsId.LUXURY_WATCH, GoodsId.GOLD, GoodsId.DIAMOND],
+    category: 'luxury',
+    description: '珠宝与奢侈腕表第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 2 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_CUTTING, count: 1 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_JEWELRY, count: 4 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_WATCH, count: 3 },
+    ],
+  },
+  {
+    id: 58,
+    name: '江南布衣',
+    personality: 'premium',
+    initialCash: 140000000,
+    focusGoods: [GoodsId.DESIGNER_CLOTHING, GoodsId.CLOTHING],
+    category: 'luxury',
+    description: '设计师服装第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_SILK, count: 2 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_DESIGNER, count: 4 },
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_CLOTHING, count: 3 },
+    ],
+  },
+  {
+    id: 59,
+    name: '紫光集团',
+    personality: 'innovator',
+    initialCash: 380000000,
+    focusGoods: [GoodsId.CHIPS, GoodsId.ELECTRONICS],
+    category: 'manufacturing',
+    description: '芯片与电子元件第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.SEMICONDUCTOR_FAB, outputModeId: 0, count: 6 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 4 },
+    ],
+  },
+
+  // ==================== J. 翻倍扩展 - 采掘扩充 (8家, ID 60-67) ====================
+  {
+    id: 60,
+    name: '紫金矿业',
+    personality: 'aggressive',
+    initialCash: 260000000,
+    focusGoods: [GoodsId.COPPER_ORE, GoodsId.GOLD_ORE],
+    category: 'extraction',
+    description: '多金属综合采矿巨头',
+    initialBuildings: [
+      { typeId: BuildingId.COPPER_MINE, outputModeId: 0, count: 11 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_MINING, count: 3 },
+    ],
+  },
+  {
+    id: 61,
+    name: '陕西煤业',
+    personality: 'cost_leader',
+    initialCash: 220000000,
+    focusGoods: [GoodsId.COAL],
+    category: 'extraction',
+    description: '西部低成本煤炭开采',
+    initialBuildings: [
+      { typeId: BuildingId.COAL_MINE, outputModeId: 0, count: 16 },
+    ],
+  },
+  {
+    id: 62,
+    name: '洛阳钼业',
+    personality: 'specialist',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.RARE_EARTH, GoodsId.COPPER_ORE],
+    category: 'extraction',
+    description: '稀有金属与铜矿专营',
+    initialBuildings: [
+      { typeId: BuildingId.RARE_EARTH_MINE, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.COPPER_MINE, outputModeId: 0, count: 6 },
+    ],
+  },
+  {
+    id: 63,
+    name: '赣锋锂业',
+    personality: 'pioneer',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.LITHIUM],
+    category: 'extraction',
+    description: '锂资源新势力',
+    initialBuildings: [
+      { typeId: BuildingId.LITHIUM_MINE, outputModeId: 0, count: 9 },
+    ],
+  },
+  {
+    id: 64,
+    name: '中海油',
+    personality: 'conservative',
+    initialCash: 420000000,
+    focusGoods: [GoodsId.CRUDE_OIL, GoodsId.NATURAL_GAS],
+    category: 'extraction',
+    description: '海上油气开采',
+    initialBuildings: [
+      { typeId: BuildingId.OIL_FIELD, outputModeId: 0, count: 9 },
+      { typeId: BuildingId.GAS_FIELD, outputModeId: 0, count: 6 },
+    ],
+  },
+  {
+    id: 65,
+    name: '西部矿业',
+    personality: 'diversified',
+    initialCash: 150000000,
+    focusGoods: [GoodsId.IRON_ORE, GoodsId.BAUXITE],
+    category: 'extraction',
+    description: '西部综合矿业',
+    initialBuildings: [
+      { typeId: BuildingId.IRON_MINE, outputModeId: 0, count: 7 },
+      { typeId: BuildingId.ALUMINUM_MINE, outputModeId: 0, count: 6 },
+    ],
+  },
+  {
+    id: 66,
+    name: '中金黄金',
+    personality: 'premium',
+    initialCash: 170000000,
+    focusGoods: [GoodsId.GOLD_ORE],
+    category: 'extraction',
+    description: '黄金开采龙头',
+    initialBuildings: [
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_MINING, count: 4 },
+    ],
+  },
+  {
+    id: 67,
+    name: '山东黄金',
+    personality: 'specialist',
+    initialCash: 160000000,
+    focusGoods: [GoodsId.GOLD_ORE, GoodsId.DIAMOND_ORE],
+    category: 'extraction',
+    description: '黄金与钻石矿开采',
+    initialBuildings: [
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_MINING, count: 3 },
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_DIAMOND, count: 2 },
+    ],
+  },
+
+  // ==================== K. 翻倍扩展 - 农业扩充 (3家, ID 68-70) ====================
+  {
+    id: 68,
+    name: '北大荒',
+    personality: 'cost_leader',
+    initialCash: 130000000,
+    focusGoods: [GoodsId.GRAIN, GoodsId.COTTON],
+    category: 'agriculture',
+    description: '东北大型粮棉基地',
+    initialBuildings: [
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_GRAIN, count: 30 },
+      { typeId: BuildingId.FARM, outputModeId: OutputModeId.FARM_COTTON, count: 12 },
+    ],
+  },
+  {
+    id: 69,
+    name: '温氏股份',
+    personality: 'specialist',
+    initialCash: 120000000,
+    focusGoods: [GoodsId.LIVESTOCK],
+    category: 'agriculture',
+    description: '生猪养殖龙头',
+    initialBuildings: [
+      { typeId: BuildingId.LIVESTOCK_FARM, outputModeId: 0, count: 14 },
+    ],
+  },
+  {
+    id: 70,
+    name: '云南白药种植',
+    personality: 'specialist',
+    initialCash: 95000000,
+    focusGoods: [GoodsId.HERBS],
+    category: 'agriculture',
+    description: '中草药种植专营',
+    initialBuildings: [
+      { typeId: BuildingId.HERB_FARM, outputModeId: 0, count: 8 },
+    ],
+  },
+
+  // ==================== L. 翻倍扩展 - 加工扩充 (10家, ID 71-80) ====================
+  {
+    id: 71,
+    name: '鞍钢集团',
+    personality: 'conservative',
+    initialCash: 320000000,
+    focusGoods: [GoodsId.STEEL],
+    category: 'processing',
+    description: '北方老牌钢铁企业',
+    initialBuildings: [
+      { typeId: BuildingId.STEEL_MILL, outputModeId: 0, count: 9 },
+    ],
+  },
+  {
+    id: 72,
+    name: '武钢集团',
+    personality: 'cost_leader',
+    initialCash: 280000000,
+    focusGoods: [GoodsId.STEEL],
+    category: 'processing',
+    description: '华中钢铁产能基地',
+    initialBuildings: [
       { typeId: BuildingId.STEEL_MILL, outputModeId: 0, count: 8 },
-      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_COPPER, count: 6 },
-      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_ALUMINUM, count: 6 },
+    ],
+  },
+  {
+    id: 73,
+    name: '中海石化',
+    personality: 'aggressive',
+    initialCash: 350000000,
+    focusGoods: [GoodsId.FUEL, GoodsId.PLASTIC],
+    category: 'processing',
+    description: '炼化与塑料原料',
+    initialBuildings: [
       { typeId: BuildingId.REFINERY, outputModeId: 0, count: 6 },
-      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_CHEMICALS, count: 6 },
-      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_RUBBER, count: 4 },
+    ],
+  },
+  {
+    id: 74,
+    name: '万华化学',
+    personality: 'innovator',
+    initialCash: 240000000,
+    focusGoods: [GoodsId.CHEMICALS, GoodsId.RUBBER],
+    category: 'processing',
+    description: '高端聚氨酯化工',
+    initialBuildings: [
+      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_CHEMICALS, count: 5 },
+      { typeId: BuildingId.CHEMICAL_PLANT, outputModeId: OutputModeId.CHEMICAL_RUBBER, count: 3 },
+    ],
+  },
+  {
+    id: 75,
+    name: '信义玻璃',
+    personality: 'specialist',
+    initialCash: 130000000,
+    focusGoods: [GoodsId.GLASS],
+    category: 'processing',
+    description: '玻璃制造专家',
+    initialBuildings: [
+      { typeId: BuildingId.GLASS_FACTORY, outputModeId: 0, count: 9 },
+    ],
+  },
+  {
+    id: 76,
+    name: '金隅水泥',
+    personality: 'cost_leader',
+    initialCash: 110000000,
+    focusGoods: [GoodsId.CEMENT],
+    category: 'processing',
+    description: '京津水泥供应商',
+    initialBuildings: [
+      { typeId: BuildingId.CEMENT_FACTORY, outputModeId: 0, count: 10 },
+    ],
+  },
+  {
+    id: 77,
+    name: '玖龙纸业',
+    personality: 'aggressive',
+    initialCash: 140000000,
+    focusGoods: [GoodsId.PAPER, GoodsId.PACKAGING],
+    category: 'processing',
+    description: '包装用纸与包装材料',
+    initialBuildings: [
+      { typeId: BuildingId.PAPER_MILL, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.BUILDING_MATERIALS_FACTORY, outputModeId: OutputModeId.BUILDING_PACKAGING, count: 3 },
+    ],
+  },
+  {
+    id: 78,
+    name: '山东如意',
+    personality: 'diversified',
+    initialCash: 95000000,
+    focusGoods: [GoodsId.TEXTILES, GoodsId.SILK],
+    category: 'processing',
+    description: '纺织与丝绸双轨',
+    initialBuildings: [
+      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_TEXTILES, count: 5 },
+      { typeId: BuildingId.TEXTILE_MILL, outputModeId: OutputModeId.TEXTILE_SILK, count: 2 },
+    ],
+  },
+  {
+    id: 79,
+    name: '双汇集团',
+    personality: 'cost_leader',
+    initialCash: 120000000,
+    focusGoods: [GoodsId.MEAT, GoodsId.FROZEN_FOOD],
+    category: 'processing',
+    description: '肉类加工龙头',
+    initialBuildings: [
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 6 },
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_FROZEN, count: 4 },
+    ],
+  },
+  {
+    id: 80,
+    name: '雨润食品',
+    personality: 'opportunist',
+    initialCash: 90000000,
+    focusGoods: [GoodsId.PROCESSED_FOOD, GoodsId.MEAT],
+    category: 'processing',
+    description: '冷鲜肉与食品加工',
+    initialBuildings: [
+      { typeId: BuildingId.MEAT_PROCESSING, outputModeId: OutputModeId.MEAT_PROCESSING, count: 4 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_PROCESSING, count: 4 },
+    ],
+  },
+
+  // ==================== M. 翻倍扩展 - 制造扩充 (12家, ID 81-92) ====================
+  {
+    id: 81,
+    name: 'OPPO',
+    personality: 'innovator',
+    initialCash: 320000000,
+    focusGoods: [GoodsId.SMARTPHONE],
+    category: 'manufacturing',
+    description: '中端智能手机制造',
+    initialBuildings: [
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 7 },
+    ],
+  },
+  {
+    id: 82,
+    name: 'vivo',
+    personality: 'innovator',
+    initialCash: 300000000,
+    focusGoods: [GoodsId.SMARTPHONE],
+    category: 'manufacturing',
+    description: '影像优势手机品牌',
+    initialBuildings: [
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 6 },
+    ],
+  },
+  {
+    id: 83,
+    name: '联想集团',
+    personality: 'diversified',
+    initialCash: 360000000,
+    focusGoods: [GoodsId.COMPUTER, GoodsId.SMARTPHONE],
+    category: 'manufacturing',
+    description: 'PC 与移动设备制造',
+    initialBuildings: [
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_COMPUTER, count: 6 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_SMARTPHONE, count: 3 },
+    ],
+  },
+  {
+    id: 84,
+    name: 'TCL科技',
+    personality: 'cost_leader',
+    initialCash: 250000000,
+    focusGoods: [GoodsId.APPLIANCES, GoodsId.SCREEN],
+    category: 'manufacturing',
+    description: '彩电与面板制造',
+    initialBuildings: [
+      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 5 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 4 },
+    ],
+  },
+  {
+    id: 85,
+    name: '美的集团',
+    personality: 'aggressive',
+    initialCash: 380000000,
+    focusGoods: [GoodsId.APPLIANCES],
+    category: 'manufacturing',
+    description: '白色家电巨头',
+    initialBuildings: [
+      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 9 },
+    ],
+  },
+  {
+    id: 86,
+    name: '格力电器',
+    personality: 'premium',
+    initialCash: 350000000,
+    focusGoods: [GoodsId.APPLIANCES],
+    category: 'manufacturing',
+    description: '空调专精制造',
+    initialBuildings: [
+      { typeId: BuildingId.APPLIANCE_FACTORY, outputModeId: 0, count: 8 },
+    ],
+  },
+  {
+    id: 87,
+    name: '长城汽车',
+    personality: 'specialist',
+    initialCash: 280000000,
+    focusGoods: [GoodsId.CAR],
+    category: 'manufacturing',
+    description: 'SUV 与皮卡专营',
+    initialBuildings: [
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_FUEL, count: 6 },
+    ],
+  },
+  {
+    id: 88,
+    name: '广汽集团',
+    personality: 'diversified',
+    initialCash: 340000000,
+    focusGoods: [GoodsId.CAR, GoodsId.ELECTRIC_CAR],
+    category: 'manufacturing',
+    description: '燃油与新能源双线',
+    initialBuildings: [
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_FUEL, count: 4 },
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_ELECTRIC, count: 3 },
+    ],
+  },
+  {
+    id: 89,
+    name: '一汽集团',
+    personality: 'conservative',
+    initialCash: 320000000,
+    focusGoods: [GoodsId.CAR, GoodsId.LUXURY_CAR],
+    category: 'manufacturing',
+    description: '老牌国有车企',
+    initialBuildings: [
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_FUEL, count: 5 },
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_LUXURY, count: 2 },
+    ],
+  },
+  {
+    id: 90,
+    name: '三一重工',
+    personality: 'specialist',
+    initialCash: 220000000,
+    focusGoods: [GoodsId.MECHANICAL_PARTS, GoodsId.INDUSTRIAL_ROBOT],
+    category: 'manufacturing',
+    description: '工程机械制造',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 6 },
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_ROBOT, count: 2 },
+    ],
+  },
+  {
+    id: 91,
+    name: '沈飞集团',
+    personality: 'specialist',
+    initialCash: 260000000,
+    focusGoods: [GoodsId.AIRCRAFT_PARTS],
+    category: 'manufacturing',
+    description: '航空部件供应',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_AIRCRAFT, count: 4 },
+    ],
+  },
+  {
+    id: 92,
+    name: '顾家家居',
+    personality: 'premium',
+    initialCash: 110000000,
+    focusGoods: [GoodsId.FURNITURE],
+    category: 'manufacturing',
+    description: '中高端家居制造',
+    initialBuildings: [
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_PRODUCTION, count: 7 },
+    ],
+  },
+
+  // ==================== N. 翻倍扩展 - 医药扩充 (3家, ID 93-95) ====================
+  {
+    id: 93,
+    name: '国药控股',
+    personality: 'diversified',
+    initialCash: 280000000,
+    focusGoods: [GoodsId.GENERIC_DRUG, GoodsId.OTC_DRUG, GoodsId.MEDICAL_SUPPLIES],
+    category: 'pharma',
+    description: '医药全品类供应',
+    initialBuildings: [
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 3 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 4 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_OTC, count: 3 },
+    ],
+  },
+  {
+    id: 94,
+    name: '哈药集团',
+    personality: 'cost_leader',
+    initialCash: 160000000,
+    focusGoods: [GoodsId.ANTIBIOTICS, GoodsId.GENERIC_DRUG],
+    category: 'pharma',
+    description: '抗生素与仿制药',
+    initialBuildings: [
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_ANTIBIOTIC, count: 4 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 3 },
+    ],
+  },
+  {
+    id: 95,
+    name: '联影医疗',
+    personality: 'innovator',
+    initialCash: 240000000,
+    focusGoods: [GoodsId.MEDICAL_DEVICE],
+    category: 'pharma',
+    description: '高端影像设备',
+    initialBuildings: [
+      { typeId: BuildingId.MEDICAL_DEVICE_FACTORY, outputModeId: OutputModeId.MEDICAL_DEVICE, count: 4 },
+    ],
+  },
+
+  // ==================== O. 翻倍扩展 - 奢侈品扩充 (2家, ID 96-97) ====================
+  {
+    id: 96,
+    name: '老凤祥',
+    personality: 'premium',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.JEWELRY, GoodsId.GOLD],
+    category: 'luxury',
+    description: '老字号金饰品牌',
+    initialBuildings: [
+      { typeId: BuildingId.GOLD_REFINERY, outputModeId: OutputModeId.GOLD_REFINING, count: 2 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_JEWELRY, count: 6 },
+    ],
+  },
+  {
+    id: 97,
+    name: '海澜之家',
+    personality: 'cost_leader',
+    initialCash: 100000000,
+    focusGoods: [GoodsId.CLOTHING, GoodsId.DESIGNER_CLOTHING],
+    category: 'luxury',
+    description: '男装连锁制造',
+    initialBuildings: [
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_CLOTHING, count: 6 },
+      { typeId: BuildingId.LUXURY_WORKSHOP, outputModeId: OutputModeId.LUXURY_DESIGNER, count: 2 },
+    ],
+  },
+
+  // ==================== P. 翻倍扩展 - 能源扩充 (2家, ID 98-99) ====================
+  {
+    id: 98,
+    name: '大唐发电',
+    personality: 'conservative',
+    initialCash: 380000000,
+    focusGoods: [GoodsId.ELECTRICITY],
+    category: 'energy',
+    description: '燃煤发电主力',
+    initialBuildings: [
+      { typeId: BuildingId.POWER_PLANT, outputModeId: OutputModeId.POWER_COAL, count: 5 },
+    ],
+  },
+  {
+    id: 99,
+    name: '隆基绿能',
+    personality: 'pioneer',
+    initialCash: 260000000,
+    focusGoods: [GoodsId.SOLAR_PANEL, GoodsId.ELECTRICITY],
+    category: 'energy',
+    description: '光伏组件与发电',
+    initialBuildings: [
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 5 },
+      { typeId: BuildingId.POWER_PLANT, outputModeId: OutputModeId.POWER_SOLAR, count: 2 },
+    ],
+  },
+
+  // ==================== Q. 翻倍扩展 - 第三供应商 (20家, ID 100-119) ====================
+  {
+    id: 100,
+    name: '云南铜业',
+    personality: 'specialist',
+    initialCash: 130000000,
+    focusGoods: [GoodsId.COPPER],
+    category: 'processing',
+    description: '铜冶炼第三供应商',
+    initialBuildings: [
+      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_COPPER, count: 5 },
+    ],
+  },
+  {
+    id: 101,
+    name: '神火铝业',
+    personality: 'cost_leader',
+    initialCash: 120000000,
+    focusGoods: [GoodsId.ALUMINUM],
+    category: 'processing',
+    description: '电解铝第三供应商',
+    initialBuildings: [
+      { typeId: BuildingId.NON_FERROUS_SMELTER, outputModeId: OutputModeId.SMELTER_ALUMINUM, count: 5 },
+    ],
+  },
+  {
+    id: 102,
+    name: '国机重装',
+    personality: 'specialist',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.MECHANICAL_PARTS],
+    category: 'manufacturing',
+    description: '机械装备第三供应商',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 5 },
+    ],
+  },
+  {
+    id: 103,
+    name: '海康威视',
+    personality: 'innovator',
+    initialCash: 280000000,
+    focusGoods: [GoodsId.ELECTRONICS, GoodsId.DRONE],
+    category: 'manufacturing',
+    description: '安防与无人机制造',
+    initialBuildings: [
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_PRODUCTION, count: 4 },
+      { typeId: BuildingId.ELECTRONICS_FACTORY, outputModeId: OutputModeId.ELECTRONICS_DRONE, count: 3 },
+    ],
+  },
+  {
+    id: 104,
+    name: '大族激光',
+    personality: 'specialist',
+    initialCash: 170000000,
+    focusGoods: [GoodsId.MOTOR, GoodsId.MECHANICAL_PARTS],
+    category: 'manufacturing',
+    description: '激光设备与服装面料',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_FABRIC, count: 5 },
+    ],
+  },
+  {
+    id: 105,
+    name: '京东方',
+    personality: 'aggressive',
+    initialCash: 300000000,
+    focusGoods: [GoodsId.SCREEN],
+    category: 'manufacturing',
+    description: '面板第二供应商',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_SCREEN, count: 7 },
+    ],
+  },
+  {
+    id: 106,
+    name: '国轩高科',
+    personality: 'pioneer',
+    initialCash: 220000000,
+    focusGoods: [GoodsId.BATTERY, GoodsId.ENERGY_STORAGE],
+    category: 'energy',
+    description: '动力电池第二阵营',
+    initialBuildings: [
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_PRODUCTION, count: 4 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_STORAGE, count: 2 },
+    ],
+  },
+  {
+    id: 107,
+    name: '协鑫能科',
+    personality: 'opportunist',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.SOLAR_PANEL, GoodsId.SOLAR_SYSTEM],
+    category: 'energy',
+    description: '光伏与系统集成',
+    initialBuildings: [
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_SOLAR_PANEL, count: 3 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_SOLAR_SYSTEM, count: 3 },
+    ],
+  },
+  {
+    id: 108,
+    name: '金风科技',
+    personality: 'specialist',
+    initialCash: 160000000,
+    focusGoods: [GoodsId.WIND_BLADE],
+    category: 'energy',
+    description: '风电叶片专营',
+    initialBuildings: [
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 5 },
+    ],
+  },
+  {
+    id: 109,
+    name: '远景能源',
+    personality: 'innovator',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.WIND_BLADE, GoodsId.BATTERY],
+    category: 'energy',
+    description: '风储一体化',
+    initialBuildings: [
+      { typeId: BuildingId.NEW_ENERGY_FACTORY, outputModeId: OutputModeId.ENERGY_WIND_BLADE, count: 3 },
+      { typeId: BuildingId.BATTERY_FACTORY, outputModeId: OutputModeId.BATTERY_PRODUCTION, count: 3 },
+    ],
+  },
+  {
+    id: 110,
+    name: '益海嘉里',
+    personality: 'cost_leader',
+    initialCash: 140000000,
+    focusGoods: [GoodsId.PROCESSED_FOOD, GoodsId.FOOD, GoodsId.SNACKS],
+    category: 'processing',
+    description: '粮油食品加工',
+    initialBuildings: [
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_PROCESSING, count: 3 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_FINAL, count: 3 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_SNACKS, count: 3 },
+    ],
+  },
+  {
+    id: 111,
+    name: '伊利股份',
+    personality: 'aggressive',
+    initialCash: 200000000,
+    focusGoods: [GoodsId.DAIRY, GoodsId.BEVERAGES],
+    category: 'processing',
+    description: '乳制品龙头',
+    initialBuildings: [
+      { typeId: BuildingId.DAIRY_FACTORY, outputModeId: 0, count: 1 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_BEVERAGE, count: 3 },
+    ],
+  },
+  {
+    id: 112,
+    name: '上海家化',
+    personality: 'premium',
+    initialCash: 90000000,
+    focusGoods: [GoodsId.PROCESSED_FOOD, GoodsId.OTC_DRUG],
+    category: 'pharma',
+    description: '日化与保健品',
+    initialBuildings: [
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_OTC, count: 3 },
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_ORGANIC, count: 2 },
+    ],
+  },
+  {
+    id: 113,
+    name: '太极集团',
+    personality: 'conservative',
+    initialCash: 110000000,
+    focusGoods: [GoodsId.PHARMA_BASE, GoodsId.GENERIC_DRUG],
+    category: 'pharma',
+    description: '中成药与原料药',
+    initialBuildings: [
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_BASE, count: 4 },
+      { typeId: BuildingId.PHARMA_FACTORY, outputModeId: OutputModeId.PHARMA_GENERIC, count: 2 },
+    ],
+  },
+  {
+    id: 114,
+    name: '振华重工',
+    personality: 'specialist',
+    initialCash: 230000000,
+    focusGoods: [GoodsId.MECHANICAL_PARTS, GoodsId.AIRCRAFT_PARTS],
+    category: 'manufacturing',
+    description: '港口机械与重工',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_MECHANICAL, count: 4 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_AIRCRAFT, count: 2 },
+    ],
+  },
+  {
+    id: 115,
+    name: '福田汽车',
+    personality: 'cost_leader',
+    initialCash: 180000000,
+    focusGoods: [GoodsId.CAR, GoodsId.CAR_PARTS],
+    category: 'manufacturing',
+    description: '商用车制造',
+    initialBuildings: [
+      { typeId: BuildingId.CAR_FACTORY, outputModeId: OutputModeId.CAR_FUEL, count: 3 },
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_CAR, count: 3 },
+    ],
+  },
+  {
+    id: 116,
+    name: '红豆服饰',
+    personality: 'opportunist',
+    initialCash: 70000000,
+    focusGoods: [GoodsId.CLOTHING, GoodsId.CLOTHING_FABRIC],
+    category: 'processing',
+    description: '大众服装连锁',
+    initialBuildings: [
+      { typeId: BuildingId.PARTS_FACTORY, outputModeId: OutputModeId.PARTS_FABRIC, count: 3 },
+      { typeId: BuildingId.FURNITURE_FACTORY, outputModeId: OutputModeId.FURNITURE_CLOTHING, count: 5 },
+    ],
+  },
+  {
+    id: 117,
+    name: '光明乳业',
+    personality: 'specialist',
+    initialCash: 130000000,
+    focusGoods: [GoodsId.DAIRY],
+    category: 'processing',
+    description: '华东乳业第二品牌',
+    initialBuildings: [
+      { typeId: BuildingId.DAIRY_FACTORY, outputModeId: 0, count: 1 },
+    ],
+  },
+  {
+    id: 118,
+    name: '五粮液',
+    personality: 'premium',
+    initialCash: 220000000,
+    focusGoods: [GoodsId.BEVERAGES],
+    category: 'luxury',
+    description: '高端白酒制造',
+    initialBuildings: [
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_BEVERAGE, count: 5 },
+    ],
+  },
+  {
+    id: 119,
+    name: '茅台集团',
+    personality: 'premium',
+    initialCash: 320000000,
+    focusGoods: [GoodsId.BEVERAGES],
+    category: 'luxury',
+    description: '顶级白酒品牌',
+    initialBuildings: [
+      { typeId: BuildingId.FOOD_FACTORY, outputModeId: OutputModeId.FOOD_BEVERAGE, count: 6 },
     ],
   },
 ];
+
+export const AI_COMPANIES: AICompanyConfig[] = RAW_AI_COMPANIES.map(normalizeAICompanyConfig);
 
 /**
  * 获取AI公司的人格

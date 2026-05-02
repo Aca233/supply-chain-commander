@@ -419,34 +419,15 @@ export class BrandManager {
   /**
    * 获取品牌溢价倍数
    */
-  getBrandPriceMultiplier(companyId: number, goodsId?: number): number {
-    const brand = this.brands.get(companyId);
-    if (!brand) return 1.0;
-    
-    let multiplier = BRAND_TIER_CONFIG[brand.tier].priceMultiplier;
-    
-    // 品类专长加成
-    if (goodsId !== undefined) {
-      const categoryStrength = brand.categoryStrengths.get(goodsId) ?? 50;
-      multiplier *= 1 + (categoryStrength - 50) / 200;  // ±25%
-    }
-    
-    return multiplier;
+  getBrandPriceMultiplier(_companyId: number, _goodsId?: number): number {
+    return 1.0;
   }
-  
+
   /**
    * 获取品牌需求倍数
    */
-  getBrandDemandMultiplier(companyId: number): number {
-    const brand = this.brands.get(companyId);
-    if (!brand) return 1.0;
-    
-    let multiplier = BRAND_TIER_CONFIG[brand.tier].demandMultiplier;
-    
-    // 忠诚度加成
-    multiplier *= 1 + (brand.loyalty - 50) / 100 * 0.2;  // ±10%
-    
-    return multiplier;
+  getBrandDemandMultiplier(_companyId: number): number {
+    return 1.0;
   }
   
   /**

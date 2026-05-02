@@ -1,6 +1,6 @@
 import { BUILDINGS_BY_ID } from '@/data/buildings';
 import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
-import { getBuildingSlotCount, getProductionModifiersForBuilding } from '@/core/production/ProductionMethods';
+import { getBuildingSlotCount, getRecipeForBuilding } from '@/core/production/ProductionMethods';
 
 import { GameWorld } from '../world/GameWorld';
 
@@ -15,17 +15,19 @@ export interface OperatingCostBreakdown {
 
 const DEFAULT_TICKS_PER_DAY = TICKS_PER_DAY;
 
-function getBuildingEnergyMultiplier(world: GameWorld, buildingId: number): number {
+/**
+ * 读取建筑当前 method 配方的 energyRequired（绝对值，每天）
+ * 若建筑未注册则返回 0
+ */
+function getBuildingRecipeEnergy(world: GameWorld, buildingId: number): number {
   const buildingTypeId = world.buildings.types[buildingId];
   const slotCount = getBuildingSlotCount(buildingTypeId);
   const slotOffset = buildingId * MAX_SLOTS;
   const slotMethods: number[] = [];
-
-  for (let slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-    slotMethods.push(world.buildings.slotMethods[slotOffset + slotIndex] ?? 0);
+  for (let i = 0; i < slotCount; i++) {
+    slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
   }
-
-  return getProductionModifiersForBuilding(buildingTypeId, slotMethods).energyMultiplier;
+  return getRecipeForBuilding(buildingTypeId, slotMethods).energyRequired;
 }
 
 export function calculateCompanyOperatingCostPerTick(
@@ -38,18 +40,18 @@ export function calculateCompanyOperatingCostPerTick(
   let energy = 0;
 
   for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
-    if (world.buildings.owners[buildingId] !== companyId) {
-      continue;
-    }
+    if (world.buildings.owners[buildingId] !== companyId) continue;
+    if (world.buildings.isActive[buildingId] !== 1) continue;
 
     const buildingDef = BUILDINGS_BY_ID.get(world.buildings.types[buildingId]);
-    if (!buildingDef) {
-      continue;
-    }
+    if (!buildingDef) continue;
 
     maintenance += buildingDef.maintenanceCost / ticksPerDay;
     labor += buildingDef.laborCost / ticksPerDay;
-    energy += (buildingDef.energyCost * getBuildingEnergyMultiplier(world, buildingId)) / ticksPerDay;
+
+    // 能耗：基础能耗 + method 配方提供的额外能耗
+    const recipeEnergy = getBuildingRecipeEnergy(world, buildingId);
+    energy += (buildingDef.energyCost + recipeEnergy) / ticksPerDay;
   }
 
   const cashExpense = maintenance + labor + energy;
@@ -78,8 +80,7 @@ export function applyOperatingCosts(
       world.companies.cash[companyId] -= breakdown.cashExpense;
     }
 
-    // Labor and energy flow to households as wages (闭合货币循环)
-    const wagesToHouseholds = breakdown.labor + breakdown.energy;
+    const wagesToHouseholds = breakdown.labor;
     if (wagesToHouseholds > 0) {
       world.households.cash[0] += wagesToHouseholds;
       world.households.totalWagesReceived += wagesToHouseholds;

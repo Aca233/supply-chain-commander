@@ -17,6 +17,7 @@ import { SERVICE_GOODS_LIST, ALL_GOODS, GOODS_BY_ID } from '@/data/goods';
 import { BUILDINGS_BY_ID, ALL_BUILDINGS } from '@/data/buildings';
 import { CONSUMER_TIERS } from './DemandCurve';
 import { GOODS_COUNT, TICKS_PER_DAY } from '../constants';
+import { recordFinalConsumption, setDemandPressure } from './MarketStats';
 
 // ==================== 类型定义 ====================
 
@@ -226,7 +227,9 @@ function updateDemandCache(world: GameWorld): void {
     demandCache.demandByGoods.set(goods.id, demand);
     
     // 更新world中的需求数据
-    world.goods.demands[goods.id] = demand * TICKS_PER_DAY;
+    const grossDemand = demand * TICKS_PER_DAY;
+    world.goods.demands[goods.id] = grossDemand;
+    setDemandPressure(world, goods.id, grossDemand);
   }
   
   demandCache.lastUpdate = world.tick;
@@ -298,8 +301,8 @@ export function processServiceConsumption(world: GameWorld): ServiceConsumptionR
       // 收入转入设施所有者
       c.cash[ownerId] += revenue;
       
-      // 更新供给统计
-      world.goods.supplies[goodsId] += allocation;
+      // 服务即产即消：交付服务满足需求，不增加商品供给存量
+      recordFinalConsumption(world, goodsId, allocation);
       
       // 记录设施结果
       const customers = Math.ceil(allocation);

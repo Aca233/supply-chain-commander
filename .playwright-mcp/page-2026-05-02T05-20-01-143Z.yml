@@ -1,0 +1,192 @@
+- generic [ref=e97]:
+  - complementary [ref=e98]:
+    - navigation [ref=e99]:
+      - generic [ref=e100]:
+        - button "📊 仪表盘" [ref=e101] [cursor=pointer]:
+          - generic [ref=e102]: 📊
+          - generic [ref=e103]: 仪表盘
+        - button "🏭 生产管理" [ref=e104] [cursor=pointer]:
+          - generic [ref=e105]: 🏭
+          - generic [ref=e106]: 生产管理
+        - button "🔗 产业链" [ref=e107] [cursor=pointer]:
+          - generic [ref=e108]: 🔗
+          - generic [ref=e109]: 产业链
+        - button "💹 市场交易" [ref=e110] [cursor=pointer]:
+          - generic [ref=e111]: 💹
+          - generic [ref=e112]: 市场交易
+        - button "🏪 零售管理" [ref=e113] [cursor=pointer]:
+          - generic [ref=e114]: 🏪
+          - generic [ref=e115]: 零售管理
+        - button "📈 财务报表" [ref=e116] [cursor=pointer]:
+          - generic [ref=e117]: 📈
+          - generic [ref=e118]: 财务报表
+        - button "🏛️ 竞争与投资" [ref=e119] [cursor=pointer]:
+          - generic [ref=e120]: 🏛️
+          - generic [ref=e121]: 竞争与投资
+        - button "📰 商业周刊 新" [ref=e1100] [cursor=pointer]:
+          - generic [ref=e123]: 📰
+          - generic [ref=e124]: 商业周刊
+          - generic [ref=e1102]: 新
+        - button "⚙️ 设置" [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: ⚙️
+          - generic [ref=e127]: 设置
+      - button "← 收起侧栏" [ref=e619] [cursor=pointer]:
+        - generic [ref=e620]: ←
+        - generic [ref=e621]: 收起侧栏
+  - generic [ref=e128]:
+    - banner [ref=e129]:
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - generic [ref=e134]: SC
+          - heading "供应链指挥官" [level=1] [ref=e135]
+        - generic [ref=e136]:
+          - generic [ref=e137]:
+            - text: 游戏时间：
+            - generic [ref=e138]: 第1年 3月1日
+          - generic [ref=e139]:
+            - button "1x" [ref=e140] [cursor=pointer]
+            - button "2x" [ref=e141] [cursor=pointer]
+            - button "4x" [ref=e142] [cursor=pointer]
+            - button "8x" [ref=e143] [cursor=pointer]
+          - button "⏸" [ref=e144] [cursor=pointer]
+        - generic [ref=e145]:
+          - generic [ref=e146]:
+            - generic [ref=e147]: 现金
+            - generic [ref=e148]: ¥17.01M
+          - button "☀️" [ref=e149] [cursor=pointer]:
+            - generic [ref=e150]: ☀️
+          - generic [ref=e152]: 👤
+    - main [ref=e153]:
+      - generic [ref=e895]:
+        - heading "⚙️ 设置" [level=1] [ref=e896]
+        - generic [ref=e897]:
+          - tablist [ref=e898]:
+            - tab "🎮 游戏" [ref=e899] [cursor=pointer]:
+              - generic [ref=e900]: 🎮
+              - generic [ref=e901]: 游戏
+            - tab "💾 存档" [selected] [ref=e902] [cursor=pointer]:
+              - generic [ref=e903]: 💾
+              - generic [ref=e904]: 存档
+            - tab "📈 市场" [ref=e905] [cursor=pointer]:
+              - generic [ref=e906]: 📈
+              - generic [ref=e907]: 市场
+            - tab "📊 性能" [ref=e908] [cursor=pointer]:
+              - generic [ref=e909]: 📊
+              - generic [ref=e910]: 性能
+            - tab "🎛️ 平衡" [ref=e911] [cursor=pointer]:
+              - generic [ref=e912]: 🎛️
+              - generic [ref=e913]: 平衡
+            - tab "🤖 AI" [ref=e914] [cursor=pointer]:
+              - generic [ref=e915]: 🤖
+              - generic [ref=e916]: AI
+            - tab "ℹ️ 关于" [ref=e917] [cursor=pointer]:
+              - generic [ref=e918]: ℹ️
+              - generic [ref=e919]: 关于
+          - tabpanel "💾 存档" [ref=e1058]:
+            - generic [ref=e1059]:
+              - heading "📝 创建存档" [level=3] [ref=e1061]
+              - generic [ref=e1063]:
+                - textbox "存档名称（可选）" [ref=e1066]
+                - button "💾 保存游戏" [active] [ref=e1067] [cursor=pointer]
+                - button "⚡ 快速存档" [ref=e1068] [cursor=pointer]
+            - generic [ref=e1069]:
+              - generic [ref=e1071]:
+                - heading "📂 存档列表" [level=3] [ref=e1072]
+                - generic [ref=e1074]: "存储使用: 493.36 KB / 5.00 MB"
+              - table [ref=e1082]:
+                - rowgroup [ref=e1083]:
+                  - row "存档名称 保存时间 游戏时间 现金 操作" [ref=e1084]:
+                    - columnheader "存档名称" [ref=e1085]:
+                      - generic [ref=e1086]: 存档名称
+                    - columnheader "保存时间" [ref=e1087]:
+                      - generic [ref=e1088]: 保存时间
+                    - columnheader "游戏时间" [ref=e1089]:
+                      - generic [ref=e1090]: 游戏时间
+                    - columnheader "现金" [ref=e1091]:
+                      - generic [ref=e1092]: 现金
+                    - columnheader "操作" [ref=e1093]:
+                      - generic [ref=e1094]: 操作
+                - rowgroup [ref=e1095]:
+                  - row "存档 2026/5/2 13:20:00 v3.0.0 2026/5/2 13:20:00 第1年 2月30日 ¥16,722.9K 加载 删除" [ref=e1103]:
+                    - cell "存档 2026/5/2 13:20:00 v3.0.0" [ref=e1104]:
+                      - generic [ref=e1105]:
+                        - generic [ref=e1106]: 存档 2026/5/2 13:20:00
+                        - generic [ref=e1107]: v3.0.0
+                    - cell "2026/5/2 13:20:00" [ref=e1108]
+                    - cell "第1年 2月30日" [ref=e1109]
+                    - cell "¥16,722.9K" [ref=e1110]
+                    - cell "加载 删除" [ref=e1111]:
+                      - generic [ref=e1112]:
+                        - button "加载" [ref=e1113] [cursor=pointer]
+                        - button "删除" [ref=e1114] [cursor=pointer]
+  - button "!" [ref=e469] [cursor=pointer]:
+    - img [ref=e470]
+    - generic [ref=e473]: "!"
+  - generic [ref=e1115]:
+    - generic [ref=e1116]:
+      - generic [ref=e1118]:
+        - generic [ref=e1119]: 1年二月刊
+        - generic [ref=e1120]: 商业周刊
+        - generic [ref=e1121]: 模板生成
+      - button [ref=e1122] [cursor=pointer]:
+        - img [ref=e1123]
+    - generic [ref=e1125]:
+      - generic [ref=e1126]:
+        - generic [ref=e1127]: 🔥 头条新闻
+        - generic [ref=e1128]:
+          - heading "不温不火，2月市场保持稳定 ⚖️" [level=3] [ref=e1129]
+          - paragraph [ref=e1130]: 本月GDP增长0.0%，当前通胀率1.7%，失业率4.5%。经济处于扩张阶段。
+      - generic [ref=e1131]:
+        - generic [ref=e1133]:
+          - generic [ref=e1134]: 📈
+          - generic [ref=e1135]:
+            - generic [ref=e1136]:
+              - generic [ref=e1137]: 市场行情
+              - generic [ref=e1138]: 重要
+            - heading "乳制品价格崩盘！跌了41%，卖家哭晕在厕所 📉" [level=4] [ref=e1139]
+            - paragraph [ref=e1140]: 乳制品从¥25变到¥15，变化幅度-41.3%
+        - generic [ref=e1142]:
+          - generic [ref=e1143]: 📈
+          - generic [ref=e1144]:
+            - generic [ref=e1145]:
+              - generic [ref=e1146]: 市场行情
+              - generic [ref=e1147]: 重要
+            - heading "心痛！宠物食品贬值41%，库存都变废纸了 😭" [level=4] [ref=e1148]
+            - paragraph [ref=e1149]: 宠物食品从¥50变到¥29，变化幅度-41.3%
+        - generic [ref=e1151]:
+          - generic [ref=e1152]: 📈
+          - generic [ref=e1153]:
+            - generic [ref=e1154]:
+              - generic [ref=e1155]: 市场行情
+              - generic [ref=e1156]: 重要
+            - heading "有机食品跌跌不休，本月暴跌41% 🆘" [level=4] [ref=e1157]
+            - paragraph [ref=e1158]: 有机食品从¥85变到¥50，变化幅度-40.8%
+        - generic [ref=e1160]:
+          - generic [ref=e1161]: 🎮
+          - generic [ref=e1162]:
+            - generic [ref=e1163]:
+              - generic [ref=e1164]: 玩家成就
+              - generic [ref=e1165]: 重要
+            - heading "小亏怡情，玩家本月-¥988.9K，问题不大 😅" [level=4] [ref=e1166]
+            - paragraph [ref=e1167]: 玩家本月资金变化-5.5%，完成406笔交易，总额¥15.07M
+        - generic [ref=e1169]:
+          - generic [ref=e1170]: 🎮
+          - generic [ref=e1171]:
+            - generic [ref=e1173]: 玩家成就
+            - heading "大手笔！玩家单笔交易¥701.1K 💎" [level=4] [ref=e1174]
+            - paragraph [ref=e1175]: 玩家在钢材上完成了一笔大额交易
+        - generic [ref=e1177]:
+          - generic [ref=e1178]: 🏢
+          - generic [ref=e1179]:
+            - generic [ref=e1181]: 企业资讯
+            - heading "产业链投资稳坐首富宝座！身家¥28660.3M 🤑" [level=4] [ref=e1182]
+            - paragraph [ref=e1183]: 在众多AI公司中，产业链投资以雄厚的资金实力傲视群雄
+      - generic [ref=e1185]:
+        - heading "📋 月度总结" [level=4] [ref=e1186]
+        - paragraph [ref=e1187]: 2月总体平平无奇，玩家亏了点，期待明天会更好！
+      - generic [ref=e1188]: 还有 3 条新闻...
+    - generic [ref=e1189]:
+      - generic [ref=e1190]: 共 10 条新闻
+      - generic [ref=e1191]:
+        - button "稍后再看" [ref=e1192] [cursor=pointer]
+        - button "查看全部 →" [ref=e1193] [cursor=pointer]

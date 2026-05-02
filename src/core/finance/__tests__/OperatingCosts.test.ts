@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
-import { TICKS_PER_DAY } from '@/core/constants';
-import { initializeBuildingProductionMethods, getProductionModifiersForBuilding } from '@/core/production/ProductionMethods';
+import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
+import {
+  getBuildingSlotCount,
+  getRecipeForBuilding,
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
 
 import { createGameWorld } from '@/core/world/GameWorld';
-import { getBuildingSelectedMethods, setBuildingMethod } from '@/core/production/ProductionEngine';
 import { addBuilding } from '@/core/world/WorldInitializer';
 
 import {
@@ -17,10 +20,15 @@ function addOwnedBuilding(world: ReturnType<typeof createGameWorld>, ownerId: nu
   return addBuilding(world, ownerId, buildingTypeId, 0);
 }
 
-function getEnergyMultiplier(world: ReturnType<typeof createGameWorld>, buildingId: number): number {
+function recipeEnergyFor(world: ReturnType<typeof createGameWorld>, buildingId: number): number {
   const buildingTypeId = world.buildings.types[buildingId];
-  const selectedMethods = getBuildingSelectedMethods(world, buildingId);
-  return getProductionModifiersForBuilding(buildingTypeId, selectedMethods).energyMultiplier;
+  const slotCount = getBuildingSlotCount(buildingTypeId);
+  const slotOffset = buildingId * MAX_SLOTS;
+  const slotMethods: number[] = [];
+  for (let i = 0; i < slotCount; i++) {
+    slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
+  }
+  return getRecipeForBuilding(buildingTypeId, slotMethods).energyRequired;
 }
 
 describe('OperatingCosts', () => {
@@ -28,7 +36,7 @@ describe('OperatingCosts', () => {
     initializeBuildingProductionMethods();
   });
 
-  it('calculates per-tick maintenance, labor, and energy costs for owned buildings', () => {
+  it('calculates per-tick maintenance, labor, energy from building base costs + recipe energy delta', () => {
     const world = createGameWorld();
     world.companies.count = 2;
 
@@ -38,8 +46,6 @@ describe('OperatingCosts', () => {
 
     const ironMine = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
     const steelMill = BUILDINGS_BY_ID.get(BuildingId.STEEL_MILL)!;
-    const ironMineEnergyMultiplier = getEnergyMultiplier(world, ironMineId);
-    const steelMillEnergyMultiplier = getEnergyMultiplier(world, steelMillId);
 
     const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
 
@@ -49,22 +55,11 @@ describe('OperatingCosts', () => {
     expect(breakdown.labor).toBeCloseTo(
       (ironMine.laborCost + steelMill.laborCost) / TICKS_PER_DAY,
     );
-    expect(breakdown.energy).toBeCloseTo(
-      (
-        ironMine.energyCost * ironMineEnergyMultiplier +
-        steelMill.energyCost * steelMillEnergyMultiplier
-      ) / TICKS_PER_DAY,
-    );
-    expect(breakdown.total).toBeCloseTo(
-      (
-        ironMine.maintenanceCost +
-        ironMine.laborCost +
-        ironMine.energyCost * ironMineEnergyMultiplier +
-        steelMill.maintenanceCost +
-        steelMill.laborCost +
-        steelMill.energyCost * steelMillEnergyMultiplier
-      ) / TICKS_PER_DAY,
-    );
+    // Vic3 风格：energy = base energyCost + 所有 method 的 energyDelta 求和
+    const expectedEnergy =
+      (ironMine.energyCost + recipeEnergyFor(world, ironMineId) +
+        steelMill.energyCost + recipeEnergyFor(world, steelMillId)) / TICKS_PER_DAY;
+    expect(breakdown.energy).toBeCloseTo(expectedEnergy);
   });
 
   it('deducts recurring operating costs from company cash', () => {
@@ -76,7 +71,6 @@ describe('OperatingCosts', () => {
     addOwnedBuilding(world, 0, BuildingId.IRON_MINE);
 
     const expectedTotal = calculateCompanyOperatingCostPerTick(world, 0).total;
-
     const breakdowns = applyOperatingCosts(world);
 
     expect(breakdowns[0].total).toBeCloseTo(expectedTotal);
@@ -84,23 +78,27 @@ describe('OperatingCosts', () => {
     expect(breakdowns[0].cashExpense).toBeCloseTo(breakdowns[0].total);
     expect(breakdowns[0].nonCashExpense).toBeCloseTo(0);
     expect(world.companies.cash[1]).toBeCloseTo(500_000);
-    // Labor + energy transferred to household pool (闭合货币循环)
-    const expectedHouseholdInflow = breakdowns[0].labor + breakdowns[0].energy;
+    const expectedHouseholdInflow = breakdowns[0].labor;
     expect(world.households.cash[0]).toBeCloseTo(expectedHouseholdInflow);
     expect(world.households.totalWagesReceived).toBeCloseTo(expectedHouseholdInflow);
   });
 
-  it('applies production method energy multipliers to energy operating costs', () => {
+  it('ignores inactive buildings when calculating recurring operating costs', () => {
     const world = createGameWorld();
     world.companies.count = 1;
 
-    const buildingId = addOwnedBuilding(world, 0, BuildingId.IRON_MINE);
+    const activeBuildingId = addOwnedBuilding(world, 0, BuildingId.IRON_MINE);
+    const inactiveBuildingId = addOwnedBuilding(world, 0, BuildingId.CONVENIENCE_STORE);
+    world.buildings.isActive[activeBuildingId] = 1;
+    world.buildings.isActive[inactiveBuildingId] = 0;
+
+    const activeBreakdown = calculateCompanyOperatingCostPerTick(world, 0);
     const ironMine = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
+    const expectedEnergy =
+      (ironMine.energyCost + recipeEnergyFor(world, activeBuildingId)) / TICKS_PER_DAY;
 
-    expect(setBuildingMethod(world, buildingId, 0, 10002)).toBe(true);
-
-    const breakdown = calculateCompanyOperatingCostPerTick(world, 0);
-
-    expect(breakdown.energy).toBeCloseTo((ironMine.energyCost * 1.12) / TICKS_PER_DAY, 5);
+    expect(activeBreakdown.maintenance).toBeCloseTo(ironMine.maintenanceCost / TICKS_PER_DAY);
+    expect(activeBreakdown.labor).toBeCloseTo(ironMine.laborCost / TICKS_PER_DAY);
+    expect(activeBreakdown.energy).toBeCloseTo(expectedEnergy);
   });
 });

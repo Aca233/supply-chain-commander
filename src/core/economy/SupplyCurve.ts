@@ -6,8 +6,9 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { getBuildingProduction, BUILDINGS_BY_ID } from '@/data/buildings';
+import { BUILDINGS_BY_ID } from '@/data/buildings';
 import { GOODS_COUNT } from '@/core/constants';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 
 /**
  * 成本结构
@@ -57,8 +58,7 @@ export function calculateCostStructure(
   quantity: number
 ): CostStructure {
   const buildingTypeId = world.buildings.types[buildingId];
-  const outputModeId = world.buildings.outputModeIds[buildingId];
-  const production = getBuildingProduction(buildingTypeId, outputModeId);
+  const production = getBuildingRecipeFromInstance(world, buildingId);
   const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
   
   if (!production || !buildingDef) {
@@ -142,11 +142,9 @@ export function getMarginalCostParams(
   world: GameWorld,
   buildingId: number
 ): MarginalCostParams {
-  const buildingTypeId = world.buildings.types[buildingId];
-  const outputModeId = world.buildings.outputModeIds[buildingId];
-  const production = getBuildingProduction(buildingTypeId, outputModeId);
-  
-  if (!production) {
+  const production = getBuildingRecipeFromInstance(world, buildingId);
+
+  if (production.outputs.length === 0) {
     return { a: 10, b: -0.05, c: 0.0005, minQuantity: 0, maxQuantity: 200 };
   }
   
@@ -287,14 +285,12 @@ export function calculateMarketSupply(
   
   // 遍历所有生产该商品的建筑
   for (let i = 0; i < world.buildings.count; i++) {
-    const buildingTypeId = world.buildings.types[i];
-    const outputModeId = world.buildings.outputModeIds[i];
-    const production = getBuildingProduction(buildingTypeId, outputModeId);
-    
-    if (!production) continue;
-    
+    const production = getBuildingRecipeFromInstance(world, i);
+
+    if (production.outputs.length === 0) continue;
+
     // 检查是否生产目标商品
-    const outputs = production.outputs || [];
+    const outputs = production.outputs;
     const producesGoods = outputs.some(o => o.goodsId === goodsId);
     if (!producesGoods) continue;
     

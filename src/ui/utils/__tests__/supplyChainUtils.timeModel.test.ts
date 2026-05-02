@@ -48,9 +48,25 @@ vi.mock('@/data/buildings', () => {
   return {
     ALL_BUILDINGS: [building],
     BUILDINGS_BY_ID: new Map([[building.id, building]]),
-    getBuildingProduction: () => building.production,
+    BuildingId: { STEEL_MILL: 10 },
   };
 });
+
+vi.mock('@/core/production/ProductionMethods', () => ({
+  getBuildingProductionVariants: () => [
+    {
+      legacyOutputModeId: 0,
+      name: '默认配方',
+      recipe: {
+        inputs: [{ goodsId: 1, amount: 1 }],
+        outputs: [{ goodsId: 2, amount: 10 }],
+        laborRequired: 0,
+        energyRequired: 0,
+        ticksRequired: 1,
+      },
+    },
+  ],
+}));
 
 import { calculateProductionPlan } from '../supplyChainUtils';
 

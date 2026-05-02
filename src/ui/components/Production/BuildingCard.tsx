@@ -1,12 +1,13 @@
-/**
+﻿/**
  * 建筑卡片组件
  * 现代毛玻璃风格设计
  */
 
 import React, { useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { CompactResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
@@ -15,6 +16,7 @@ import {
   calculateBuildingDailyAmount,
   calculateBuildingFinancialEstimate,
 } from './BuildingFinancialEstimate';
+import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
 
 // 设计系统组件
 import { Card, Badge, Button, ProgressBar } from '@/ui/design-system';
@@ -76,8 +78,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
 
     const typeId = world.buildings.types[buildingIndex];
     const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-    const outputModeId = world.buildings.outputModeIds[buildingIndex];
-    const production = getBuildingProduction(typeId, outputModeId);
+    const production = getBuildingRecipeFromInstance(world, buildingIndex);
     const level = world.buildings.levels[buildingIndex];
     const efficiency = world.buildings.efficiencies[buildingIndex];
     const isActive = world.buildings.isActive[buildingIndex];
@@ -139,7 +140,7 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
 
     // 计算日成本
     const dailyCost = buildingDef
-      ? buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost
+      ? calculateBuildingDefinitionOperatingCostPerTick(buildingDef).cashExpense
       : 0;
     const financialEstimate = calculateBuildingFinancialEstimate({
       isActive: Boolean(isActive),
@@ -164,20 +165,11 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
 
     // 获取生产配置名称
     let productionName = isRetail ? '零售' : '无配方';
-    if (production) {
-      // 检查是否有outputMode名称
-      if (buildingDef?.production?.outputModes) {
-        const mode = buildingDef.production.outputModes.find(m => m.modeId === outputModeId);
-        if (mode) {
-          productionName = mode.name;
-        } else if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
-          const outputGoods = ALL_GOODS.find(g => g.id === buildingDef.production!.outputs![0].goodsId);
-          productionName = outputGoods?.name || buildingDef.name;
-        }
-      } else if (production.outputs && production.outputs.length > 0) {
-        const outputGoods = ALL_GOODS.find(g => g.id === production.outputs![0].goodsId);
-        productionName = `生产${outputGoods?.name || '商品'}`;
-      }
+    if (production.outputs.length > 0) {
+      const outputGoods = ALL_GOODS.find(g => g.id === production.outputs[0].goodsId);
+      productionName = `生产${outputGoods?.name || '商品'}`;
+    } else if (buildingDef) {
+      productionName = buildingDef.name;
     }
 
     return {
@@ -189,7 +181,6 @@ export const BuildingCard: React.FC<BuildingCardProps> = ({
       efficiency,
       isActive,
       isRetail,
-      outputModeId,
       productionName,
       inputs,
       outputs,

@@ -49,8 +49,8 @@ function formatPercent(value: number): string {
 
 function formatVolume(value: number): string {
   if (!isFinite(value)) return '0';
-  if (value >= 1000000) return `${(value / 1000000).toFixed(2)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+  if (Math.abs(value) >= 1000000) return `${(value / 1000000).toFixed(2)}M`;
+  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}K`;
   return value.toFixed(0);
 }
 
@@ -130,17 +130,16 @@ const StockDetailPanel: React.FC<{
   onTrade: (type: 'buy' | 'sell') => void;
 }> = ({ profile, onTrade }) => {
   const stock = profile.stock;
+  const priceHistory = useMemo(() => {
+    return stock ? buildStockPriceHistory(stock) : [];
+  }, [stock]);
+
   if (!stock) return null;
 
   const priceUp = stock.priceChange >= 0;
   const tradable = stock.isListed && stock.isTradable;
   const statusLabel = tradable ? '交易中' : stock.isListed ? '停牌' : '已退市';
   const statusVariant = tradable ? 'success' : stock.isListed ? 'warning' : 'outline';
-
-  // 使用真实摘要字段构建确定性的会话序列，避免随机波动误导 UI
-  const priceHistory = useMemo(() => {
-    return buildStockPriceHistory(stock);
-  }, [stock.currentPrice, stock.openPrice, stock.previousClose]);
 
   return (
     <div className="space-y-4">

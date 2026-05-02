@@ -16,6 +16,7 @@ import {
   ACTUAL_GOODS_COUNT,
   ORDER_POOL_WARNING_THRESHOLD,
   ORDER_POOL_CRITICAL_THRESHOLD,
+  TICKS_PER_DAY,
 } from '../constants';
 import { getOrderBookIndex } from './OrderBookIndex';
 
@@ -299,8 +300,6 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
       const price = o.prices[idx];
       orderIndex.addOrder(idx, goodsId, orderType, price);
     }
-    console.log(`[订单池同步] OrderBookIndex已重建，包含${foundActiveIndices.length}个订单`);
-    
     return { fixed: true, details };
   }
   
@@ -339,7 +338,6 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
       const price = o.prices[idx];
       orderIndex.addOrder(idx, goodsId, orderType, price);
     }
-    console.log(`[订单池同步] OrderBookIndex已重建，包含${foundActiveIndices.length}个订单`);
     return { fixed: true, details: `OrderBookIndex已同步，包含${foundActiveIndices.length}个订单` };
   }
   
@@ -403,9 +401,28 @@ const PRICE_MERGE_TOLERANCE = 0.05;
 
 /** 单个订单最大数量限制（大幅提高以支持大额交易） */
 const MAX_ORDER_QUANTITY = 100000;
+const BUY_ORDER_EXPIRY_TICKS = TICKS_PER_DAY;
+const SELL_ORDER_EXPIRY_TICKS = TICKS_PER_DAY * 2;
+const ORDER_PRICE_BAND = 0.50;
 
 /** 单个订单最大合并后数量（大幅提高以支持大额交易） */
 const MAX_MERGED_QUANTITY = 500000;
+
+function getReferencePrice(world: GameWorld, goodsId: number): number {
+  return world.goods.prices[goodsId] || world.goods.baseValues[goodsId] || 1;
+}
+
+function normalizeOrderPrice(world: GameWorld, goodsId: number, orderType: number, requestedPrice: number): number {
+  const referencePrice = getReferencePrice(world, goodsId);
+  const minPrice = referencePrice * (1 - ORDER_PRICE_BAND);
+  const maxPrice = referencePrice * (1 + ORDER_PRICE_BAND);
+
+  if (orderType === 0) {
+    return Math.max(minPrice, Math.min(maxPrice, requestedPrice));
+  }
+
+  return Math.max(minPrice, Math.min(maxPrice, requestedPrice));
+}
 
 /**
  * 统计某公司某商品的活跃订单数（优化版：O(1)复杂度）
@@ -472,11 +489,6 @@ function findMatchingOrder(
     }
   }
   
-  // 如果价格不在容差内，但已有该商品的订单过多，返回最优价格的订单进行合并
-  if (bestIdx >= 0 && orderSet.size >= MAX_ORDERS_PER_COMPANY_GOODS - 1) {
-    return bestIdx;
-  }
-  
   return -1;  // 未找到
 }
 
@@ -514,7 +526,7 @@ export function createBuyOrder(
   goodsId: number,
   quantity: number,
   price: number,
-  expiryTicks: number = 24  // 默认1天过期（放宽限制）
+  expiryTicks: number = BUY_ORDER_EXPIRY_TICKS
 ): number | null {
   // 【优化】提前初始化并检查容量
   if (!orderPool) {
@@ -531,15 +543,16 @@ export function createBuyOrder(
   if (clampedQuantity <= 0) {
     return null;
   }
+  const normalizedPrice = normalizeOrderPrice(world, goodsId, 0, price);
   
   // 检查公司现金是否足够
-  const totalValue = clampedQuantity * price;
+  const totalValue = clampedQuantity * normalizedPrice;
   if (c.cash[companyId] < totalValue) {
     return null;
   }
   
   // 查找可合并的现有订单（使用优化后的索引查找）
-  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 0, price);
+  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 0, normalizedPrice);
   
   if (existingOrderIdx >= 0) {
     // 【新增】检查合并后是否超过最大数量限制
@@ -558,7 +571,7 @@ export function createBuyOrder(
     }
     
     // 找到可合并的订单，合并数量
-    const actualValue = actualAddQuantity * price;
+    const actualValue = actualAddQuantity * normalizedPrice;
     c.cash[companyId] -= actualValue;  // 冻结资金
     
     o.quantities[existingOrderIdx] += actualAddQuantity;
@@ -585,8 +598,8 @@ export function createBuyOrder(
     return null;
   }
   
-  // 冻结资金（使用限制后的数量）
-  c.cash[companyId] -= clampedQuantity * price;
+  // 冻结资金（使用实际入簿价格）
+  c.cash[companyId] -= clampedQuantity * normalizedPrice;
   
   // 创建订单
   const orderId = o.nextOrderId++;
@@ -594,7 +607,7 @@ export function createBuyOrder(
   o.goodsIds[orderIdx] = goodsId;
   o.types[orderIdx] = 0;  // 0 = buy
   o.quantities[orderIdx] = clampedQuantity;
-  o.prices[orderIdx] = price;
+  o.prices[orderIdx] = normalizedPrice;
   o.remainings[orderIdx] = clampedQuantity;
   o.createdTicks[orderIdx] = world.tick;
   o.expiries[orderIdx] = world.tick + expiryTicks;
@@ -608,7 +621,7 @@ export function createBuyOrder(
   orderPool!.incrementOrderCount(0);
   
   // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
-  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 0, price);
+  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 0, normalizedPrice);
   if (!indexAdded) {
     console.error(`[createBuyOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
     // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
@@ -645,7 +658,7 @@ export function createSellOrder(
   goodsId: number,
   quantity: number,
   price: number,
-  expiryTicks: number = 48  // 默认2天过期（放宽限制）
+  expiryTicks: number = SELL_ORDER_EXPIRY_TICKS
 ): number | null {
   const result = createSellOrderWithReason(world, companyId, goodsId, quantity, price, expiryTicks);
   return result.orderId;
@@ -660,7 +673,7 @@ export function createSellOrderWithReason(
   goodsId: number,
   quantity: number,
   price: number,
-  expiryTicks: number = 48
+  expiryTicks: number = SELL_ORDER_EXPIRY_TICKS
 ): OrderResult {
   // 【优化】提前初始化并检查容量
   if (!orderPool) {
@@ -676,9 +689,13 @@ export function createSellOrderWithReason(
   if (quantity <= 0) {
     return { success: false, orderId: null, reason: '数量必须大于0' };
   }
+  const normalizedPrice = normalizeOrderPrice(world, goodsId, 1, price);
   
-  // 使用请求的数量（不再限制）
-  const clampedQuantity = quantity;
+  // 限制单个卖单数量，避免生产型 AI 把百万库存一次性砸成单笔巨单
+  const clampedQuantity = Math.min(quantity, MAX_ORDER_QUANTITY);
+  if (clampedQuantity <= 0) {
+    return { success: false, orderId: null, reason: '数量必须大于0' };
+  }
   
   // 检查库存是否足够
   const inventoryIdx = companyId * GOODS_COUNT + goodsId;
@@ -695,7 +712,7 @@ export function createSellOrderWithReason(
   }
   
   // 查找可合并的现有订单（使用优化后的索引查找）
-  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 1, price);
+  const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 1, normalizedPrice);
   
   if (existingOrderIdx >= 0) {
     // 【新增】检查合并后是否超过最大数量限制
@@ -768,7 +785,7 @@ export function createSellOrderWithReason(
   o.goodsIds[orderIdx] = goodsId;
   o.types[orderIdx] = 1;  // 1 = sell
   o.quantities[orderIdx] = clampedQuantity;
-  o.prices[orderIdx] = price;
+  o.prices[orderIdx] = normalizedPrice;
   o.remainings[orderIdx] = clampedQuantity;
   o.createdTicks[orderIdx] = world.tick;
   o.expiries[orderIdx] = world.tick + expiryTicks;
@@ -782,7 +799,7 @@ export function createSellOrderWithReason(
   orderPool!.incrementOrderCount(1);
   
   // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
-  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 1, price);
+  const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 1, normalizedPrice);
   if (!indexAdded) {
     console.error(`[createSellOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
     // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
@@ -1134,11 +1151,7 @@ export function performOrderPoolHealthCheck(world: GameWorld): {
   } else if (usageRatio >= ORDER_POOL_WARNING_THRESHOLD) {
     status = 'warning';
     // 警告状态：清理过期订单
-    cleanedCount = cleanupExpiredOrders(world);
-    if (world.tick % 100 === 0) {
-      console.log(`[订单池警告 T${world.tick}] 使用率${usagePercent.toFixed(1)}%, 清理了${cleanedCount}个过期订单`);
-    }
-  }
+    cleanedCount = cleanupExpiredOrders(world);}
   
   return { status, usagePercent, cleanedCount };
 }
@@ -1169,11 +1182,15 @@ function performEmergencyCleanup(world: GameWorld, cleanupRatio: number): number
     priceDeviation: number;  // 价格偏离度
   }> = [];
   
+  // 保护阈值：偏离度低于此值的订单被视为"合理报价"，紧急清理时跳过
+  // 这能避免误杀零售店补货 / 生产链刚需的合理订单
+  const PROTECTED_DEVIATION_THRESHOLD = 0.10;
+
   for (const idx of activeOrderIndices) {
     const goodsId = o.goodsIds[idx];
     const orderPrice = o.prices[idx];
     const marketPrice = world.goods.prices[goodsId];
-    
+
     // 计算价格偏离度（与市场价的差异）
     let priceDeviation = 0;
     if (o.types[idx] === 0) {  // 买单
@@ -1183,31 +1200,50 @@ function performEmergencyCleanup(world: GameWorld, cleanupRatio: number): number
       // 卖单价格远高于市场价 = 高偏离度
       priceDeviation = marketPrice > 0 ? Math.max(0, (orderPrice - marketPrice) / marketPrice) : 0;
     }
-    
+
     orderInfos.push({
       idx,
       createdTick: o.createdTicks[idx],
       priceDeviation,
     });
   }
-  
+
+  // 先把所有"接近市场价"的合理订单分离出来（保护层）
+  // 紧急清理只在剩余订单中按偏离度 + 年龄打分
+  const protectedOrders = orderInfos.filter(o => o.priceDeviation <= PROTECTED_DEVIATION_THRESHOLD);
+  const candidateOrders = orderInfos.filter(o => o.priceDeviation > PROTECTED_DEVIATION_THRESHOLD);
+
   // 按优先级排序：先按价格偏离度（高偏离优先清理），再按创建时间（旧订单优先清理）
-  orderInfos.sort((a, b) => {
-    // 价格偏离度权重0.6，时间权重0.4
+  candidateOrders.sort((a, b) => {
     const scoreA = a.priceDeviation * 0.6 + (world.tick - a.createdTick) / 1000 * 0.4;
     const scoreB = b.priceDeviation * 0.6 + (world.tick - b.createdTick) / 1000 * 0.4;
-    return scoreB - scoreA;  // 降序，分数高的先清理
+    return scoreB - scoreA;
   });
-  
-  // 清理订单
+
   let cleanedCount = 0;
-  for (let i = 0; i < Math.min(targetCleanupCount, orderInfos.length); i++) {
-    const orderIdx = orderInfos[i].idx;
+
+  // 先清候选（高偏离度）订单
+  for (let i = 0; i < Math.min(targetCleanupCount, candidateOrders.length); i++) {
+    const orderIdx = candidateOrders[i].idx;
     if (cancelOrder(world, orderIdx)) {
       cleanedCount++;
     }
   }
-  
+
+  // 如果还没清够（候选不足），再从最老的"合理订单"里清，但只清最老的 50% 以保留新近合理订单
+  if (cleanedCount < targetCleanupCount && protectedOrders.length > 0) {
+    const remaining = targetCleanupCount - cleanedCount;
+    protectedOrders.sort((a, b) => a.createdTick - b.createdTick); // 越老越前
+    const safeToCleanup = Math.floor(protectedOrders.length * 0.5);
+    const toClean = Math.min(remaining, safeToCleanup);
+    for (let i = 0; i < toClean; i++) {
+      const orderIdx = protectedOrders[i].idx;
+      if (cancelOrder(world, orderIdx)) {
+        cleanedCount++;
+      }
+    }
+  }
+
   return cleanedCount;
 }
 

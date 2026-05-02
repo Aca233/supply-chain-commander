@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { MAX_SLOTS } from '@/core/constants';
 import {
   PRODUCTION_CONTROL_MODE_AUTO,
   PRODUCTION_CONTROL_MODE_MANUAL,
@@ -13,6 +14,7 @@ import { SaveManager, SerializedWorld } from '@/core/save/SaveManager';
 import { createGameWorld } from '@/core/world/GameWorld';
 import { addBuilding } from '@/core/world/WorldInitializer';
 import { BuildingId } from '@/data/buildings';
+import { GoodsId } from '@/data/goods';
 
 describe('SaveManager production-control persistence', () => {
   beforeEach(() => {
@@ -56,7 +58,7 @@ describe('SaveManager production-control persistence', () => {
         owners: [0],
         levels: [1],
         efficiencies: [0.1],
-        outputModeIds: [0],
+        slotMethods: new Array(MAX_SLOTS).fill(0),
         isActive: [1],
       },
       companies: {
@@ -92,7 +94,7 @@ describe('SaveManager production-control persistence', () => {
         levels: [1],
         efficiencies: [1.9],
         productionControlModes: [PRODUCTION_CONTROL_MODE_MANUAL],
-        outputModeIds: [0],
+        slotMethods: new Array(MAX_SLOTS).fill(0),
         isActive: [1],
       },
       companies: {
@@ -109,5 +111,25 @@ describe('SaveManager production-control persistence', () => {
     expect(getBuildingProductionControlMode(world, 0)).toBe(PRODUCTION_CONTROL_MODE_MANUAL);
     expect(getBuildingManualEfficiencyTarget(world, 0)).toBeCloseTo(1.5, 5);
     expect(world.buildings.efficiencies[0]).toBeCloseTo(1.5, 5);
+  });
+
+  it('round-trips oversupply auto-suspension state', () => {
+    const sourceWorld = createGameWorld();
+    sourceWorld.companies.count = 1;
+
+    const buildingId = addBuilding(sourceWorld, 0, BuildingId.IRON_MINE, 0);
+    sourceWorld.buildings.isActive[buildingId] = 0;
+    sourceWorld.buildings.oversupplySuspendedGoods[buildingId] = GoodsId.IRON_ORE;
+    sourceWorld.buildings.oversupplySuspendedUntilTick[buildingId] = 321;
+
+    const manager = new SaveManager();
+    const serialized = manager.serializeWorld(sourceWorld, 123);
+
+    const loadedWorld = createGameWorld();
+    manager.deserializeWorld(serialized, loadedWorld);
+
+    expect(loadedWorld.buildings.isActive[buildingId]).toBe(0);
+    expect(loadedWorld.buildings.oversupplySuspendedGoods[buildingId]).toBe(GoodsId.IRON_ORE);
+    expect(loadedWorld.buildings.oversupplySuspendedUntilTick[buildingId]).toBe(321);
   });
 });

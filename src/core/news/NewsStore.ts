@@ -14,6 +14,10 @@ let newsCache: MonthlyNewsReport[] = [];
 let cacheLoaded = false;
 let lastReadNewsId: string | null = null;
 
+function getStorage(): Storage | null {
+  return typeof localStorage === 'undefined' ? null : localStorage;
+}
+
 /**
  * 加载历史新闻
  */
@@ -21,16 +25,23 @@ export function loadNewsHistory(): MonthlyNewsReport[] {
   if (cacheLoaded) {
     return [...newsCache];
   }
+
+  const storage = getStorage();
+  if (!storage) {
+    cacheLoaded = true;
+    return [...newsCache];
+  }
   
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = storage.getItem(STORAGE_KEY);
     if (stored) {
       newsCache = JSON.parse(stored);
-      cacheLoaded = true;
     }
+    cacheLoaded = true;
   } catch (e) {
     console.error('[NewsStore] Failed to load news history:', e);
     newsCache = [];
+    cacheLoaded = true;
   }
   
   return [...newsCache];
@@ -61,8 +72,11 @@ export function saveNewsReport(report: MonthlyNewsReport): void {
   }
   
   // 持久化
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newsCache));
+    storage.setItem(STORAGE_KEY, JSON.stringify(newsCache));
     console.log(`[NewsStore] Saved news report: ${report.id}`);
   } catch (e) {
     console.error('[NewsStore] Failed to save news report:', e);
@@ -106,9 +120,12 @@ export function getNewsCount(): number {
 export function clearNewsHistory(): void {
   newsCache = [];
   cacheLoaded = true;
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LAST_READ_KEY);
+    storage.removeItem(STORAGE_KEY);
+    storage.removeItem(LAST_READ_KEY);
     console.log('[NewsStore] Cleared news history');
   } catch (e) {
     console.error('[NewsStore] Failed to clear news history:', e);
@@ -121,9 +138,12 @@ export function clearNewsHistory(): void {
 export function hasUnreadNews(): boolean {
   const latest = getLatestNews();
   if (!latest) return false;
+
+  const storage = getStorage();
+  if (!storage) return latest.id !== lastReadNewsId;
   
   try {
-    lastReadNewsId = localStorage.getItem(LAST_READ_KEY);
+    lastReadNewsId = storage.getItem(LAST_READ_KEY);
   } catch {
     lastReadNewsId = null;
   }
@@ -136,8 +156,11 @@ export function hasUnreadNews(): boolean {
  */
 export function markNewsAsRead(newsId: string): void {
   lastReadNewsId = newsId;
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
-    localStorage.setItem(LAST_READ_KEY, newsId);
+    storage.setItem(LAST_READ_KEY, newsId);
   } catch (e) {
     console.error('[NewsStore] Failed to mark news as read:', e);
   }
@@ -148,8 +171,11 @@ export function markNewsAsRead(newsId: string): void {
  */
 export function getLastReadNewsId(): string | null {
   if (lastReadNewsId === null) {
+    const storage = getStorage();
+    if (!storage) return lastReadNewsId;
+
     try {
-      lastReadNewsId = localStorage.getItem(LAST_READ_KEY);
+      lastReadNewsId = storage.getItem(LAST_READ_KEY);
     } catch {
       lastReadNewsId = null;
     }

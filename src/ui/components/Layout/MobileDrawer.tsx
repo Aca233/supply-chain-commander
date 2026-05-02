@@ -76,8 +76,8 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({ isOpen, onClose }) =
   };
 
   const formatCash = (value: number) => {
-    if (value >= 1000000) return `¥${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
+    if (Math.abs(value) >= 1000000) return `¥${(value / 1000000).toFixed(1)}M`;
+    if (Math.abs(value) >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
     return `¥${value.toFixed(0)}`;
   };
 

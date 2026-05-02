@@ -52,9 +52,10 @@ const COLORS = {
 // ==================== 辅助函数 ====================
 
 function formatNumber(value: number): string {
-  if (value >= 1000000) {
+  const absValue = Math.abs(value);
+  if (absValue >= 1000000) {
     return (value / 1000000).toFixed(1) + 'M';
-  } else if (value >= 1000) {
+  } else if (absValue >= 1000) {
     return (value / 1000).toFixed(1) + 'K';
   }
   return value.toFixed(0);

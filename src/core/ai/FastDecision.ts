@@ -12,7 +12,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_COMPANIES } from '@/core/constants';
+import { ACTUAL_GOODS_COUNT, AI_BUY_ORDER_EXPIRY, AI_SELL_ORDER_EXPIRY, GOODS_COUNT, MAX_COMPANIES } from '@/core/constants';
 import { createBuyOrder, createSellOrder, cancelOrder, getActiveOrderIndices } from '@/core/market/OrderBook';
 import { 
   getCachedPrediction, 
@@ -27,7 +27,7 @@ const FAST_CONFIG = {
   minInventoryToSell: 80,       // 最小卖出库存阈值（从50提高到80）
   maxInventoryDays: 20,         // 最大库存天数
   minCashRatio: 0.12,           // 最低现金比例（从0.1提高到0.12）
-  orderExpiryTicks: 36,         // 订单过期tick数（从24增加到36减少取消频率）
+  orderExpiryTicks: AI_SELL_ORDER_EXPIRY,
   buyQuantityBase: 100,         // 基础买入数量
   sellQuantityRatio: 0.3,       // 卖出比例（库存的30%）
   priceMarginBuy: 1.02,         // 买入价格上浮2%
@@ -156,7 +156,7 @@ function ultraFastGoodsDecision(
     const sellQty = Math.floor(available * FAST_CONFIG.sellQuantityRatio);
     const sellPrice = price * FAST_CONFIG.priceMarginSell;
     if (sellQty > 10) {
-      createSellOrder(world, companyId, goodsId, sellQty, sellPrice);
+      createSellOrder(world, companyId, goodsId, sellQty, sellPrice, AI_SELL_ORDER_EXPIRY);
       return 1;
     }
   }
@@ -171,7 +171,7 @@ function ultraFastGoodsDecision(
       const sellQty = Math.floor(available * 0.3);
       const sellPrice = price * FAST_CONFIG.priceMarginSell;
       if (sellQty > 5) {
-        createSellOrder(world, companyId, goodsId, sellQty, sellPrice);
+        createSellOrder(world, companyId, goodsId, sellQty, sellPrice, AI_SELL_ORDER_EXPIRY);
         return 1;
       }
     }
@@ -185,7 +185,7 @@ function ultraFastGoodsDecision(
     
     // 单笔不超过5%现金
     if (totalCost < cash * 0.05) {
-      createBuyOrder(world, companyId, goodsId, buyQty, buyPrice);
+      createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, AI_BUY_ORDER_EXPIRY);
       return 1;
     }
   }
@@ -222,7 +222,7 @@ function fastGoodsDecision(
       const sellPrice = calculateFastSellPrice(price, prediction);
       
       if (sellQty > 0) {
-        createSellOrder(world, companyId, goodsId, sellQty, sellPrice);
+        createSellOrder(world, companyId, goodsId, sellQty, sellPrice, AI_SELL_ORDER_EXPIRY);
         decisions++;
       }
     }
@@ -238,7 +238,7 @@ function fastGoodsDecision(
       const totalCost = buyQty * buyPrice;
       
       if (totalCost < cash * 0.1) { // 单笔不超过10%现金
-        createBuyOrder(world, companyId, goodsId, buyQty, buyPrice);
+        createBuyOrder(world, companyId, goodsId, buyQty, buyPrice, AI_BUY_ORDER_EXPIRY);
         decisions++;
       }
     }

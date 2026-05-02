@@ -607,7 +607,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
               min={1}
               step={1}
               error={ipoFeedback || (!ipoPreview?.canLaunch ? ipoPreview?.message : undefined)}
-              helperText={ipoPreview ? `建议发行价：${formatCurrency(ipoPreview.minPrice)} - ${formatCurrency(ipoPreview.maxPrice)}，基准价约 ${formatCurrency(ipoPreview.suggestedPrice)}` : undefined}
+              helperText={ipoPreview ? `建议发行价：${formatCurrency(ipoPreview.minPrice, 2)} - ${formatCurrency(ipoPreview.maxPrice, 2)}，基准价约 ${formatCurrency(ipoPreview.suggestedPrice, 2)}` : undefined}
             />
 
             <Card variant="elevated" padding="md">
@@ -622,7 +622,7 @@ export const CompetitorsAndInvestment: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-[var(--text-muted)]">估值:</span>
                   <span className="text-[var(--text-primary)] tabular-nums">
-                    {formatCurrency(1000000 * ipoPrice)}
+                    {formatCurrency(1000000 * ipoPrice, 2)}
                   </span>
                 </div>
                 <div className="flex justify-between">

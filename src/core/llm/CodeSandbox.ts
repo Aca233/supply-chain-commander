@@ -11,7 +11,12 @@ import { GameWorld } from '@/core/world/GameWorld';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS, GOODS_BY_KEY } from '@/data/goods';
 import { ALL_BUILDINGS, BUILDINGS_BY_ID } from '@/data/buildings';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_BUILDINGS } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_BUILDINGS, MAX_SLOTS } from '@/core/constants';
+import {
+  getBuildingProductionVariants,
+  getDefaultSlotMethods,
+} from '@/core/production/ProductionMethods';
+import { resolveLegacyOutputModeToSlotMethods } from '@/core/production/legacyOutputModeBridge';
 import { createBuyOrder, createSellOrder, cancelOrder } from '@/core/market/OrderBook';
 import {
   applyForLoan,
@@ -381,9 +386,11 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
       world.buildings.levels[buildingId] = 1;
       world.buildings.isActive[buildingId] = 1;
       world.buildings.efficiencies[buildingId] = 1.0;
-      // v4.0: 使用outputModeIds而非recipeIds
-      const defaultOutputMode = buildingDef.production?.outputModes?.[0]?.modeId || 0;
-      world.buildings.outputModeIds[buildingId] = defaultOutputMode;
+      const slotMethods = getDefaultSlotMethods(buildingTypeId);
+      const slotOffset = buildingId * MAX_SLOTS;
+      for (let i = 0; i < MAX_SLOTS; i++) {
+        world.buildings.slotMethods[slotOffset + i] = slotMethods[i] ?? 0;
+      }
       world.buildings.progress[buildingId] = 0;
       
       // 更新公司的建筑计数
@@ -1698,16 +1705,13 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
       const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
       if (!buildingDef) return false;
       
-      // v4.0: 检查产品模式是否可用
-      const outputModes = buildingDef.production?.outputModes || [];
-      const validModeIds = outputModes.map(m => m.modeId);
-      if (validModeIds.length > 0 && !validModeIds.includes(recipeId)) {
-        logs.push(`❌ 该建筑不支持产品模式 ${recipeId}`);
-        return false;
+      // 兼容旧 recipeId / outputModeId：映射为对应生产变体的 slotMethods
+      const slotMethods = resolveLegacyOutputModeToSlotMethods(buildingDef.id, recipeId);
+      const slotOffset = buildingId * MAX_SLOTS;
+      for (let i = 0; i < MAX_SLOTS; i++) {
+        world.buildings.slotMethods[slotOffset + i] = slotMethods[i] ?? 0;
       }
-      
-      world.buildings.outputModeIds[buildingId] = recipeId;
-      logs.push(`🔧 设置建筑 #${buildingId} 的产品模式为 ${recipeId}`);
+      logs.push(`🔧 设置建筑 #${buildingId} 的生产方式为旧模式 ${recipeId} 的兼容映射`);
       return true;
     },
     
@@ -1716,11 +1720,11 @@ function createSandboxAPI(world: GameWorld, logs: string[]) {
      */
     getBuildingAvailableRecipes: (buildingId: number): number[] => {
       if (buildingId < 0 || buildingId >= world.buildings.count) return [];
-      
+
       const typeId = world.buildings.types[buildingId];
-      const buildingDef = ALL_BUILDINGS.find(b => b.id === typeId);
-      const outputModes = buildingDef?.production?.outputModes || [];
-      return outputModes.map(m => m.modeId);
+      return getBuildingProductionVariants(typeId)
+        .map((variant) => variant.legacyOutputModeId)
+        .filter((modeId): modeId is number => modeId !== null);
     },
     
     /**

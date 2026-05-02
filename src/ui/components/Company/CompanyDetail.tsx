@@ -29,8 +29,8 @@ function safeNumber(value: number, defaultValue: number = 0): number {
  */
 function formatMoney(value: number): string {
   const safeValue = safeNumber(value, 0);
-  if (safeValue >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
-  if (safeValue >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+  if (Math.abs(safeValue) >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
+  if (Math.abs(safeValue) >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
   return `¥${safeValue.toFixed(0)}`;
 }
 

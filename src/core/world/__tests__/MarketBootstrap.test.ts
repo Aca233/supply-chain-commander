@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { ALL_BUILDINGS, getBuildingProduction } from '@/data/buildings';
+import { ALL_BUILDINGS } from '@/data/buildings';
 import { ALL_GOODS, GoodsId } from '@/data/goods';
 import { GOODS_COUNT } from '@/core/constants';
 import { getOrderBookView, resetOrderPool } from '@/core/market/OrderBook';
+import {
+  getBuildingProductionVariants,
+  getRecipeForBuilding,
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
+import { initProductionCache } from '@/core/production/ProductionEngine';
 
 import {
   getBootstrapBuyerCompanyIds,
@@ -14,6 +20,8 @@ import { createGameWorld, setInventory } from '../GameWorld';
 describe('seedInventoryBackedSellOrders', () => {
   beforeEach(() => {
     resetOrderPool();
+    initializeBuildingProductionMethods();
+    initProductionCache();
   });
 
   it('skips sellers that do not have enough real inventory', () => {
@@ -52,26 +60,40 @@ describe('seedInventoryBackedSellOrders', () => {
     world.companies.isPlayer.push(true, false);
     world.companies.isAI.push(false, true);
 
-    const consumerBuilding = ALL_BUILDINGS.find(building => {
-      const production = getBuildingProduction(building.id, 0);
-      return production && production.inputs.length > 0;
+    const consumerBuilding = ALL_BUILDINGS.find((building) => {
+      return getBuildingProductionVariants(building.id).some(
+        (variant) => variant.legacyOutputModeId !== null && variant.recipe.inputs.length > 0,
+      );
     });
 
     expect(consumerBuilding).toBeDefined();
 
-    const production = getBuildingProduction(consumerBuilding!.id, 0)!;
+    const consumerVariant = getBuildingProductionVariants(consumerBuilding!.id).find(
+      (variant) => variant.legacyOutputModeId !== null && variant.recipe.inputs.length > 0,
+    );
+
+    expect(consumerVariant).toBeDefined();
+
+    const production = getRecipeForBuilding(
+      consumerBuilding!.id,
+      consumerVariant!.slotMethods,
+    );
     const requiredGoodsId = production.inputs[0].goodsId;
     const unrelatedGoodsId = ALL_GOODS.find(
-      goods => !production.inputs.some(input => input.goodsId === goods.id)
+      (goods) => !production.inputs.some((input) => input.goodsId === goods.id),
     )!.id;
 
     world.buildings.count = 2;
     world.buildings.types[0] = consumerBuilding!.id;
     world.buildings.owners[0] = 0;
-    world.buildings.outputModeIds[0] = 0;
     world.buildings.types[1] = consumerBuilding!.id;
     world.buildings.owners[1] = 1;
-    world.buildings.outputModeIds[1] = 0;
+
+    const slotOffset = 1 * 5;
+    const slotMethods = consumerVariant!.slotMethods;
+    for (let i = 0; i < slotMethods.length; i++) {
+      world.buildings.slotMethods[slotOffset + i] = slotMethods[i] ?? 0;
+    }
 
     expect(getBootstrapBuyerCompanyIds(world, requiredGoodsId)).toEqual([1]);
     expect(getBootstrapBuyerCompanyIds(world, unrelatedGoodsId)).toEqual([]);

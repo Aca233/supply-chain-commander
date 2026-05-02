@@ -1,21 +1,22 @@
-/**
+﻿/**
  * 建筑详情面板组件
  * 使用设计系统组件重构
  */
 
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, hasMultipleOutputModes } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
+import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
-import { SubsidiaryPanel } from './SubsidiaryPanel';
 import { UpgradeConfirmDialog } from './BuildingUpgradePanel';
 import {
   calculateBuildingDailyAmount,
   calculateBuildingFinancialEstimate,
 } from './BuildingFinancialEstimate';
+import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
 import { getBuildingConstructionConfig, isHazardousBuilding, MaterialRequirement } from '@/data/buildingMaterials';
 
 // 设计系统组件
@@ -48,7 +49,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     playerCash,
     upgradeBuilding,
     toggleBuildingActive,
-    setOutputMode,
     demolishBuilding,
     getBuildingProductionControl,
     setBuildingProductionControlAuto,
@@ -58,7 +58,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     setCurrentPage,
   } = useGameStore();
   const world = getWorld();
-  const [showOutputModeModal, setShowOutputModeModal] = useState(false);
   const [showDemolishModal, setShowDemolishModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const productionControl = getBuildingProductionControl(buildingIndex);
@@ -69,8 +68,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
 
     const typeId = world.buildings.types[buildingIndex];
     const buildingDef = ALL_BUILDINGS.find((b) => b.id === typeId);
-    const outputModeId = world.buildings.outputModeIds[buildingIndex];
-    const production = getBuildingProduction(typeId, outputModeId);
+    const production = getBuildingRecipeFromInstance(world, buildingIndex);
     const level = world.buildings.levels[buildingIndex];
     const efficiency = world.buildings.efficiencies[buildingIndex];
     const isActive = world.buildings.isActive[buildingIndex];
@@ -134,7 +132,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     }
 
     const dailyCost = buildingDef
-      ? buildingDef.maintenanceCost + buildingDef.laborCost + buildingDef.energyCost
+      ? calculateBuildingDefinitionOperatingCostPerTick(buildingDef).cashExpense
       : 0;
     const financialEstimate = calculateBuildingFinancialEstimate({
       isActive: Boolean(isActive),
@@ -159,19 +157,11 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
 
     // 获取生产配置名称
     let productionName = isRetail ? '零售' : '无配方';
-    if (production) {
-      if (buildingDef?.production?.outputModes) {
-        const mode = buildingDef.production.outputModes.find(m => m.modeId === outputModeId);
-        if (mode) {
-          productionName = mode.name;
-        } else if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
-          const outputGoods = ALL_GOODS.find(g => g.id === buildingDef.production!.outputs![0].goodsId);
-          productionName = outputGoods?.name || buildingDef.name;
-        }
-      } else if (production.outputs && production.outputs.length > 0) {
-        const outputGoods = ALL_GOODS.find(g => g.id === production.outputs![0].goodsId);
-        productionName = `生产${outputGoods?.name || '商品'}`;
-      }
+    if (production.outputs.length > 0) {
+      const outputGoods = ALL_GOODS.find(g => g.id === production.outputs[0].goodsId);
+      productionName = `生产${outputGoods?.name || '商品'}`;
+    } else if (buildingDef) {
+      productionName = buildingDef.name;
     }
 
     return {
@@ -183,7 +173,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       efficiency,
       isActive,
       isRetail,
-      outputModeId,
       productionName,
       inputs,
       outputs,
@@ -200,7 +189,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       nextCapacity,
       nextEfficiency,
       buildingDef,
-      hasMultipleOutputModes: hasMultipleOutputModes(typeId),
     };
   }, [world, buildingIndex, playerCash, tick]);
 
@@ -263,28 +251,23 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     };
   }, [buildingData, world, buildingIndex, playerCash]);
 
-  // 获取可用的生产模式
-  const availableOutputModes = useMemo(() => {
-    if (!buildingData) return [];
-    const buildingDef = ALL_BUILDINGS.find(b => b.id === buildingData.typeId);
-    if (!buildingDef || !buildingDef.production?.outputModes) return [];
-    return buildingDef.production.outputModes;
-  }, [buildingData]);
 
   if (!buildingData) return null;
 
-  const formatMoney = (value: number) => {
-    if (Math.abs(value) >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-    if (Math.abs(value) >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
-    return `¥${value.toFixed(0)}`;
+  const formatMoney = (value: number | undefined) => {
+    const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    if (Math.abs(safeValue) >= 1000000) return `¥${(safeValue / 1000000).toFixed(2)}M`;
+    if (Math.abs(safeValue) >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+    return `¥${safeValue.toFixed(0)}`;
+  };
+
+  const formatQuantity = (value: number | undefined, digits = 0) => {
+    const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    return safeValue.toFixed(digits);
   };
 
   const handleUpgrade = () => upgradeBuilding(buildingIndex);
   const handleToggleActive = () => toggleBuildingActive(buildingIndex);
-  const handleChangeOutputMode = (newOutputModeId: number) => {
-    setOutputMode(buildingIndex, newOutputModeId);
-    setShowOutputModeModal(false);
-  };
   const handleToggleAutoAdjust = (checked: boolean) => {
     setBuildingProductionControlAuto(buildingIndex, checked);
   };
@@ -474,12 +457,12 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
                     <div>
                       <span className="text-xs text-[var(--text-primary)]">{output.name}</span>
                       <div className="text-[10px] text-[var(--text-muted)]">
-                        库存: {output.buffer.toFixed(0)} | 市价: {formatMoney(output.price)}
+                        库存: {formatQuantity(output.buffer)} | 市价: {formatMoney(output.price)}
                       </div>
                     </div>
                   </div>
                   <Badge variant="success" size="sm" className="tabular-nums">
-                    +{output.dailyAmount.toFixed(0)}/日
+                    +{formatQuantity(output.dailyAmount)}/日
                   </Badge>
                 </div>
               ))}
@@ -497,11 +480,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             buildingTypeId={buildingData.typeId}
             buildingLevel={buildingData.level}
           />
-        </Card>
-
-        {/* 附属设施 */}
-        <Card variant="elevated" padding="md">
-          <SubsidiaryPanel buildingId={buildingIndex} />
         </Card>
       </div>
 
@@ -541,15 +519,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
           >
             {buildingData.isActive ? '⏸ 暂停生产' : '▶ 恢复生产'}
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="flex-1"
-            onClick={() => setShowOutputModeModal(true)}
-            disabled={!isPlayerOwnedBuilding || buildingData.isRetail || !buildingData.hasMultipleOutputModes}
-          >
-            🔄 更换生产
-          </Button>
         </div>
 
         <Button
@@ -564,60 +533,6 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
         </Button>
       </div>
 
-      {/* 生产模式选择弹窗 */}
-      <Dialog open={showOutputModeModal} onOpenChange={setShowOutputModeModal}>
-        <DialogContent size="md" variant="game">
-          <DialogHeader>
-            <DialogTitle>选择生产模式</DialogTitle>
-          </DialogHeader>
-          <DialogBody className="space-y-2">
-            {availableOutputModes.map((mode) => {
-              const isCurrentMode = mode.modeId === buildingData.outputModeId;
-              return (
-                <Card
-                  key={mode.modeId}
-                  variant={isCurrentMode ? 'game' : 'elevated'}
-                  padding="sm"
-                  interactive={!isCurrentMode && isPlayerOwnedBuilding}
-                  selected={isCurrentMode}
-                  onClick={() => !isCurrentMode && isPlayerOwnedBuilding && handleChangeOutputMode(mode.modeId)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">{mode.name}</span>
-                    {isCurrentMode && <Badge variant="primary" size="sm">当前使用</Badge>}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                    <div className="flex items-center gap-1">
-                      {mode.inputs?.map((input, idx) => (
-                        <span key={idx} className="flex items-center gap-0.5">
-                          <GoodsIcon goodsId={input.goodsId} size={12} />
-                          <span>{input.amount}</span>
-                          {idx < (mode.inputs?.length || 0) - 1 && <span>+</span>}
-                        </span>
-                      ))}
-                    </div>
-                    <span>→</span>
-                    <div className="flex items-center gap-1">
-                      {mode.outputs.map((output, idx) => (
-                        <span key={idx} className="flex items-center gap-0.5 text-[var(--success)]">
-                          <GoodsIcon goodsId={output.goodsId} size={12} />
-                          <span>{output.amount}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                    生产周期: {mode.ticksRequired || buildingData.buildingDef?.production?.ticksRequired || 1} tick
-                  </div>
-                </Card>
-              );
-            })}
-            {availableOutputModes.length === 0 && (
-              <div className="text-center text-[var(--text-muted)] py-8">暂无可用生产模式</div>
-            )}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
 
       {/* 拆除确认弹窗 */}
       <Dialog open={showDemolishModal} onOpenChange={setShowDemolishModal}>

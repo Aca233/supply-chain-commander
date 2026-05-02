@@ -15,6 +15,16 @@ import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE } from '@/core/constants'
 import { ALL_GOODS } from '@/data/goods';
 import { analyzePriceTrend, PriceTrendIndicators } from './PrecisionCalculator';
 
+const latestFlowObservations = new Map<number, { tick: number; supply: number; demand: number }>();
+
+function clampTrend(value: number): number {
+  return Math.max(-1, Math.min(1, value));
+}
+
+export function resetPricePredictorState(): void {
+  latestFlowObservations.clear();
+}
+
 // ==================== 类型定义 ====================
 
 /**
@@ -297,9 +307,21 @@ export function calculateTechnicalIndicators(
   // 成交量趋势（使用供需变化模拟）
   const volumeTrend = Math.max(-1, Math.min(1, (demand - supply) / Math.max(1, demand + supply)));
   
-  // 供需趋势（简化）
-  const supplyTrend = 0; // TODO: 跟踪历史供给
-  const demandTrend = 0; // TODO: 跟踪历史需求
+  // 供需趋势：跨 tick 跟踪最近一次观测，避免长期返回 0
+  const previousObservation = latestFlowObservations.get(goodsId);
+  let supplyTrend = 0;
+  let demandTrend = 0;
+
+  if (previousObservation && previousObservation.tick !== world.tick) {
+    supplyTrend = clampTrend((supply - previousObservation.supply) / Math.max(1, previousObservation.supply));
+    demandTrend = clampTrend((demand - previousObservation.demand) / Math.max(1, previousObservation.demand));
+  }
+
+  latestFlowObservations.set(goodsId, {
+    tick: world.tick,
+    supply,
+    demand,
+  });
   
   return {
     goodsId,

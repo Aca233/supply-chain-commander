@@ -11,27 +11,17 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, MAX_SLOTS, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
+import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
-import {
-  ALL_BUILDINGS,
-  getAvailableOutputModes,
-  getBuildingProduction,
-  hasMultipleOutputModes,
-} from '@/data/buildings';
 import { AIPersonality } from './AIPersonality';
-import {
-  hasBuildingSpecificMethods,
-  getBuildingSpecificSlots,
-  calculateBuildingModifiers,
-} from '@/core/production/ProductionMethods';
+import { getRecipeForBuilding } from '@/core/production/ProductionMethods';
+import { setBuildingMethod } from '@/core/production/ProductionEngine';
 import {
   getBuildingConfig,
   getSlotMethods,
   getMethodById,
   BuildingProductionMethod,
   BuildingSlotType,
-  ComputedModifiers,
 } from '@/core/production/methods';
 
 // ==================== 类型定义 ====================
@@ -66,21 +56,12 @@ export interface MethodEvaluation {
   recommendation: 'switch' | 'keep' | 'consider';
 }
 
-export interface OutputModeEvaluation {
-  outputModeId: number;
-  score: number;
-  estimatedProfit: number;
-  switchCost: number;
-}
-
 /**
  * 建筑优化建议
  */
 export interface BuildingOptimization {
   buildingId: number;
   buildingTypeId: number;
-  currentOutputModeId: number;
-  recommendedOutputModeId: number;
   currentMethods: Record<string, number>;
   recommendedMethods: Record<string, number>;
   expectedProfitChange: number;
@@ -88,7 +69,6 @@ export interface BuildingOptimization {
   netBenefit: number;
   priority: number;
   evaluations: MethodEvaluation[];
-  outputModeEvaluations: OutputModeEvaluation[];
 }
 
 /**
@@ -120,7 +100,6 @@ const DEFAULT_CONFIG: OptimizerConfig = {
 
 // 切换冷却记录：buildingId -> lastSwitchTick
 const switchCooldowns: Map<number, number> = new Map();
-const OUTPUT_MODE_SWITCH_COST_RATIO = 0.02;
 
 // ==================== 市场分析 ====================
 
@@ -189,157 +168,25 @@ export function analyzeMarketCondition(
 
 /**
  * 分析建筑相关商品的市场状况
+ *
+ * Vic3 风格：从当前 slotMethods 计算 ComputedRecipe，再扫描其 inputs/outputs。
  */
 export function analyzeBuildingMarket(
   world: GameWorld,
   buildingId: number
 ): { inputs: MarketCondition[]; outputs: MarketCondition[] } {
   const buildingTypeId = world.buildings.types[buildingId];
-  const outputModeId = world.buildings.outputModeIds[buildingId];
-  const production = getBuildingProduction(buildingTypeId, outputModeId);
-  
-  if (!production) {
-    return { inputs: [], outputs: [] };
+  const slotOffset = buildingId * MAX_SLOTS;
+  const slotMethods: number[] = [];
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
   }
-  
-  const inputs = production.inputs.map(i => analyzeMarketCondition(world, i.goodsId));
-  const outputs = production.outputs.map(o => analyzeMarketCondition(world, o.goodsId));
-  
+  const recipe = getRecipeForBuilding(buildingTypeId, slotMethods);
+
+  const inputs = recipe.inputs.map(i => analyzeMarketCondition(world, i.goodsId));
+  const outputs = recipe.outputs.map(o => analyzeMarketCondition(world, o.goodsId));
+
   return { inputs, outputs };
-}
-
-function analyzeProductionMarket(
-  world: GameWorld,
-  production: NonNullable<ReturnType<typeof getBuildingProduction>>
-): { inputs: MarketCondition[]; outputs: MarketCondition[] } {
-  return {
-    inputs: production.inputs.map(i => analyzeMarketCondition(world, i.goodsId)),
-    outputs: production.outputs.map(o => analyzeMarketCondition(world, o.goodsId)),
-  };
-}
-
-function evaluateOutputMode(
-  world: GameWorld,
-  buildingId: number,
-  outputModeId: number,
-  currentOutputModeId: number
-): OutputModeEvaluation | null {
-  const buildingTypeId = world.buildings.types[buildingId];
-  const production = getBuildingProduction(buildingTypeId, outputModeId);
-  const building = ALL_BUILDINGS.find(item => item.id === buildingTypeId);
-
-  if (!production || !building) {
-    return null;
-  }
-
-  const marketConditions = analyzeProductionMarket(world, production);
-
-  const outputRevenue = production.outputs.reduce((sum, output) => {
-    const unitPrice = world.goods.prices[output.goodsId]
-      || ALL_GOODS.find(goods => goods.id === output.goodsId)?.basePrice
-      || 1;
-    return sum + output.amount * unitPrice;
-  }, 0);
-
-  const inputCost = production.inputs.reduce((sum, input) => {
-    const unitPrice = world.goods.prices[input.goodsId]
-      || ALL_GOODS.find(goods => goods.id === input.goodsId)?.basePrice
-      || 1;
-    return sum + input.amount * unitPrice;
-  }, 0);
-
-  const grossMargin = (outputRevenue - inputCost) / Math.max(inputCost, 1);
-  const avgOutputMarketScore = marketConditions.outputs.reduce((sum, output) => sum + output.marketScore, 0)
-    / Math.max(marketConditions.outputs.length, 1);
-  const avgInputMarketScore = marketConditions.inputs.reduce((sum, input) => sum + input.marketScore, 0)
-    / Math.max(marketConditions.inputs.length, 1);
-
-  const score = grossMargin * 100 + avgOutputMarketScore * 0.8 - avgInputMarketScore * 0.35;
-  const estimatedProfit = grossMargin + (avgOutputMarketScore - avgInputMarketScore) / 200;
-  const switchCost = outputModeId === currentOutputModeId
-    ? 0
-    : building.buildCost * OUTPUT_MODE_SWITCH_COST_RATIO;
-
-  return {
-    outputModeId,
-    score,
-    estimatedProfit,
-    switchCost,
-  };
-}
-
-function evaluateBuildingOutputModes(
-  world: GameWorld,
-  buildingId: number,
-  config: OptimizerConfig = DEFAULT_CONFIG
-): {
-  currentOutputModeId: number;
-  recommendedOutputModeId: number;
-  expectedProfitChange: number;
-  switchCost: number;
-  evaluations: OutputModeEvaluation[];
-} {
-  const buildingTypeId = world.buildings.types[buildingId];
-  const currentOutputModeId = world.buildings.outputModeIds[buildingId] ?? 0;
-  const buildingLevel = world.buildings.levels[buildingId];
-
-  if (!hasMultipleOutputModes(buildingTypeId)) {
-    return {
-      currentOutputModeId,
-      recommendedOutputModeId: currentOutputModeId,
-      expectedProfitChange: 0,
-      switchCost: 0,
-      evaluations: [],
-    };
-  }
-
-  const modeIds = getAvailableOutputModes(buildingTypeId, buildingLevel)
-    .map(mode => mode.modeId);
-  const candidateModeIds = modeIds.includes(currentOutputModeId)
-    ? modeIds
-    : [currentOutputModeId, ...modeIds];
-
-  const evaluations = candidateModeIds
-    .map(outputModeId => evaluateOutputMode(world, buildingId, outputModeId, currentOutputModeId))
-    .filter((evaluation): evaluation is OutputModeEvaluation => evaluation !== null);
-
-  if (evaluations.length === 0) {
-    return {
-      currentOutputModeId,
-      recommendedOutputModeId: currentOutputModeId,
-      expectedProfitChange: 0,
-      switchCost: 0,
-      evaluations: [],
-    };
-  }
-
-  const currentEvaluation = evaluations.find(evaluation => evaluation.outputModeId === currentOutputModeId)
-    ?? evaluations[0];
-  const bestEvaluation = evaluations.reduce((best, evaluation) => (
-    evaluation.score > best.score ? evaluation : best
-  ), currentEvaluation);
-
-  const expectedProfitChange = bestEvaluation.estimatedProfit - currentEvaluation.estimatedProfit;
-  const switchCost = bestEvaluation.switchCost;
-  const netBenefit = expectedProfitChange - switchCost / 100000;
-
-  if (bestEvaluation.outputModeId === currentOutputModeId || netBenefit <= config.minProfitChangeToSwitch) {
-    return {
-      currentOutputModeId,
-      recommendedOutputModeId: currentOutputModeId,
-      expectedProfitChange: 0,
-      switchCost: 0,
-      evaluations,
-    };
-  }
-
-  return {
-    currentOutputModeId,
-    recommendedOutputModeId: bestEvaluation.outputModeId,
-    expectedProfitChange,
-    switchCost,
-    evaluations,
-  };
 }
 
 // ==================== 生产方式评估 ====================
@@ -357,46 +204,31 @@ export function evaluateMethod(
   config: OptimizerConfig = DEFAULT_CONFIG
 ): MethodEvaluation {
   let score = 50; // 基础分
-  
-  // 1. 计算产出加成
+
+  // 1. 产出加成：把 outputDelta（绝对值）按市场评分加权
   let outputBonus = 0;
-  for (const mod of method.outputModifiers) {
-    if (mod.goodsId === 'all') {
-      outputBonus += (mod.multiplier - 1) * 100;
-    } else {
-      // 检查是否是当前配方的产出
-      const outputMarket = marketConditions.outputs.find(o => o.goodsId === mod.goodsId);
-      if (outputMarket) {
-        // 市场好时产出加成更重要
-        const marketBonus = outputMarket.marketScore / 50;
-        outputBonus += (mod.multiplier - 1) * 100 * marketBonus;
-      }
-    }
+  for (const d of method.outputDelta) {
+    const market = marketConditions.outputs.find(o => o.goodsId === d.goodsId);
+    const weight = market ? market.marketScore / 50 : 1;
+    outputBonus += d.amount * weight;
   }
-  
-  // 2. 计算输入节省
+
+  // 2. 输入节省：负 inputDelta 视为节省（amount<0 = 减项）
   let inputSaving = 0;
-  for (const mod of method.inputModifiers) {
-    if (mod.goodsId === 'all') {
-      inputSaving += (1 - mod.multiplier) * 100;
-    } else {
-      const inputMarket = marketConditions.inputs.find(i => i.goodsId === mod.goodsId);
-      if (inputMarket) {
-        // 价格高时节省更重要
-        const priceBonus = 1 + inputMarket.priceDeviation;
-        inputSaving += (1 - mod.multiplier) * 100 * priceBonus;
-      }
-    }
+  for (const d of method.inputDelta) {
+    const market = marketConditions.inputs.find(i => i.goodsId === d.goodsId);
+    const priceBonus = market ? 1 + market.priceDeviation : 1;
+    inputSaving += -d.amount * priceBonus;
   }
-  
-  // 3. 品质加成
-  const qualityBonus = method.qualityBonus * 100;
-  
-  // 4. 能源成本
-  const energyCost = (method.energyMultiplier - 1) * 100;
-  
-  // 5. 劳动力成本
-  const laborCost = (method.laborMultiplier - 1) * 100;
+
+  // 3. 品质加成（method 不再携带）
+  const qualityBonus = 0;
+
+  // 4. 能源成本：energyDelta 正值表示更耗能
+  const energyCost = method.energyDelta;
+
+  // 5. 劳动力成本：laborDelta 正值表示更耗工
+  const laborCost = method.laborDelta;
   
   // 6. 综合评分
   score += outputBonus * 0.35;
@@ -454,12 +286,6 @@ export function evaluateBuildingMethods(
   config: OptimizerConfig = DEFAULT_CONFIG
 ): BuildingOptimization | null {
   const buildingTypeId = world.buildings.types[buildingId];
-  
-  // 检查是否支持新系统
-  if (!hasBuildingSpecificMethods(buildingTypeId)) {
-    return null;
-  }
-  
   const buildingConfig = getBuildingConfig(buildingTypeId);
   if (!buildingConfig) {
     return null;
@@ -472,8 +298,6 @@ export function evaluateBuildingMethods(
     currentMethods[slot.id] = world.buildings.slotMethods[slotOffset + i] || 0;
   });
 
-  const outputModeRecommendation = evaluateBuildingOutputModes(world, buildingId, config);
-  
   // 分析市场状况
   const marketConditions = analyzeBuildingMarket(world, buildingId);
   
@@ -509,9 +333,9 @@ export function evaluateBuildingMethods(
   }
   
   // 计算预期收益
-  let expectedProfitChange = outputModeRecommendation.expectedProfitChange;
-  let switchCosts = outputModeRecommendation.switchCost;
-  
+  let expectedProfitChange = 0;
+  let switchCosts = 0;
+
   for (const eval_ of evaluations) {
     if (recommendedMethods[eval_.slotId] === eval_.methodId && 
         currentMethods[eval_.slotId] !== eval_.methodId) {
@@ -531,8 +355,6 @@ export function evaluateBuildingMethods(
   return {
     buildingId,
     buildingTypeId,
-    currentOutputModeId: outputModeRecommendation.currentOutputModeId,
-    recommendedOutputModeId: outputModeRecommendation.recommendedOutputModeId,
     currentMethods,
     recommendedMethods,
     expectedProfitChange,
@@ -540,7 +362,6 @@ export function evaluateBuildingMethods(
     netBenefit,
     priority,
     evaluations,
-    outputModeEvaluations: outputModeRecommendation.evaluations,
   };
 }
 
@@ -594,34 +415,17 @@ export function executeMethodSwitch(
 ): boolean {
   const {
     buildingId,
-    currentOutputModeId,
-    recommendedOutputModeId,
     currentMethods,
     recommendedMethods,
   } = optimization;
   const buildingTypeId = world.buildings.types[buildingId];
   const buildingConfig = getBuildingConfig(buildingTypeId);
-  
+
   if (!buildingConfig) return false;
-  
+
   let switched = false;
-  const slotOffset = buildingId * MAX_SLOTS;
   const owner = world.buildings.owners[buildingId];
 
-  if (currentOutputModeId !== recommendedOutputModeId) {
-    const building = ALL_BUILDINGS.find(item => item.id === buildingTypeId);
-    const switchCost = (building?.buildCost || 0) * OUTPUT_MODE_SWITCH_COST_RATIO;
-
-    if (world.companies.cash[owner] >= switchCost) {
-      world.companies.cash[owner] -= switchCost;
-      world.buildings.outputModeIds[buildingId] = recommendedOutputModeId;
-      switched = true;
-
-      console.log(`[AI生产优化] 建筑#${buildingId} 产品模式: ` +
-        `${currentOutputModeId} -> ${recommendedOutputModeId}, 成本¥${switchCost}`);
-    }
-  }
-  
   for (let i = 0; i < buildingConfig.slots.length; i++) {
     const slot = buildingConfig.slots[i];
     const currentMethodId = currentMethods[slot.id] || 0;
@@ -636,10 +440,10 @@ export function executeMethodSwitch(
       if (world.companies.cash[owner] >= switchCost) {
         // 扣除切换成本
         world.companies.cash[owner] -= switchCost;
-        
-        // 更新生产方式
-        world.buildings.slotMethods[slotOffset + i] = recommendedMethodId;
-        
+
+        // 更新生产方式（同时失效配方缓存）
+        setBuildingMethod(world, buildingId, i, recommendedMethodId);
+
         switched = true;
         
         console.log(`[AI生产优化] 建筑#${buildingId} 槽位${slot.name}: ` +
@@ -796,44 +600,25 @@ export function selectOptimalMethodForMarket(
     if (avgMarketScore > 60) {
       // 高需求市场：优先产出
       const strategy = getHighDemandStrategy(avgMarketScore);
-      
-      for (const mod of method.outputModifiers) {
-        score += (mod.multiplier - 1) * 100;
-      }
-      
-      // 可以接受一定成本增加
-      score -= (method.energyMultiplier - 1) * 50 * (1 - strategy.costTolerance);
-      score -= (method.laborMultiplier - 1) * 50 * (1 - strategy.costTolerance);
-      
+      for (const d of method.outputDelta) score += d.amount * 5;
+      score -= method.energyDelta * 0.5 * (1 - strategy.costTolerance);
+      score -= method.laborDelta * 0.5 * (1 - strategy.costTolerance);
+
     } else if (avgMarketScore < 40) {
       // 低需求市场：优先成本和品质
       const strategy = getLowDemandStrategy(avgMarketScore);
-      
-      if (strategy.qualityFocus) {
-        score += method.qualityBonus * 200;
-      }
-      
       if (strategy.costFocus) {
-        score -= (method.energyMultiplier - 1) * 100;
-        score -= (method.laborMultiplier - 1) * 100;
-        
-        // 输入节省加分
-        for (const mod of method.inputModifiers) {
-          score += (1 - mod.multiplier) * 100;
-        }
+        score -= method.energyDelta;
+        score -= method.laborDelta;
+        for (const d of method.inputDelta) score += -d.amount;
       }
-      
+
     } else {
       // 正常市场：平衡策略
-      for (const mod of method.outputModifiers) {
-        score += (mod.multiplier - 1) * 60;
-      }
-      for (const mod of method.inputModifiers) {
-        score += (1 - mod.multiplier) * 40;
-      }
-      score += method.qualityBonus * 50;
-      score -= (method.energyMultiplier - 1) * 30;
-      score -= (method.laborMultiplier - 1) * 20;
+      for (const d of method.outputDelta) score += d.amount * 3;
+      for (const d of method.inputDelta) score += -d.amount * 2;
+      score -= method.energyDelta * 0.3;
+      score -= method.laborDelta * 0.2;
     }
     
     if (score > bestScore) {

@@ -1,14 +1,27 @@
-/**
+﻿/**
  * 建造模态框
  * 使用设计系统组件重构
  */
 
 import React, { useState, useMemo } from 'react';
-import { ALL_BUILDINGS, isRetailBuilding, getBuildingProduction, hasMultipleOutputModes } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { useGameStore } from '@/stores/gameStore';
 import { getBuildingConstructionConfig, getBaseMaterials, getBuildTime } from '@/data/buildingMaterials';
+import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
+import {
+  getBuildingProductionVariants,
+} from '@/core/production/ProductionMethods';
+
+interface ProductionVariantView {
+  methodId: number;
+  name: string;
+  slotMethods: number[];
+  inputs: Array<{ goodsId: number; amount: number }>;
+  outputs: Array<{ goodsId: number; amount: number }>;
+  ticksRequired: number;
+}
 
 // 设计系统组件
 import {
@@ -27,7 +40,7 @@ import {
 interface BuildModalProps {
   buildingTypeId: number;
   onClose: () => void;
-  onConfirm: (buildingTypeId: number, outputModeId: number) => void;
+  onConfirm: (buildingTypeId: number, slotMethods?: number[]) => void;
 }
 
 export const BuildModal: React.FC<BuildModalProps> = ({
@@ -43,32 +56,29 @@ export const BuildModal: React.FC<BuildModalProps> = ({
     [buildingTypeId]
   );
 
-  // 获取建筑的可用生产模式
-  const outputModes = useMemo(() => {
-    const buildingDef = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
-    if (!buildingDef || !buildingDef.production) return [];
-    
-    // 如果有多个产出模式
-    if (buildingDef.production.outputModes && buildingDef.production.outputModes.length > 0) {
-      return buildingDef.production.outputModes;
-    }
-    
-    // 如果只有默认产出，创建一个虚拟的产出模式
-    if (buildingDef.production.outputs && buildingDef.production.outputs.length > 0) {
-      return [{
-        modeId: 0,
-        name: buildingDef.name,
-        inputs: buildingDef.production.inputs || [],
-        outputs: buildingDef.production.outputs,
-        ticksRequired: buildingDef.production.ticksRequired || 1,
-      }];
-    }
-    
-    return [];
+  const variants = useMemo<ProductionVariantView[]>(() => {
+    return getBuildingProductionVariants(buildingTypeId)
+      .map((variant) => {
+        return {
+          methodId: variant.methodId,
+          name: variant.name,
+          slotMethods: variant.slotMethods,
+          inputs: variant.recipe.inputs,
+          outputs: variant.recipe.outputs,
+          ticksRequired: variant.recipe.ticksRequired || 1,
+        };
+      })
+      .filter(
+        (variant) => variant.inputs.length > 0 || variant.outputs.length > 0,
+      );
   }, [buildingTypeId]);
 
   const requiredMaterials = useMemo(() => getBaseMaterials(buildingTypeId), [buildingTypeId]);
   const buildTime = useMemo(() => getBuildTime(buildingTypeId), [buildingTypeId]);
+  const operatingCost = useMemo(
+    () => building ? calculateBuildingDefinitionOperatingCostPerTick(building) : null,
+    [building]
+  );
 
   const materialCheck = useMemo(() => {
     if (!world || requiredMaterials.length === 0) {
@@ -120,9 +130,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({
 
   const isRetail = isRetailBuilding(buildingTypeId);
   
-  const [selectedOutputModeId, setSelectedOutputModeId] = useState<number>(() => {
+  const [selectedMethodId, setSelectedMethodId] = useState<number>(() => {
     if (isRetail) return 0;
-    return outputModes.length > 0 ? outputModes[0].modeId : 0;
+    return variants.length > 0 ? variants[0].methodId : 0;
   });
 
   const [showMaterials, setShowMaterials] = useState(true);
@@ -134,15 +144,17 @@ export const BuildModal: React.FC<BuildModalProps> = ({
   const canAffordMaterials = materialCheck.sufficient;
   const totalCostWithPurchase = building.buildCost + materialCheck.totalPurchaseCost;
   const canAffordWithPurchase = playerCash >= totalCostWithPurchase;
-  const canBuild = canAffordCash && (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || outputModes.length > 0);
+  const canBuild = canAffordCash && (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || variants.length > 0);
 
   const handleConfirm = () => {
-    if (canBuild) onConfirm(buildingTypeId, selectedOutputModeId);
+    if (!canBuild) return;
+    const selectedVariant = variants.find((variant) => variant.methodId === selectedMethodId);
+    onConfirm(buildingTypeId, selectedVariant ? [...selectedVariant.slotMethods] : undefined);
   };
 
   const formatMoney = (value: number) => {
-    if (value >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
+    if (Math.abs(value) >= 1000000) return `¥${(value / 1000000).toFixed(2)}M`;
+    if (Math.abs(value) >= 1000) return `¥${(value / 1000).toFixed(1)}K`;
     return `¥${value.toFixed(0)}`;
   };
 
@@ -303,26 +315,26 @@ export const BuildModal: React.FC<BuildModalProps> = ({
               <div className="text-center p-2 rounded bg-[var(--bg-muted)]">
                 <p className="text-[10px] text-[var(--text-muted)] mb-1">维护</p>
                 <p className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
-                  {formatMoney(building.maintenanceCost)}
+                  {formatMoney(operatingCost?.maintenance ?? 0)}
                 </p>
               </div>
               <div className="text-center p-2 rounded bg-[var(--bg-muted)]">
                 <p className="text-[10px] text-[var(--text-muted)] mb-1">人力</p>
                 <p className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
-                  {formatMoney(building.laborCost)}
+                  {formatMoney(operatingCost?.labor ?? 0)}
                 </p>
               </div>
               <div className="text-center p-2 rounded bg-[var(--bg-muted)]">
                 <p className="text-[10px] text-[var(--text-muted)] mb-1">能源</p>
                 <p className="text-sm font-medium text-[var(--text-primary)] tabular-nums">
-                  {formatMoney(building.energyCost)}
+                  {formatMoney(operatingCost?.energy ?? 0)}
                 </p>
               </div>
             </div>
             <div className="mt-2 text-right">
               <span className="text-xs text-[var(--text-muted)]">
                 总计: <span className="text-[var(--text-secondary)] font-medium">
-                  {formatMoney(building.maintenanceCost + building.laborCost + building.energyCost)}/日
+                  {formatMoney(operatingCost?.total ?? 0)}/日
                 </span>
               </span>
             </div>
@@ -361,40 +373,40 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                 </div>
               )}
             </Card>
-          ) : outputModes.length > 1 ? (
+          ) : variants.length > 1 ? (
             <div>
               <h4 className="text-sm font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
                 📋 选择生产模式
               </h4>
               <div className="space-y-2 max-h-[240px] overflow-y-auto scrollbar-thin pr-1">
-                {outputModes.map((mode) => {
-                  const isSelected = selectedOutputModeId === mode.modeId;
+                {variants.map((variant) => {
+                  const isSelected = selectedMethodId === variant.methodId;
                   return (
                     <Card
-                      key={mode.modeId}
+                      key={variant.methodId}
                       variant={isSelected ? 'game' : 'elevated'}
                       padding="md"
                       interactive
                       selected={isSelected}
-                      onClick={() => setSelectedOutputModeId(mode.modeId)}
+                      onClick={() => setSelectedMethodId(variant.methodId)}
                     >
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           {isSelected && <Badge variant="success" size="sm">✓</Badge>}
                           <span className={`font-medium ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
-                            {mode.name}
+                            {variant.name}
                           </span>
                         </div>
-                        <span className="text-xs text-[var(--text-muted)]">{mode.ticksRequired || building?.production?.ticksRequired || 1}h/周期</span>
+                        <span className="text-xs text-[var(--text-muted)]">{variant.ticksRequired || 1}h/周期</span>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-[10px] text-[var(--text-muted)] mb-2">输入:</p>
-                          {(!mode.inputs || mode.inputs.length === 0) ? (
+                          {(!variant.inputs || variant.inputs.length === 0) ? (
                             <span className="text-xs text-[var(--success)]">无需原料</span>
                           ) : (
                             <div className="space-y-1">
-                              {mode.inputs.map((input) => {
+                              {variant.inputs.map((input) => {
                                 const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
                                 return (
                                   <div key={input.goodsId} className="flex items-center gap-1.5">
@@ -411,7 +423,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                         <div>
                           <p className="text-[10px] text-[var(--text-muted)] mb-2">输出:</p>
                           <div className="space-y-1">
-                            {mode.outputs.map((output) => {
+                            {variant.outputs.map((output) => {
                               const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
                               return (
                                 <div key={output.goodsId} className="flex items-center gap-1.5">
@@ -430,23 +442,23 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                 })}
               </div>
             </div>
-          ) : outputModes.length === 1 ? (
+          ) : variants.length === 1 ? (
             <Card variant="default" status="info" padding="md">
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-lg">⚙️</span>
                 <span className="text-sm font-medium text-[var(--info)]">生产模式</span>
               </div>
               <p className="text-sm text-[var(--text-secondary)] mb-3">
-                {outputModes[0].name}
+                {variants[0].name}
               </p>
               <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[var(--border-muted)]">
                 <div>
                   <p className="text-[10px] text-[var(--text-muted)] mb-2">输入:</p>
-                  {(!outputModes[0].inputs || outputModes[0].inputs.length === 0) ? (
+                  {(!variants[0].inputs || variants[0].inputs.length === 0) ? (
                     <span className="text-xs text-[var(--success)]">无需原料</span>
                   ) : (
                     <div className="space-y-1">
-                      {outputModes[0].inputs.map((input) => {
+                      {variants[0].inputs.map((input) => {
                         const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
                         return (
                           <div key={input.goodsId} className="flex items-center gap-1.5">
@@ -463,7 +475,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                 <div>
                   <p className="text-[10px] text-[var(--text-muted)] mb-2">输出:</p>
                   <div className="space-y-1">
-                    {outputModes[0].outputs.map((output) => {
+                    {variants[0].outputs.map((output) => {
                       const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
                       return (
                         <div key={output.goodsId} className="flex items-center gap-1.5">

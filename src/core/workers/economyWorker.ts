@@ -232,7 +232,7 @@ function matchOrdersRange(
       }
       
       const matchQty = Math.min(buyQuantities[buyIdx], sellQuantities[sellIdx]);
-      const matchPrice = sellPrices[sellIdx];
+      const matchPrice = (buyPrices[buyIdx] + sellPrices[sellIdx]) / 2;
       
       trades.push({
         buyOrderIdx: buyIdx,

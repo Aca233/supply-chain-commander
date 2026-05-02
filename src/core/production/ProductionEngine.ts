@@ -1,580 +1,505 @@
 /**
- * 生产引擎
+ * 生产引擎（Vic3 风格）
  * 批量处理所有建筑的生产计算
- * 包含劳动力约束与生产方式槽位修正
- * 支持新的建筑专属生产方式系统
- * 集成附属建筑效果系统
- * 
- * 重构：删除配方机制，使用建筑内置生产配置
+ * 配方完全由建筑选定 method 的 delta 求和决定
  */
 
 import { GameWorld, addInventory } from '../world/GameWorld';
-import { 
-  ALL_BUILDINGS, 
-  BUILDINGS_BY_ID, 
-  getBuildingProduction,
-  getBuildingOutputMode,
-  hasMultipleOutputModes,
-  BuildingProductionConfig,
-  OutputMode,
-  ProductionIO
-} from '@/data/buildings';
+import { ALL_BUILDINGS, BUILDINGS_BY_ID } from '@/data/buildings';
+import { drainMarketSupply, recordMarketSupply } from '../economy/MarketStats';
 import {
   MAX_INPUTS,
   MAX_OUTPUTS,
   MAX_SLOTS,
   GOODS_COUNT,
-  legacyHourTicksToDayTicks,
-  LEGACY_HOURS_PER_DAY,
   TICKS_PER_DAY,
 } from '../constants';
 import {
-  calculateProductionModifiers,
-  ProductionModifiers,
+  ComputedRecipe,
+  getBuildingDefaultMethods,
   getBuildingSlotCount,
-  METHODS_BY_ID,
-  // 新系统集成函数
-  hasBuildingSpecificMethods,
-  getProductionModifiersForBuilding
+  getRecipeForBuilding,
 } from './ProductionMethods';
 import { determineProductionQuality, QualityGrade, QUALITY_INFO } from '../economy/QualitySystem';
 import {
-  calculateCombinedEffects,
-  CombinedSubsidiaryEffects,
-  updateSubsidiaryConditions,
-} from './SubsidiaryBuildings';
-import { applyAutomaticEfficiencySafely } from './ProductionControl';
+  applyAutomaticEfficiencySafely,
+  AUTO_PRODUCTION_EFFICIENCY_MIN,
+  canAutomaticSystemsAdjustEfficiency,
+} from './ProductionControl';
 
-/**
- * 生产配置缓存表，用于快速查找
- * 根据建筑类型和产品模式索引
- */
-interface ProductionCache {
-  inputCount: number;
-  outputCount: number;
-  inputGoods: number[];
-  inputAmounts: number[];
-  outputGoods: number[];
-  outputAmounts: number[];
-  ticksRequired: number;
-  laborRequired: number;    // 每tick所需劳动力
-  energyRequired: number;   // 每tick所需能源
-}
-
-// 缓存键格式: `${buildingTypeId}_${modeId}`
-const productionCache: Map<string, ProductionCache> = new Map();
-
-/**
- * 公司资源状态（劳动力和能源）
- */
 interface CompanyResources {
-  totalLabor: number;         // 总可用劳动力
-  usedLabor: number;          // 已使用劳动力
-  laborShortage: boolean;     // 是否劳动力短缺
+  totalLabor: number;
+  usedLabor: number;
+  laborShortage: boolean;
 }
 
-// 公司资源追踪
 const companyResources: Map<number, CompanyResources> = new Map();
 
-/**
- * 生成缓存键
- */
-function getCacheKey(buildingTypeId: number, modeId: number): string {
-  return `${buildingTypeId}_${modeId}`;
-}
+// 建筑实例的配方缓存（按 buildingId 索引）
+const recipeCache: Map<number, ComputedRecipe> = new Map();
 
-/**
- * 从生产配置创建缓存
- */
-function createCacheFromConfig(
-  inputs: ProductionIO[],
-  outputs: ProductionIO[],
-  ticksRequired: number,
-  laborRequired: number,
-  energyRequired: number
-): ProductionCache {
-  const normalizedTicksRequired = Math.max(
-    1 / LEGACY_HOURS_PER_DAY,
-    legacyHourTicksToDayTicks(ticksRequired, 'none'),
-  );
-
-  return {
-    inputCount: inputs.length,
-    outputCount: outputs.length,
-    inputGoods: inputs.map(i => i.goodsId),
-    inputAmounts: inputs.map(i => i.amount),
-    outputGoods: outputs.map(o => o.goodsId),
-    outputAmounts: outputs.map(o => o.amount),
-    ticksRequired: normalizedTicksRequired,
-    laborRequired,
-    energyRequired,
-  };
-}
-
-/**
- * 初始化生产配置缓存
- * 遍历所有建筑类型和产品模式，预计算生产参数
- */
-export function initProductionCache(): void {
-  productionCache.clear();
-  
-  for (const building of ALL_BUILDINGS) {
-    const production = building.production;
-    
-    // 缓存默认模式 (modeId = 0)
-    const defaultCache = createCacheFromConfig(
-      production.inputs,
-      production.outputs,
-      production.ticksRequired,
-      production.laborRequired,
-      production.energyRequired
-    );
-    productionCache.set(getCacheKey(building.id, 0), defaultCache);
-    
-    // 缓存所有其他产品模式
-    if (production.outputModes) {
-      for (const mode of production.outputModes) {
-        const modeCache = createCacheFromConfig(
-          mode.inputs,
-          mode.outputs,
-          mode.ticksRequired ?? production.ticksRequired,
-          mode.laborRequired ?? production.laborRequired,
-          mode.energyRequired ?? production.energyRequired
-        );
-        productionCache.set(getCacheKey(building.id, mode.modeId), modeCache);
-      }
-    }
+export function invalidateRecipeCache(buildingId?: number): void {
+  if (buildingId === undefined) {
+    recipeCache.clear();
+  } else {
+    recipeCache.delete(buildingId);
   }
 }
 
+function getBuildingRecipe(world: GameWorld, buildingId: number): ComputedRecipe {
+  let recipe = recipeCache.get(buildingId);
+  if (!recipe) {
+    const buildingTypeId = world.buildings.types[buildingId];
+    const slotCount = getBuildingSlotCount(buildingTypeId);
+    const slotOffset = buildingId * MAX_SLOTS;
+    const slotMethods: number[] = [];
+    for (let i = 0; i < slotCount; i++) {
+      slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
+    }
+    recipe = getRecipeForBuilding(buildingTypeId, slotMethods);
+    recipeCache.set(buildingId, recipe);
+  }
+  return recipe;
+}
+
+export function initProductionCache(): void {
+  recipeCache.clear();
+}
+
+/** AI/UI 调用：按 buildingId 拿当前实际配方（带缓存） */
+export function getBuildingRecipeFromInstance(world: GameWorld, buildingId: number): ComputedRecipe {
+  return getBuildingRecipe(world, buildingId);
+}
+
 // 兼容旧版调用
-export function initRecipeCache(): void {
-  initProductionCache();
-}
+export const initRecipeCache = initProductionCache;
 
-/**
- * 获取生产配置缓存
- */
-function getProductionCache(buildingTypeId: number, modeId: number): ProductionCache | undefined {
-  return productionCache.get(getCacheKey(buildingTypeId, modeId));
-}
-
-/**
- * 计算公司的总可用资源
- * 劳动力 = 基础值 + 建筑数量 × 建筑劳动力
- */
 function calculateCompanyResources(world: GameWorld, companyId: number): CompanyResources {
-  let totalLabor = 1000; // 基础劳动力池
-  
-  // 统计公司建筑数量和类型
+  let totalLabor = 1000;
   let buildingCount = 0;
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] === companyId) {
       buildingCount++;
     }
   }
-  
-  // 每个建筑提供一些劳动力容量（模拟员工）
   totalLabor += buildingCount * 50;
-  
-  // 根据公司现金计算可雇佣劳动力（现金越多，可雇佣越多）
   const cash = world.companies.cash[companyId] || 0;
-  const laborFromCash = Math.min(cash / 10000, 500); // 每1万现金增加1劳动力，上限500
+  const laborFromCash = Math.min(cash / 10000, 500);
   totalLabor += laborFromCash;
-  
-  return {
-    totalLabor,
-    usedLabor: 0,
-    laborShortage: false,
-  };
+  return { totalLabor, usedLabor: 0, laborShortage: false };
 }
 
-/**
- * 获取建筑的生产方式修正
- * 自动判断使用新系统（建筑专属）还是旧系统（通用方式）
- */
-function getBuildingProductionModifiers(world: GameWorld, buildingId: number): ProductionModifiers {
-  const b = world.buildings;
-  const buildingTypeId = b.types[buildingId];
-  
-  // 获取该建筑的所有槽位方法
-  const slotOffset = buildingId * MAX_SLOTS;
-  const slotMethods: number[] = [];
-  
-  // 检查是否使用新的建筑专属生产方式系统
-  if (hasBuildingSpecificMethods(buildingTypeId)) {
-    // 新系统：使用建筑专属的生产方式
-    const slotCount = getBuildingSlotCount(buildingTypeId);
-    
-    for (let i = 0; i < slotCount; i++) {
-      slotMethods.push(b.slotMethods[slotOffset + i] ?? 0);
-    }
-    
-    // 使用新系统计算修正，并转换为旧格式
-    return getProductionModifiersForBuilding(buildingTypeId, slotMethods);
-  } else {
-    // 旧系统：使用通用生产方式
-    const slotCount = getBuildingSlotCount(buildingTypeId);
-    
-    for (let i = 0; i < slotCount; i++) {
-      const methodId = b.slotMethods[slotOffset + i];
-      if (methodId > 0) {
-        slotMethods.push(methodId);
-      }
-    }
-    
-    return calculateProductionModifiers(slotMethods);
-  }
-}
-
-/**
- * 获取建筑选中的生产方式ID列表
- */
 export function getBuildingSelectedMethods(world: GameWorld, buildingId: number): number[] {
   const b = world.buildings;
   const slotOffset = buildingId * MAX_SLOTS;
   const slotMethods: number[] = [];
-  
   for (let i = 0; i < MAX_SLOTS; i++) {
     const methodId = b.slotMethods[slotOffset + i];
     if (methodId > 0) {
       slotMethods.push(methodId);
     }
   }
-  
   return slotMethods;
 }
 
-/**
- * 设置建筑的生产方式
- * @param world 游戏世界
- * @param buildingId 建筑ID
- * @param slotIndex 槽位索引
- * @param methodId 方式ID
- */
 export function setBuildingMethod(
   world: GameWorld,
   buildingId: number,
   slotIndex: number,
-  methodId: number
+  methodId: number,
 ): boolean {
-  const b = world.buildings;
-  
-  if (slotIndex < 0 || slotIndex >= MAX_SLOTS) {
-    return false;
-  }
-  
+  if (slotIndex < 0 || slotIndex >= MAX_SLOTS) return false;
   const slotOffset = buildingId * MAX_SLOTS;
-  b.slotMethods[slotOffset + slotIndex] = methodId;
-  
+  world.buildings.slotMethods[slotOffset + slotIndex] = methodId;
+  invalidateRecipeCache(buildingId);
   return true;
 }
 
-/**
- * 设置建筑的产品模式
- * @param world 游戏世界
- * @param buildingId 建筑ID
- * @param modeId 产品模式ID
- */
-export function setBuildingOutputMode(
-  world: GameWorld,
-  buildingId: number,
-  modeId: number
-): boolean {
-  const b = world.buildings;
-  const typeId = b.types[buildingId];
-  
-  // 检查模式是否存在
-  const cache = getProductionCache(typeId, modeId);
-  if (!cache) {
-    return false;
-  }
-  
-  b.outputModeIds[buildingId] = modeId;
-  return true;
-}
-
-/**
- * 获取建筑当前的产品模式
- */
-export function getBuildingOutputModeId(world: GameWorld, buildingId: number): number {
-  return world.buildings.outputModeIds[buildingId] ?? 0;
-}
-
-/**
- * 处理单个建筑的生产
- */
 function processBuildingProduction(
   world: GameWorld,
   buildingId: number,
-  resources: CompanyResources
+  resources: CompanyResources,
 ): { produced: boolean; laborUsed: number; qualityBonus: number } {
   const b = world.buildings;
   const g = world.goods;
-  
   const result = { produced: false, laborUsed: 0, qualityBonus: 0 };
-  
-  // 检查建筑是否激活
-  if (!b.isActive[buildingId]) {
+
+  if (!b.isActive[buildingId]) return result;
+
+  const recipe = getBuildingRecipe(world, buildingId);
+  if (recipe.outputs.length === 0 && recipe.inputs.length === 0) {
     return result;
   }
-  
-  const typeId = b.types[buildingId];
-  const modeId = b.outputModeIds[buildingId] ?? 0;
-  const cache = getProductionCache(typeId, modeId);
-  
-  if (!cache) {
-    return result;
-  }
-  
+
   const efficiency = b.efficiencies[buildingId];
   const owner = b.owners[buildingId];
-  
-  // 获取生产方式修正
-  const modifiers = getBuildingProductionModifiers(world, buildingId);
-  
-  // 获取附属建筑效果
-  const subsidiaryEffects = calculateCombinedEffects(world, buildingId);
-  
-  // 计算本tick的基础产出率
-  let tickOutput = efficiency / cache.ticksRequired;
-  
-  // 应用附属建筑的速度加成
-  tickOutput *= subsidiaryEffects.speedMultiplier;
-  
-  // 应用生产方式的产出修正
-  // 首先应用通用产出乘数
-  let outputModifier = 1.0;
-  
-  // 检查是否有通用产出修正（goodsId=0 表示 'all'）
-  if (modifiers.outputMultipliers.has(0)) {
-    outputModifier *= modifiers.outputMultipliers.get(0) ?? 1.0;
-  }
-  
-  // 计算特定商品的平均修正
-  let specificModifier = 1.0;
-  let specificCount = 0;
-  for (const [goodsId, mult] of modifiers.outputMultipliers) {
-    if (goodsId !== 0) { // 排除通用修正
-      // 检查是否是本建筑的输出商品
-      if (cache.outputGoods.includes(goodsId)) {
-        specificModifier *= mult;
-        specificCount++;
-      }
-    }
-  }
-  
-  // 如果有特定商品的修正，应用它们
-  if (specificCount > 0) {
-    outputModifier *= specificModifier;
-  }
-  
-  // 应用附属建筑的产出乘数
-  outputModifier *= subsidiaryEffects.outputMultiplier;
-  
-  tickOutput *= outputModifier;
-  
-  // 计算劳动力修正（生产方式 + 附属建筑）
-  const laborMultiplier = modifiers.laborMultiplier * (1 - subsidiaryEffects.laborReduction);
-  
-  // 检查劳动力是否足够（应用劳动力修正）
-  const laborNeeded = cache.laborRequired * efficiency * laborMultiplier;
+
+  // 本 tick 产出率（无 modifier 乘法）
+  const tickOutput = efficiency / recipe.ticksRequired;
+
+  // 劳动力检查
+  const laborNeeded = recipe.laborRequired * efficiency;
   const availableLabor = resources.totalLabor - resources.usedLabor;
+  let actualOutput = tickOutput;
   if (laborNeeded > availableLabor) {
-    // 劳动力不足，降低产能
     if (availableLabor > 0) {
       const laborRatio = availableLabor / laborNeeded;
-      tickOutput *= laborRatio;
+      actualOutput *= laborRatio;
       resources.laborShortage = true;
     } else {
       resources.laborShortage = true;
-      return result; // 完全没有劳动力，无法生产
+      return result;
     }
   }
-  
-  // 计算输入修正（生产方式 + 附属建筑的输入减少）
-  const inputReductionMultiplier = 1 - subsidiaryEffects.inputReduction;
-  
-  // 检查输入是否足够（应用输入修正）
-  let canProduce = true;
+
+  // 输入检查
   const inputOffset = buildingId * MAX_INPUTS;
-  
-  // 预先计算输入修正（用于检查和消耗）
-  const inputMultipliers: number[] = [];
-  for (let j = 0; j < cache.inputCount; j++) {
-    const goodsId = cache.inputGoods[j];
-    // 优先使用特定商品的修正，否则使用通用修正（goodsId=0）
-    let inputMult = modifiers.inputMultipliers.get(goodsId);
-    if (inputMult === undefined) {
-      inputMult = modifiers.inputMultipliers.get(0) ?? 1.0;
-    }
-    // 应用附属建筑的输入减少
-    inputMult *= inputReductionMultiplier;
-    inputMultipliers[j] = inputMult;
-    
-    const required = cache.inputAmounts[j] * tickOutput * inputMult;
+  for (let j = 0; j < recipe.inputs.length; j++) {
+    const required = recipe.inputs[j].amount * actualOutput;
     if (b.inputBuffers[inputOffset + j] < required) {
-      canProduce = false;
-      break;
+      return result;
     }
   }
-  
-  if (!canProduce) {
-    return result;
+
+  // 消耗输入
+  for (let j = 0; j < recipe.inputs.length; j++) {
+    b.inputBuffers[inputOffset + j] -= recipe.inputs[j].amount * actualOutput;
   }
-  
-  // 消耗输入（应用输入修正）
-  for (let j = 0; j < cache.inputCount; j++) {
-    const consumed = cache.inputAmounts[j] * tickOutput * inputMultipliers[j];
-    b.inputBuffers[inputOffset + j] -= consumed;
-  }
-  
-  // 记录资源使用
+
   result.laborUsed = Math.min(laborNeeded, availableLabor);
-  
-  // 合并品质加成（生产方式 + 附属建筑）
-  result.qualityBonus = modifiers.qualityBonus + subsidiaryEffects.qualityBonus;
-  
+  result.qualityBonus = 0;
+
   // 产出
   const outputOffset = buildingId * MAX_OUTPUTS;
-  for (let j = 0; j < cache.outputCount; j++) {
-    const goodsId = cache.outputGoods[j];
-    let amount = cache.outputAmounts[j] * tickOutput;
-    
-    // 应用附属建筑的特定商品加成
-    const specificBonus = subsidiaryEffects.specificGoodsBonus.get(goodsId);
-    if (specificBonus) {
-      amount *= specificBonus;
-    }
-    
-    // 添加到输出缓冲区
+  for (let j = 0; j < recipe.outputs.length; j++) {
+    const goodsId = recipe.outputs[j].goodsId;
+    const amount = recipe.outputs[j].amount * actualOutput;
     b.outputBuffers[outputOffset + j] += amount;
-    
-    // 直接添加到公司库存
     addInventory(world, owner, goodsId, amount);
-    
-    // 记录供给
-    g.supplies[goodsId] += amount;
-    
-    // 更新库存品质分数（使用加权平均）
+    recordMarketSupply(world, goodsId, amount);
     updateInventoryQuality(world, owner, goodsId, amount, result.qualityBonus);
   }
-  
-  // 处理附属建筑的额外产出
-  for (const bonusOutput of subsidiaryEffects.bonusOutputs) {
-    if (Math.random() < bonusOutput.chance) {
-      const bonusAmount = bonusOutput.amount;
-      addInventory(world, owner, bonusOutput.goodsId, bonusAmount);
-      g.supplies[bonusOutput.goodsId] += bonusAmount;
-    }
-  }
-  
-  // 更新生产进度
-  b.progress[buildingId] = (b.progress[buildingId] + tickOutput) % 1;
-  
+
+  b.progress[buildingId] = (b.progress[buildingId] + actualOutput) % 1;
   result.produced = true;
   return result;
 }
 
-/**
- * 供应过剩自动减产配置
- */
 const OVERSUPPLY_CONFIG = {
-  threshold: 2.0,           // 供需比阈值：超过2倍供应视为过剩
-  efficiencyReduction: 0.10, // 每tick效率降低10%
-  minEfficiency: 0.3,        // 最低效率30%
-  recoveryRate: 0.05,        // 当不再过剩时，效率恢复速度5%/tick
+  threshold: 2.0,
+  zeroDemandSupplyFloor: 50,
+  zeroDemandInventoryCoverage: 4.0,
+  inventoryCoverageWindow: 30,
+  positiveDemandInventoryCoverage: 3.0,
+  efficiencyReduction: 0.10,
+  minEfficiency: AUTO_PRODUCTION_EFFICIENCY_MIN,
+  recoveryRate: 0.05,
+  structuralSuspendCooldownTicks: 32,
+  structuralSuspendEfficiencyThreshold: 0.2,
+  fullSuspendSeverityThreshold: 12,
+  fullSuspendMaxActiveProducers: 2,
+  reactivationEfficiency: 0.3,
+  reactivationDemandPressureFloor: 15,
+  reactivationSupplyCoverage: 0.85,
+  reactivationInventoryCoverage: 1.5,
 };
 
-/**
- * 检查供应过剩并自动调整生产效率
- * 当商品的供需比超过阈值时，自动降低生产该商品的建筑效率
- * 当供需恢复正常时，逐步恢复效率
- */
+const OVERSUPPLY_EPSILON = 1e-4;
+
+function getOversupplyReductionRate(severity: number): number {
+  if (severity >= 20) return 0.4;
+  if (severity >= 10) return 0.3;
+  if (severity >= 5) return 0.2;
+  return OVERSUPPLY_CONFIG.efficiencyReduction;
+}
+
+function clearOversupplySuspension(world: GameWorld, buildingId: number): void {
+  world.buildings.oversupplySuspendedGoods[buildingId] = -1;
+  world.buildings.oversupplySuspendedUntilTick[buildingId] = 0;
+}
+
+function markOversupplySuspension(world: GameWorld, buildingId: number, goodsId: number): void {
+  world.buildings.oversupplySuspendedGoods[buildingId] = goodsId;
+  world.buildings.oversupplySuspendedUntilTick[buildingId] =
+    world.tick + OVERSUPPLY_CONFIG.structuralSuspendCooldownTicks;
+}
+
+function shouldReactivateOversupplySuspendedGoods(
+  world: GameWorld,
+  goodsId: number,
+  totalInventoryByGoods: Float64Array,
+): boolean {
+  if (goodsId < 0 || goodsId >= GOODS_COUNT) {
+    return false;
+  }
+
+  const supply = world.goods.supplies[goodsId] || 0;
+  const demand = world.goods.demands[goodsId] || 0;
+  const demandPressure = world.goods.demandPressureTick === world.tick
+    ? world.goods.demandPressure[goodsId] || 0
+    : world.goods.demandPressure[goodsId] || 0;
+  const inventoryBacklog = totalInventoryByGoods[goodsId] || 0;
+
+  if (demandPressure >= Math.max(
+    OVERSUPPLY_CONFIG.reactivationDemandPressureFloor,
+    supply * 0.5,
+  )) {
+    return true;
+  }
+
+  if (demand <= 0.01) {
+    return false;
+  }
+
+  return (
+    supply < demand * OVERSUPPLY_CONFIG.reactivationSupplyCoverage &&
+    inventoryBacklog < demand * OVERSUPPLY_CONFIG.inventoryCoverageWindow * OVERSUPPLY_CONFIG.reactivationInventoryCoverage
+  );
+}
+
+function getStructuralActiveProducerTarget(
+  severity: number,
+  demand: number,
+  activeProducerCount: number,
+): number {
+  if (activeProducerCount <= 0) {
+    return 0;
+  }
+
+  if (demand <= 0.01) {
+    return 0;
+  }
+
+  if (
+    activeProducerCount <= OVERSUPPLY_CONFIG.fullSuspendMaxActiveProducers &&
+    severity >= OVERSUPPLY_CONFIG.fullSuspendSeverityThreshold
+  ) {
+    return 0;
+  }
+
+  return Math.max(1, Math.ceil(activeProducerCount / Math.max(1, severity)));
+}
+
+export interface OversupplyAdjustmentResult {
+  oversuppliedGoodsCount: number;
+  reducedBuildingsCount: number;
+  recoveredBuildingsCount: number;
+  suspendedBuildingsCount: number;
+  reactivatedBuildingsCount: number;
+}
+
 export function adjustOversupplyProduction(world: GameWorld): OversupplyAdjustmentResult {
   const result: OversupplyAdjustmentResult = {
     oversuppliedGoodsCount: 0,
     reducedBuildingsCount: 0,
     recoveredBuildingsCount: 0,
+    suspendedBuildingsCount: 0,
+    reactivatedBuildingsCount: 0,
   };
-  
   const g = world.goods;
   const b = world.buildings;
-  
-  // 找出供应过剩的商品
+  const c = world.companies;
+  const totalInventoryByGoods = new Float64Array(GOODS_COUNT);
+  const oversupplySeverityByGoods = new Float32Array(GOODS_COUNT);
+  const activeProducerCountByGoods = new Uint16Array(GOODS_COUNT);
+  const suspensionCandidatesByGoods: Map<number, number[]> = new Map();
+  const suspendedBuildingsByGoods: Map<number, number[]> = new Map();
+
+  for (let companyId = 0; companyId < c.count; companyId++) {
+    const inventoryOffset = companyId * GOODS_COUNT;
+    for (let goodsId = 0; goodsId < GOODS_COUNT; goodsId++) {
+      totalInventoryByGoods[goodsId] += c.inventories[inventoryOffset + goodsId] || 0;
+    }
+  }
+
   const oversuppliedGoods = new Set<number>();
   for (let i = 0; i < GOODS_COUNT; i++) {
     const supply = g.supplies[i];
     const demand = g.demands[i];
-    // 只有当需求存在且供需比超过阈值时才视为过剩
-    if (demand > 0.01 && supply / demand > OVERSUPPLY_CONFIG.threshold) {
+    const inventoryBacklog = totalInventoryByGoods[i];
+    const ratioOversupplied = demand > 0.01 && supply / demand > OVERSUPPLY_CONFIG.threshold;
+    const positiveDemandBacklogOversupplied =
+      demand > 0.01 &&
+      inventoryBacklog >=
+        demand * OVERSUPPLY_CONFIG.inventoryCoverageWindow * OVERSUPPLY_CONFIG.positiveDemandInventoryCoverage;
+    const zeroDemandBacklogOversupplied =
+      demand <= 0.01 &&
+      supply >= OVERSUPPLY_CONFIG.zeroDemandSupplyFloor &&
+      inventoryBacklog >= supply * OVERSUPPLY_CONFIG.zeroDemandInventoryCoverage;
+
+    if (ratioOversupplied || positiveDemandBacklogOversupplied || zeroDemandBacklogOversupplied) {
       oversuppliedGoods.add(i);
+      if (ratioOversupplied) {
+        const flowSeverity = supply / Math.max(demand, 1);
+        const inventorySeverity = inventoryBacklog / Math.max(
+          demand * OVERSUPPLY_CONFIG.inventoryCoverageWindow,
+          1,
+        );
+        oversupplySeverityByGoods[i] = Math.max(
+          OVERSUPPLY_CONFIG.threshold,
+          flowSeverity,
+          inventorySeverity,
+        );
+      } else if (positiveDemandBacklogOversupplied) {
+        oversupplySeverityByGoods[i] = Math.max(
+          OVERSUPPLY_CONFIG.threshold,
+          inventoryBacklog / Math.max(
+            demand * OVERSUPPLY_CONFIG.inventoryCoverageWindow,
+            1,
+          ),
+        );
+      } else {
+        oversupplySeverityByGoods[i] = Math.max(
+          OVERSUPPLY_CONFIG.threshold,
+          inventoryBacklog / Math.max(supply, 1),
+        );
+      }
     }
   }
   result.oversuppliedGoodsCount = oversuppliedGoods.size;
-  
-  // 遍历所有建筑，调整生产过剩商品的建筑效率
+
+  for (let i = 0; i < b.count; i++) {
+    const suspendedGoodsId = b.oversupplySuspendedGoods[i];
+    if (suspendedGoodsId < 0) {
+      continue;
+    }
+
+    if (b.isActive[i]) {
+      clearOversupplySuspension(world, i);
+      continue;
+    }
+
+    const suspended = suspendedBuildingsByGoods.get(suspendedGoodsId) ?? [];
+    suspended.push(i);
+    suspendedBuildingsByGoods.set(suspendedGoodsId, suspended);
+  }
+
+  for (const [goodsId, buildingIds] of suspendedBuildingsByGoods) {
+    if (buildingIds.length === 0) {
+      continue;
+    }
+    if (!shouldReactivateOversupplySuspendedGoods(world, goodsId, totalInventoryByGoods)) {
+      continue;
+    }
+
+    for (const buildingId of buildingIds) {
+      if (world.tick < b.oversupplySuspendedUntilTick[buildingId]) {
+        continue;
+      }
+
+      b.isActive[buildingId] = 1;
+      clearOversupplySuspension(world, buildingId);
+      applyAutomaticEfficiencySafely(
+        world,
+        buildingId,
+        Math.max(b.efficiencies[buildingId], OVERSUPPLY_CONFIG.reactivationEfficiency),
+      );
+      result.reactivatedBuildingsCount++;
+      break;
+    }
+  }
+
   for (let i = 0; i < b.count; i++) {
     if (!b.isActive[i]) continue;
-    
-    const typeId = b.types[i];
-    const modeId = b.outputModeIds[i] ?? 0;
-    const cache = getProductionCache(typeId, modeId);
-    if (!cache) continue;
-    
-    // 检查该建筑是否生产过剩商品
+    const recipe = getBuildingRecipe(world, i);
+    if (recipe.outputs.length === 0) continue;
+
     let producesOversupplied = false;
-    for (let j = 0; j < cache.outputCount; j++) {
-      if (oversuppliedGoods.has(cache.outputGoods[j])) {
+    let maxOversupplySeverity = 0;
+    let structuralOversupplyGoodsId = -1;
+    let allOutputsOversupplied = true;
+    for (const o of recipe.outputs) {
+      activeProducerCountByGoods[o.goodsId]++;
+      if (oversuppliedGoods.has(o.goodsId)) {
         producesOversupplied = true;
-        break;
+        if (oversupplySeverityByGoods[o.goodsId] >= maxOversupplySeverity) {
+          maxOversupplySeverity = oversupplySeverityByGoods[o.goodsId];
+          structuralOversupplyGoodsId = o.goodsId;
+        }
+      } else {
+        allOutputsOversupplied = false;
       }
     }
-    
+
     const currentEfficiency = b.efficiencies[i];
-    const baseEfficiency = 1.0; // 基础效率为1.0
-    
+    const baseEfficiency = 1.0;
+
     if (producesOversupplied) {
-      // 降低效率
       if (currentEfficiency > OVERSUPPLY_CONFIG.minEfficiency) {
+        const reductionRate = getOversupplyReductionRate(maxOversupplySeverity);
         const newEfficiency = Math.max(
           OVERSUPPLY_CONFIG.minEfficiency,
-          currentEfficiency * (1 - OVERSUPPLY_CONFIG.efficiencyReduction)
+          currentEfficiency * (1 - reductionRate),
         );
         if (applyAutomaticEfficiencySafely(world, i, newEfficiency)) {
           result.reducedBuildingsCount++;
         }
       }
-    } else {
-      // 如果效率低于基础值，逐步恢复
-      if (currentEfficiency < baseEfficiency) {
-        const newEfficiency = Math.min(
-          baseEfficiency,
-          currentEfficiency * (1 + OVERSUPPLY_CONFIG.recoveryRate)
-        );
-        if (applyAutomaticEfficiencySafely(world, i, newEfficiency)) {
-          result.recoveredBuildingsCount++;
-        }
+    } else if (currentEfficiency < baseEfficiency) {
+      const newEfficiency = Math.min(
+        baseEfficiency,
+        currentEfficiency * (1 + OVERSUPPLY_CONFIG.recoveryRate),
+      );
+      if (applyAutomaticEfficiencySafely(world, i, newEfficiency)) {
+        result.recoveredBuildingsCount++;
       }
     }
+
+    if (
+      producesOversupplied &&
+      allOutputsOversupplied &&
+      structuralOversupplyGoodsId >= 0 &&
+      currentEfficiency <= OVERSUPPLY_CONFIG.structuralSuspendEfficiencyThreshold + OVERSUPPLY_EPSILON &&
+      canAutomaticSystemsAdjustEfficiency(world, i)
+    ) {
+      const candidates = suspensionCandidatesByGoods.get(structuralOversupplyGoodsId) ?? [];
+      candidates.push(i);
+      suspensionCandidatesByGoods.set(structuralOversupplyGoodsId, candidates);
+    }
   }
-  
+
+  for (const [goodsId, candidates] of suspensionCandidatesByGoods) {
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    const activeProducerCount = activeProducerCountByGoods[goodsId];
+    const desiredActiveCount = getStructuralActiveProducerTarget(
+      oversupplySeverityByGoods[goodsId],
+      g.demands[goodsId],
+      activeProducerCount,
+    );
+    let suspendNeeded = Math.min(
+      candidates.length,
+      Math.max(0, activeProducerCount - desiredActiveCount),
+    );
+
+    for (const buildingId of candidates) {
+      if (suspendNeeded <= 0) {
+        break;
+      }
+      if (!b.isActive[buildingId]) {
+        continue;
+      }
+
+      b.isActive[buildingId] = 0;
+      markOversupplySuspension(world, buildingId, goodsId);
+      result.suspendedBuildingsCount++;
+      suspendNeeded--;
+    }
+  }
   return result;
 }
 
-/**
- * 供应过剩调整结果
- */
-export interface OversupplyAdjustmentResult {
-  oversuppliedGoodsCount: number;   // 过剩商品数量
-  reducedBuildingsCount: number;    // 被减产的建筑数量
-  recoveredBuildingsCount: number;  // 恢复效率的建筑数量
+export interface ProductionResult {
+  processedCount: number;
+  producedCount: number;
+  blockedCount: number;
+  laborShortage: number;
+  totalLaborUsed: number;
+  totalQualityBonus: number;
 }
 
-/**
- * 批量更新所有建筑的生产
- * 这是主要的生产计算入口点
- */
 export function updateAllProduction(world: GameWorld): ProductionResult {
   const b = world.buildings;
   const result: ProductionResult = {
@@ -585,32 +510,22 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
     totalLaborUsed: 0,
     totalQualityBonus: 0,
   };
-  
-  // 供应过剩自动减产检查（每8tick执行一次以减少性能开销）
+
   if (world.tick % 8 === 0) {
     adjustOversupplyProduction(world);
   }
-  
-  // 更新附属建筑状态（每tick衰减）
-  updateSubsidiaryConditions(world);
-  
-  // 首先计算每个公司的可用资源
+
   companyResources.clear();
   for (let i = 0; i < world.companies.count; i++) {
     companyResources.set(i, calculateCompanyResources(world, i));
   }
-  
-  // 处理每个建筑的生产
+
   for (let i = 0; i < b.count; i++) {
     result.processedCount++;
-    
     const owner = b.owners[i];
     const resources = companyResources.get(owner);
-    
     if (!resources) continue;
-    
     const prodResult = processBuildingProduction(world, i, resources);
-    
     if (prodResult.produced) {
       result.producedCount++;
       resources.usedLabor += prodResult.laborUsed;
@@ -620,36 +535,25 @@ export function updateAllProduction(world: GameWorld): ProductionResult {
       result.blockedCount++;
     }
   }
-  
-  // 统计资源短缺情况
+
   for (const [, res] of companyResources) {
     if (res.laborShortage) result.laborShortage++;
   }
-  
   return result;
 }
 
-/**
- * 更新库存的品质分数
- * 使用加权平均合并新产出的品质
- */
 function updateInventoryQuality(
   world: GameWorld,
   companyId: number,
   goodsId: number,
   newAmount: number,
-  qualityBonus: number
+  qualityBonus: number,
 ): void {
   const idx = companyId * GOODS_COUNT + goodsId;
-  const existingAmount = world.companies.inventories[idx] - newAmount; // 已有库存（不含本次产出）
+  const existingAmount = world.companies.inventories[idx] - newAmount;
   const existingQuality = world.companies.qualityScores[idx];
-  
-  // 根据品质加成确定新产出的品质等级（0.0-0.5映射到0-4等级）
-  // qualityBonus 通常在 0.0-0.3 范围
-  const baseQuality = 0.5 + qualityBonus; // 基础品质分 0.5-0.8
+  const baseQuality = 0.5 + qualityBonus;
   const newQuality = determineProductionQuality(baseQuality);
-  
-  // 加权平均计算新的品质分数
   if (existingAmount > 0 && newAmount > 0) {
     const totalAmount = existingAmount + newAmount;
     world.companies.qualityScores[idx] =
@@ -657,151 +561,110 @@ function updateInventoryQuality(
   } else if (newAmount > 0) {
     world.companies.qualityScores[idx] = newQuality;
   }
-  // 如果newAmount为0则不更新
 }
 
-/**
- * 获取公司某商品的品质等级名称
- */
-export function getInventoryQualityName(world: GameWorld, companyId: number, goodsId: number): string {
-  const idx = companyId * GOODS_COUNT + goodsId;
-  const score = world.companies.qualityScores[idx];
-  const grade = Math.round(score) as QualityGrade;
-  return QUALITY_INFO[grade]?.name || '标准';
+export function getInventoryQualityName(_world: GameWorld, _companyId: number, _goodsId: number): string {
+  return '标准';
 }
 
-/**
- * 获取公司某商品的品质价格乘数
- */
-export function getInventoryQualityPriceMultiplier(world: GameWorld, companyId: number, goodsId: number): number {
-  const idx = companyId * GOODS_COUNT + goodsId;
-  const score = world.companies.qualityScores[idx];
-  const grade = Math.round(score) as QualityGrade;
-  return QUALITY_INFO[grade]?.priceMultiplier || 1.0;
+export function getInventoryQualityPriceMultiplier(_world: GameWorld, _companyId: number, _goodsId: number): number {
+  return 1.0;
 }
 
-/**
- * 生产结果统计
- */
-export interface ProductionResult {
-  processedCount: number;   // 处理的建筑数
-  producedCount: number;    // 成功生产的建筑数
-  blockedCount: number;     // 因缺少输入而阻塞的建筑数
-  laborShortage: number;    // 劳动力短缺的公司数
-  totalLaborUsed: number;   // 总劳动力使用
-  totalQualityBonus: number; // 总品质加成
-}
-
-/**
- * 获取公司的资源使用情况
- */
 export function getCompanyResourceUsage(companyId: number): CompanyResources | null {
   return companyResources.get(companyId) || null;
 }
 
 /**
- * 计算建筑的理论产能
+ * 计算建筑的理论日产能（按默认 method）
  */
 export function calculateTheoreticalOutput(
   buildingTypeId: number,
   level: number,
-  modeId: number = 0
 ): { goodsId: number; amount: number }[] {
-  const cache = getProductionCache(buildingTypeId, modeId);
-  if (!cache) return [];
-  
-  // 获取建筑等级效率加成
+  const recipe = getRecipeForBuilding(
+    buildingTypeId,
+    getBuildingDefaultMethods(buildingTypeId),
+  );
+  if (recipe.outputs.length === 0) return [];
+
   const building = BUILDINGS_BY_ID.get(buildingTypeId);
   const efficiencyMultiplier = building
     ? building.efficiencyMultipliers[Math.min(level - 1, building.efficiencyMultipliers.length - 1)]
     : 1;
-  
-  return cache.outputGoods.map((goodsId, i) => ({
-    goodsId,
-    amount: (cache.outputAmounts[i] / cache.ticksRequired) * TICKS_PER_DAY * efficiencyMultiplier,
+
+  return recipe.outputs.map((o) => ({
+    goodsId: o.goodsId,
+    amount: (o.amount / recipe.ticksRequired) * TICKS_PER_DAY * efficiencyMultiplier,
   }));
 }
 
-/**
- * 计算建筑的每日消耗
- */
 export function calculateDailyConsumption(
   buildingTypeId: number,
-  modeId: number = 0,
-  efficiency: number = 1
+  efficiency: number = 1,
 ): { goodsId: number; amount: number }[] {
-  const cache = getProductionCache(buildingTypeId, modeId);
-  if (!cache) return [];
-  
-  return cache.inputGoods.map((goodsId, i) => ({
-    goodsId,
-    amount: (cache.inputAmounts[i] / cache.ticksRequired) * TICKS_PER_DAY * efficiency,
+  const recipe = getRecipeForBuilding(buildingTypeId, getBuildingDefaultMethods(buildingTypeId));
+  return recipe.inputs.map((i) => ({
+    goodsId: i.goodsId,
+    amount: (i.amount / recipe.ticksRequired) * TICKS_PER_DAY * efficiency,
   }));
 }
 
-/**
- * 自动从公司库存补充建筑输入
- */
 export function autoFeedBuildings(world: GameWorld): void {
   const b = world.buildings;
   const c = world.companies;
-  
   for (let i = 0; i < b.count; i++) {
     if (!b.isActive[i]) continue;
-    
-    const typeId = b.types[i];
-    const modeId = b.outputModeIds[i] ?? 0;
-    const cache = getProductionCache(typeId, modeId);
-    if (!cache) continue;
-    
+    const recipe = getBuildingRecipe(world, i);
+    if (recipe.inputs.length === 0) continue;
     const owner = b.owners[i];
     const inputOffset = i * MAX_INPUTS;
-    
-    // 尝试补充每个输入槽
-    for (let j = 0; j < cache.inputCount; j++) {
-      const goodsId = cache.inputGoods[j];
+    for (let j = 0; j < recipe.inputs.length; j++) {
+      const goodsId = recipe.inputs[j].goodsId;
       const currentBuffer = b.inputBuffers[inputOffset + j];
-      
-      // 目标：保持7天的库存
-      const targetBuffer = cache.inputAmounts[j] * 7 / cache.ticksRequired * TICKS_PER_DAY;
-      
+      const targetBuffer = (recipe.inputs[j].amount * 7 / recipe.ticksRequired) * TICKS_PER_DAY;
       if (currentBuffer < targetBuffer) {
         const needed = targetBuffer - currentBuffer;
         const inventoryIdx = owner * GOODS_COUNT + goodsId;
         const available = c.inventories[inventoryIdx];
-        
         const transfer = Math.min(needed, available);
         if (transfer > 0) {
           c.inventories[inventoryIdx] -= transfer;
           b.inputBuffers[inputOffset + j] += transfer;
+          drainMarketSupply(world, goodsId, transfer);
         }
       }
     }
   }
 }
 
-/**
- * 获取建筑的生产状态
- */
+export interface BuildingProductionStatus {
+  status: 'producing' | 'blocked' | 'idle' | 'error';
+  efficiency: number;
+  progress: number;
+  inputLevels: { goodsId: number; current: number; required: number; percentage: number }[];
+  outputLevels: { goodsId: number; amount: number }[];
+  bottleneck: number | null;
+  recipe: ComputedRecipe | null;
+  slotMethods: number[];
+}
+
 export function getBuildingProductionStatus(
   world: GameWorld,
-  buildingId: number
+  buildingId: number,
 ): BuildingProductionStatus {
   const b = world.buildings;
   const typeId = b.types[buildingId];
-  const modeId = b.outputModeIds[buildingId] ?? 0;
   const building = BUILDINGS_BY_ID.get(typeId);
-  const cache = getProductionCache(typeId, modeId);
-  
-  // 获取槽位方法
+
   const slotCount = getBuildingSlotCount(typeId);
   const slotOffset = buildingId * MAX_SLOTS;
   const slotMethods: number[] = [];
   for (let i = 0; i < slotCount; i++) {
     slotMethods.push(b.slotMethods[slotOffset + i]);
   }
-  
-  if (!cache || !building) {
+
+  if (!building) {
     return {
       status: 'error',
       efficiency: 0,
@@ -809,71 +672,48 @@ export function getBuildingProductionStatus(
       inputLevels: [],
       outputLevels: [],
       bottleneck: null,
-      productionModifiers: null,
+      recipe: null,
       slotMethods,
-      outputModeId: modeId,
-      outputModeName: '未知',
     };
   }
-  
+
+  const recipe = getBuildingRecipe(world, buildingId);
   const inputOffset = buildingId * MAX_INPUTS;
   const outputOffset = buildingId * MAX_OUTPUTS;
   const efficiency = b.efficiencies[buildingId];
-  
-  // 获取生产方式修正
-  const productionModifiers = getBuildingProductionModifiers(world, buildingId);
-  
-  // 获取当前模式名称
-  let outputModeName = '默认';
-  if (building.production.outputModes) {
-    const mode = building.production.outputModes.find(m => m.modeId === modeId);
-    if (mode) {
-      outputModeName = mode.name;
-    }
-  }
-  
-  // 计算输入水平
+
   const inputLevels: { goodsId: number; current: number; required: number; percentage: number }[] = [];
   let bottleneck: number | null = null;
   let minPercentage = Infinity;
-  
-  for (let i = 0; i < cache.inputCount; i++) {
+
+  for (let i = 0; i < recipe.inputs.length; i++) {
     const current = b.inputBuffers[inputOffset + i];
-    const required = cache.inputAmounts[i];
-    const percentage = Math.min(100, (current / required) * 100);
-    
-    inputLevels.push({
-      goodsId: cache.inputGoods[i],
-      current,
-      required,
-      percentage,
-    });
-    
+    const required = recipe.inputs[i].amount;
+    const percentage = required > 0 ? Math.min(100, (current / required) * 100) : 100;
+    inputLevels.push({ goodsId: recipe.inputs[i].goodsId, current, required, percentage });
     if (percentage < minPercentage) {
       minPercentage = percentage;
-      bottleneck = cache.inputGoods[i];
+      bottleneck = recipe.inputs[i].goodsId;
     }
   }
-  
-  // 计算输出水平
+
   const outputLevels: { goodsId: number; amount: number }[] = [];
-  for (let i = 0; i < cache.outputCount; i++) {
+  for (let i = 0; i < recipe.outputs.length; i++) {
     outputLevels.push({
-      goodsId: cache.outputGoods[i],
+      goodsId: recipe.outputs[i].goodsId,
       amount: b.outputBuffers[outputOffset + i],
     });
   }
-  
-  // 确定状态
+
   let status: 'producing' | 'blocked' | 'idle' | 'error';
   if (!b.isActive[buildingId]) {
     status = 'idle';
-  } else if (minPercentage >= 100) {
+  } else if (recipe.inputs.length === 0 || minPercentage >= 100) {
     status = 'producing';
   } else {
     status = 'blocked';
   }
-  
+
   return {
     status,
     efficiency,
@@ -881,36 +721,12 @@ export function getBuildingProductionStatus(
     inputLevels,
     outputLevels,
     bottleneck: status === 'blocked' ? bottleneck : null,
-    productionModifiers,
+    recipe,
     slotMethods,
-    outputModeId: modeId,
-    outputModeName,
   };
 }
 
-/**
- * 建筑生产状态
- */
-export interface BuildingProductionStatus {
-  status: 'producing' | 'blocked' | 'idle' | 'error';
-  efficiency: number;
-  progress: number;
-  inputLevels: { goodsId: number; current: number; required: number; percentage: number }[];
-  outputLevels: { goodsId: number; amount: number }[];
-  bottleneck: number | null;  // 瓶颈商品ID
-  productionModifiers: ProductionModifiers | null;  // 生产方式修正
-  slotMethods: number[];  // 当前槽位方法
-  outputModeId: number;   // 当前产品模式ID
-  outputModeName: string; // 当前产品模式名称
-}
+export const getBuildingProductionStatusWithMethods = getBuildingProductionStatus;
 
-/**
- * 获取建筑的生产状态（包含生产方式信息）
- * @deprecated 使用 getBuildingProductionStatus 代替
- */
-export function getBuildingProductionStatusWithMethods(
-  world: GameWorld,
-  buildingId: number
-): BuildingProductionStatus {
-  return getBuildingProductionStatus(world, buildingId);
-}
+// ALL_BUILDINGS 仍被外部使用（虽然 production 字段稍后删除）
+export { ALL_BUILDINGS };

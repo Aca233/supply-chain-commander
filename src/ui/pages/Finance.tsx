@@ -506,7 +506,7 @@ export const Finance: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 w-full">
               <CardTitle>📈 现金余额趋势</CardTitle>
               <Badge variant={dailyIncomeChange >= 0 ? 'success' : 'error'}>
-                {dailyIncomeChange >= 0 ? '+' : ''}{dailyIncomeChange.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {dailyIncomeChange >= 0 ? '+' : ''}{dailyIncomeChange.toLocaleString(undefined, { maximumFractionDigits: Math.abs(dailyIncomeChange) < 1000 ? 2 : 0, minimumFractionDigits: Math.abs(dailyIncomeChange) < 1000 && !Number.isInteger(dailyIncomeChange) ? 2 : 0 })}
               </Badge>
             </div>
           </CardHeader>

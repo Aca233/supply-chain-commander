@@ -230,7 +230,7 @@ const RESEARCH_FACILITIES: FacilityDefinition[] = [
     dailyMaintenance: 600,
     requiredBuildingLevel: 2,
     effects: {
-      qualityBonus: 0.1,
+      qualityBonus: 0,
       researchSpeed: 0.1,
     },
     maxPerBuilding: 1,
@@ -248,10 +248,10 @@ const RESEARCH_FACILITIES: FacilityDefinition[] = [
     requiredBuildingLevel: 3,
     requiredBuildingTypes: [16, 17, 18, 29, 30, 31, 37, 38, 39], // 高科技、制药、军工
     effects: {
-      qualityBonus: 0.15,
+      qualityBonus: 0,
       researchSpeed: 0.3,
-      innovationChance: 0.05,
-      efficiencyBonus: 0.05,
+      innovationChance: 0,
+      efficiencyBonus: 0,
     },
     maxPerBuilding: 1,
     stackable: false,
@@ -267,8 +267,8 @@ const RESEARCH_FACILITIES: FacilityDefinition[] = [
     dailyMaintenance: 400,
     requiredBuildingLevel: 2,
     effects: {
-      efficiencyBonus: 0.08,
-      productionBonus: 0.05,
+      efficiencyBonus: 0,
+      productionBonus: 0,
     },
     maxPerBuilding: 1,
     stackable: false,
@@ -308,7 +308,7 @@ const MAINTENANCE_FACILITIES: FacilityDefinition[] = [
     requiredBuildingLevel: 1,
     effects: {
       maintenanceReduction: 0.1,
-      efficiencyBonus: 0.03,
+      efficiencyBonus: 0,
     },
     maxPerBuilding: 2,
     stackable: true,
@@ -326,7 +326,7 @@ const MAINTENANCE_FACILITIES: FacilityDefinition[] = [
     effects: {
       maintenanceReduction: 0.25,
       accidentReduction: 0.3,
-      efficiencyBonus: 0.05,
+      efficiencyBonus: 0,
     },
     maxPerBuilding: 1,
     stackable: false,
@@ -348,7 +348,7 @@ const WORKER_FACILITIES: FacilityDefinition[] = [
     dailyMaintenance: 200,
     requiredBuildingLevel: 1,
     effects: {
-      efficiencyBonus: 0.03,
+      efficiencyBonus: 0,
       laborReduction: 0.05,
     },
     maxPerBuilding: 1,
@@ -365,8 +365,8 @@ const WORKER_FACILITIES: FacilityDefinition[] = [
     dailyMaintenance: 300,
     requiredBuildingLevel: 2,
     effects: {
-      qualityBonus: 0.08,
-      efficiencyBonus: 0.05,
+      qualityBonus: 0,
+      efficiencyBonus: 0,
       accidentReduction: 0.15,
     },
     maxPerBuilding: 1,
@@ -384,7 +384,7 @@ const WORKER_FACILITIES: FacilityDefinition[] = [
     requiredBuildingLevel: 1,
     effects: {
       laborReduction: 0.1,
-      efficiencyBonus: 0.02,
+      efficiencyBonus: 0,
     },
     maxPerBuilding: 2,
     stackable: true,
@@ -425,7 +425,7 @@ const ENVIRONMENTAL_FACILITIES: FacilityDefinition[] = [
     effects: {
       wasteRecycling: 0.25,
       pollutionReduction: 0.1,
-      productionBonus: 0.03,
+      productionBonus: 0,
     },
     maxPerBuilding: 1,
     stackable: false,
@@ -483,7 +483,7 @@ const SECURITY_FACILITIES: FacilityDefinition[] = [
     effects: {
       sabotageProtection: 0.4,
       accidentReduction: 0.1,
-      efficiencyBonus: 0.02,
+      efficiencyBonus: 0,
     },
     maxPerBuilding: 1,
     stackable: false,

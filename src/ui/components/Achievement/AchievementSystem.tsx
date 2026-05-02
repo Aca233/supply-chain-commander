@@ -14,6 +14,12 @@ import { Badge } from '@/ui/design-system/components/Badge';
 import { ProgressBar } from '@/ui/design-system/components/ProgressBar';
 import { Tabs, TabsList, TabsTrigger } from '@/ui/design-system/components/Tabs';
 import { cn } from '@/ui/design-system/utils/cn';
+import {
+  evaluateAchievementProgress,
+  type AchievementConditionType,
+  type EvaluatedAchievementProgress,
+} from './achievementProgress';
+import { TUTORIAL_STORAGE_KEY } from '../Tutorial/tutorialState';
 
 // ==================== 成就类型定义 ====================
 
@@ -54,6 +60,7 @@ export interface AchievementProgress {
   unlocked: boolean;
   unlockedAt?: number;
   notified?: boolean;
+  baselineValue?: number;
 }
 
 // ==================== 成就定义 ====================
@@ -496,7 +503,7 @@ export const AchievementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       case 'gameDays':
         return Math.floor(tick / TICKS_PER_DAY);
       case 'tutorialComplete':
-        const tutorialProgress = localStorage.getItem('scc_tutorial');
+        const tutorialProgress = localStorage.getItem(TUTORIAL_STORAGE_KEY);
         if (tutorialProgress) {
           try {
             const parsed = JSON.parse(tutorialProgress);
@@ -527,40 +534,20 @@ export const AchievementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (!metric) return;
 
       const currentValue = getMetricValue(metric);
-      const target = achievement.condition.target;
-
-      // 更新进度
-      const newAchievementProgress: AchievementProgress = {
+      const nextProgress = evaluateAchievementProgress({
         achievementId: achievement.id,
+        metric,
+        conditionType: achievement.condition.type as AchievementConditionType,
+        target: achievement.condition.target,
         currentValue,
-        unlocked: false,
-        notified: existingProgress?.notified
-      };
+        existingProgress: existingProgress as EvaluatedAchievementProgress | undefined,
+      });
 
-      // 检查是否达成
-      let achieved = false;
-      switch (achievement.condition.type) {
-        case 'threshold':
-        case 'milestone':
-          achieved = currentValue >= target;
-          break;
-        case 'counter':
-          achieved = currentValue >= target;
-          break;
-        case 'compound':
-          // 复合条件需要特殊处理
-          achieved = currentValue >= target;
-          break;
-      }
-
-      if (achieved) {
-        newAchievementProgress.unlocked = true;
-        newAchievementProgress.unlockedAt = Date.now();
-        newAchievementProgress.notified = false;
+      if (nextProgress.unlocked && !existingProgress?.unlocked) {
         newUnlocks.push(achievement);
       }
 
-      newProgress.set(achievement.id, newAchievementProgress);
+      newProgress.set(achievement.id, nextProgress);
     });
 
     if (newUnlocks.length > 0) {

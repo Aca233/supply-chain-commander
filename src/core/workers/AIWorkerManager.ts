@@ -216,7 +216,7 @@ export class AIWorkerManager {
         buildings.push({
           id: i,
           typeId: world.buildings.types[i],
-          recipeId: world.buildings.outputModeIds[i],  // v4.0: 使用outputModeIds替代recipeIds
+          recipeId: 0,
           isActive: world.buildings.isActive[i] === 1,
           efficiency: world.buildings.efficiencies[i],
           level: world.buildings.levels[i],
@@ -529,7 +529,6 @@ export class AIWorkerManager {
       queue.progress[slot] = 0;
       queue.startTicks[slot] = world.tick;
       queue.estimatedEndTicks[slot] = world.tick + 48;  // 默认2天
-      queue.outputModeIds[slot] = decision.recipeId || 0;  // v4.0: 使用outputModeIds替代recipeIds
       queue.existingBuildingIds[slot] = -1;  // 新建
       queue.isActive[slot] = 1;
       queue.count++;
@@ -642,7 +641,6 @@ export class AIWorkerManager {
       queue.progress[slot] = 0;
       queue.startTicks[slot] = world.tick;
       queue.estimatedEndTicks[slot] = world.tick + 24;  // 升级时间较短
-      queue.outputModeIds[slot] = world.buildings.outputModeIds[buildingId];
       queue.existingBuildingIds[slot] = buildingId;  // 标记为升级现有建筑
       queue.isActive[slot] = 1;
       queue.count++;

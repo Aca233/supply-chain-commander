@@ -23,8 +23,10 @@ import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition, GoodsId } from '@/data/good
 import { GOODS_COUNT, MAX_ORDERS } from '../constants';
 import { finalizeFilledOrder, getOrderBookView, OrderView } from '../market/OrderBook';
 import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
-import { getBuildingProduction, getRetailConfig } from '@/data/buildings';
+import { getRetailConfig } from '@/data/buildings';
+import { getBuildingRecipeFromInstance } from '../production/ProductionEngine';
 import { recordTrade, TradeOrderRef, TradePartyRef } from '../market/TradeLedger';
+import { recordFinalConsumption, recordSatisfiedDemand } from './MarketStats';
 
 // ==================== 预计算查找表（O(1)查找替代O(n)） ====================
 
@@ -93,16 +95,17 @@ export interface ConsumerBuyConfig {
 }
 
 // 默认配置
-// 【任务8优化】提高消费速率，加快商品流通，减少订单积压
+// day-model 下 1 tick = 1 天：消费/B2B 必须每天执行；分组轮询会把"日消费"摊成
+// "三天才消费一次"，与按日发放工资的注入端形成 3× 失衡，进一步放大累积错配。
 const DEFAULT_CONFIG: ConsumerBuyConfig = {
-  consumptionRatePerTick: 0.48, // 【提高】从32%提升到48%（加快50%消费速度）
-  maxPremiumRatio: 1.8,          // 【提高】从150%提升到180%（消费者愿意接受更高溢价）
-  minTradeQuantity: 0.5,         // 【降低】从1降到0.5（允许更小额交易）
-  priceSensitivity: 0.35,        // 【降低】从0.5降到0.35（消费者对价格不那么敏感）
-  executionInterval: 3,          // 【提高频率】从每4tick改为每3tick执行
-  b2bExecutionInterval: 3,       // 【提高频率】从每4tick改为每3tick执行B2B采购
-  goodsBatchGroups: 3,           // 【优化】商品分3组轮询处理（配合3tick间隔）
-  b2bBuildingBatchGroups: 3,     // 【优化】建筑分3组轮询处理B2B采购
+  consumptionRatePerTick: 0.85, // 单日消费 ~85% 当日需求，与 RETAIL_MAX_CUSTOMER_RATE 对齐
+  maxPremiumRatio: 1.8,
+  minTradeQuantity: 0.5,
+  priceSensitivity: 0.35,
+  executionInterval: 1,         // day-model：每天执行
+  b2bExecutionInterval: 1,
+  goodsBatchGroups: 1,          // day-model：不再分组轮询
+  b2bBuildingBatchGroups: 1,
 };
 
 // 消费者购买结果
@@ -181,6 +184,8 @@ function getRetailServedGoods(world: GameWorld): Set<number> {
 
   for (let retailId = 0; retailId < world.retail.count; retailId++) {
     const buildingId = world.retail.buildingIds[retailId];
+    if (world.buildings.isActive[buildingId] !== 1) continue;
+
     const buildingType = world.buildings.types[buildingId];
     const retailConfig = getRetailConfig(buildingType);
     if (!retailConfig) continue;
@@ -319,14 +324,9 @@ function executeB2BPurchases(
     if (!b.isActive[buildingId]) continue;
     
     const companyId = b.owners[buildingId];
-    const buildingTypeId = b.types[buildingId];
-    const outputModeId = b.outputModeIds[buildingId];
-    // 使用getBuildingProduction替代RECIPES
-    const production = getBuildingProduction(buildingTypeId, outputModeId);
-    
-    if (!production) continue;
-    
-    const inputs = production.inputs || [];
+    const production = getBuildingRecipeFromInstance(world, buildingId);
+
+    const inputs = production.inputs;
     // 遍历生产配置的每个输入
     for (const input of inputs) {
       const goodsId = input.goodsId;
@@ -510,9 +510,8 @@ function executeCompanyPurchase(
   c.inventoryReserved[sellInvIdx] -= actualQuantity;
   c.inventories[sellInvIdx] -= actualQuantity;
   
-  // 5. 更新供需数据
-  world.goods.supplies[goodsId] += actualQuantity;
-  world.goods.demands[goodsId] += actualQuantity;
+  // 5. 更新需求压力：B2B采购满足了生产需求，不创造新的供给
+  recordSatisfiedDemand(world, goodsId, actualQuantity);
   
   recordTrade(world, {
     buyOrderId: -1,
@@ -739,8 +738,8 @@ function executeOrderPurchase(
   // 3. 商品被消费（不进入任何库存，而是从市场消失）
   // 这模拟了最终消费者购买并使用商品
   
-  // 4. 更新供给数据（商品被消费，供给减少）
-  world.goods.supplies[goodsId] += actualQuantity;
+  // 4. 更新最终消费：商品被消费，不再计入可用市场供给
+  recordFinalConsumption(world, goodsId, actualQuantity);
   
   recordTrade(world, {
     buyOrderId: TradeOrderRef.CONSUMER_DIRECT,

@@ -9,14 +9,24 @@ Supply Chain Commander is a deep economic simulation browser game built with Rea
 ## Commands
 
 ```bash
-npm run dev          # Start dev server (Vite, port 5173)
-npm run build        # TypeScript check + Vite production build
-npm run preview      # Preview production build
-npm run test         # Run Vitest test suite
-npm run test:ui      # Run tests with Vitest UI
-npm run lint         # ESLint check (TypeScript files, max warnings 0)
-npm run storybook    # Start Storybook on port 6006
+npm run dev              # Start dev server (Vite, port 5173)
+npm run build            # TypeScript check + Vite production build
+npm run preview          # Preview production build
+npm run test             # Run Vitest test suite (watch mode by default)
+npm run test:ui          # Run tests with Vitest UI
+npm run lint             # ESLint check (TypeScript files, max warnings 0)
+npm run storybook        # Start Storybook on port 6006
 npm run build-storybook  # Build static Storybook
+npm run deploy           # Build and publish to GitHub Pages (gh-pages)
+```
+
+### Running a single test
+
+```bash
+npm run test -- ProductionEngine     # Filter by file name substring
+npm run test -- -t "demand curve"    # Filter by test name (it/describe)
+npm run test -- --run                # Single run, no watch mode
+npm run test -- --run path/to/file.test.ts   # Single file, no watch
 ```
 
 ## Architecture
@@ -45,13 +55,20 @@ GameWorld (SoA data) → GameLoop (tick processor) → gameStore (Zustand + Imme
 | `economy` | `src/core/economy/` | Pricing engine, demand/supply curves, retail, consumer market, brand, logistics, seasonality, quality, substitution |
 | `finance` | `src/core/finance/` | Stock market, banking/loans, acquisitions, company profiles, ownership control |
 | `ai` | `src/core/ai/` | AI decision engine (personalities, trading, production, strategy), player auto-trader, AI scheduler with Web Worker support |
+| `balance` | `src/core/balance/` | Tunable economic balance parameters (`BalanceConfig.ts`); the central knob for production / pricing / demand calibration |
 | `construction` | `src/core/construction/` | Construction/demolition queue processing |
 | `news` | `src/core/news/` | Monthly news generation, stats collection, event tracking |
+| `save` | `src/core/save/` | Save/load system (`SaveManager.ts`), serialization of SoA arrays |
+| `research` | `src/core/research/` | Research / tech-tree progression |
+| `llm` | `src/core/llm/` | Optional LLM integration config (`LLMConfig.ts`) for AI-driven content |
+| `sound` | `src/core/sound/` | Sound effects layer |
 | `performance` | `src/core/performance/` | Object pools, perf monitoring, memory management, data export |
 | `workers` | `src/core/workers/` | Web Worker offloading (AI scheduler, economy calculations) |
 | `data` | `src/data/` | Static game data: goods definitions (88 types, 4 tiers), building types, recipes, building materials |
 | `stores` | `src/stores/` | Zustand game store with Immer |
 | `ui` | `src/ui/` | Pages, components, design system, hooks, utilities |
+
+`src/core/constants.ts` holds all SoA capacity limits (`MAX_BUILDINGS`, `MAX_COMPANIES`, `MAX_ORDERS`, `GOODS_COUNT`, `MAX_INPUTS/OUTPUTS/SLOTS`, etc.). Changing these resizes TypedArrays globally — review save-format compatibility before touching.
 
 ### Key Design Decisions
 
@@ -60,6 +77,7 @@ GameWorld (SoA data) → GameLoop (tick processor) → gameStore (Zustand + Imme
 - **Tick scheduling**: Uses `setTimeout` accumulation loop. Speed multipliers (1/2/4/8x) divide the interval. Many subsystems are staggered across different tick offsets to spread CPU load.
 - **Production methods system**: Dual old/new system. New system uses `ProductionMethods.ts` with building-specific slot configs (method IDs ≥ 10000); old system uses `SLOT_CONFIGS_BY_BUILDING`. The store's `changeBuildingSlotMethod` handles both paths.
 - **Module aliases**: `@/` → `src/`, `@core/` → `src/core/`, `@ui/` → `src/ui/`, `@data/` → `src/data/`.
+- **UI dependencies**: Charts use **ECharts** (`echarts`, `echarts-for-react`); primitives come from **Radix UI** + **Tailwind CSS** (with `class-variance-authority` / `tailwind-merge`). Prefer extending these — don't introduce alternative chart or component libraries.
 
 ### Testing
 

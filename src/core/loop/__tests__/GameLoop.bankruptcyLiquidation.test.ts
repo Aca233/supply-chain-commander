@@ -87,6 +87,69 @@ describe('GameLoop bankruptcy liquidation', () => {
     expect(bankruptcyResolution.getCompanyEvents(1)).toHaveLength(1);
   });
 
+  it('ignores inactive bankruptcy-frozen buildings in monthly cash insolvency checks', async () => {
+    vi.resetModules();
+
+    const { createGameWorld } = await import('../../world/GameWorld');
+    const { addBuilding } = await import('../../world/WorldInitializer');
+    const { BuildingId } = await import('@/data/buildings');
+    const { createGameLoop } = await import('../GameLoop');
+    const { bankruptcyResolution, resetBankruptcyResolution } = await import('../../finance/BankruptcyResolution');
+
+    resetBankruptcyResolution();
+
+    const world = createGameWorld();
+    world.companies.count = 2;
+    world.companies.names[1] = '重组AI';
+    world.companies.isAI[1] = true;
+    world.companies.cash[1] = 9_000;
+    world.companies.totalAssets[1] = 9_000;
+    world.companies.totalLiabilities[1] = 0;
+
+    for (let i = 0; i < 20; i++) {
+      const buildingId = addBuilding(world, 1, BuildingId.IRON_MINE, 0);
+      world.buildings.isActive[buildingId] = 0;
+    }
+
+    const loop = createGameLoop(world);
+
+    try {
+      (loop as unknown as { checkAIBankruptcy(): void }).checkAIBankruptcy();
+    } finally {
+      loop.destroy();
+    }
+
+    expect(bankruptcyResolution.getCompanyEvents(1)).toHaveLength(0);
+  });
+
+  it('uses live assets instead of stale company totals when checking balance-sheet insolvency', async () => {
+    vi.resetModules();
+
+    const { createGameWorld } = await import('../../world/GameWorld');
+    const { createGameLoop } = await import('../GameLoop');
+    const { bankruptcyResolution, resetBankruptcyResolution } = await import('../../finance/BankruptcyResolution');
+
+    resetBankruptcyResolution();
+
+    const world = createGameWorld();
+    world.companies.count = 2;
+    world.companies.names[1] = '账面失真AI';
+    world.companies.isAI[1] = true;
+    world.companies.cash[1] = -1_000;
+    world.companies.totalAssets[1] = 5_000_000;
+    world.companies.totalLiabilities[1] = 200_000;
+
+    const loop = createGameLoop(world);
+
+    try {
+      (loop as unknown as { checkAIBankruptcy(): void }).checkAIBankruptcy();
+    } finally {
+      loop.destroy();
+    }
+
+    expect(bankruptcyResolution.getCompanyEvents(1)).toHaveLength(1);
+  });
+
   it('prevents duplicate events when openEvent is called repeatedly for the same company', async () => {
     vi.resetModules();
 

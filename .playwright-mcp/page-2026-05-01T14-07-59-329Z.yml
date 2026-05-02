@@ -1,0 +1,485 @@
+- generic [ref=e58]:
+  - complementary [ref=e59]:
+    - navigation [ref=e60]:
+      - generic [ref=e61]:
+        - button "📊 仪表盘" [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: 📊
+          - generic [ref=e64]: 仪表盘
+        - button "🏭 生产管理" [active] [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: 🏭
+          - generic [ref=e67]: 生产管理
+        - button "🔗 产业链" [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]: 🔗
+          - generic [ref=e70]: 产业链
+        - button "💹 市场交易" [ref=e71] [cursor=pointer]:
+          - generic [ref=e72]: 💹
+          - generic [ref=e73]: 市场交易
+        - button "🏪 零售管理" [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: 🏪
+          - generic [ref=e76]: 零售管理
+        - button "📈 财务报表" [ref=e77] [cursor=pointer]:
+          - generic [ref=e78]: 📈
+          - generic [ref=e79]: 财务报表
+        - button "🏛️ 竞争与投资" [ref=e80] [cursor=pointer]:
+          - generic [ref=e81]: 🏛️
+          - generic [ref=e82]: 竞争与投资
+        - button "📰 商业周刊" [ref=e83] [cursor=pointer]:
+          - generic [ref=e84]: 📰
+          - generic [ref=e85]: 商业周刊
+        - button "⚙️ 设置" [ref=e86] [cursor=pointer]:
+          - generic [ref=e87]: ⚙️
+          - generic [ref=e88]: 设置
+      - button "← 收起侧栏" [ref=e544] [cursor=pointer]:
+        - generic [ref=e545]: ←
+        - generic [ref=e546]: 收起侧栏
+  - generic [ref=e89]:
+    - banner [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e95]: SC
+          - heading "供应链指挥官" [level=1] [ref=e96]
+        - generic [ref=e97]:
+          - generic [ref=e98]:
+            - text: 游戏时间：
+            - generic [ref=e99]: 第1年 2月10日
+          - generic [ref=e100]:
+            - button "1x" [ref=e101] [cursor=pointer]
+            - button "2x" [ref=e102] [cursor=pointer]
+            - button "4x" [ref=e103] [cursor=pointer]
+            - button "8x" [ref=e104] [cursor=pointer]
+          - button "▶" [ref=e547] [cursor=pointer]
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]: 现金
+            - generic [ref=e109]: ¥17.56M
+          - button "☀️" [ref=e110] [cursor=pointer]:
+            - generic [ref=e111]: ☀️
+          - generic [ref=e113]: 👤
+    - main [ref=e114]:
+      - generic [ref=e876]:
+        - generic [ref=e878]:
+          - generic [ref=e879]:
+            - generic [ref=e880]:
+              - generic [ref=e881]: 🏗️
+              - heading "建造" [level=3] [ref=e882]
+              - generic [ref=e883]: 50种
+            - generic [ref=e885]:
+              - generic: 🔍
+              - textbox "搜索建筑..." [ref=e886]
+            - tablist [ref=e888]:
+              - tab "全部" [selected] [ref=e889] [cursor=pointer]
+              - tab "可建造" [ref=e890] [cursor=pointer]
+          - generic [ref=e891]:
+            - button "⛏️ 矿业 7 ▼" [ref=e893] [cursor=pointer]:
+              - generic [ref=e894]:
+                - generic [ref=e895]: ⛏️
+                - generic [ref=e896]: 矿业
+                - generic [ref=e897]: "7"
+              - generic [ref=e898]: ▼
+            - button "⚡ 能源 4 ▼" [ref=e900] [cursor=pointer]:
+              - generic [ref=e901]:
+                - generic [ref=e902]: ⚡
+                - generic [ref=e903]: 能源
+                - generic [ref=e904]: "4"
+              - generic [ref=e905]: ▼
+            - button "🌾 农林牧渔 6 ▼" [ref=e907] [cursor=pointer]:
+              - generic [ref=e908]:
+                - generic [ref=e909]: 🌾
+                - generic [ref=e910]: 农林牧渔
+                - generic [ref=e911]: "6"
+              - generic [ref=e912]: ▼
+            - button "🍞 食品 3 ▼" [ref=e914] [cursor=pointer]:
+              - generic [ref=e915]:
+                - generic [ref=e916]: 🍞
+                - generic [ref=e917]: 食品
+                - generic [ref=e918]: "3"
+              - generic [ref=e919]: ▼
+            - button "🧪 化工建材 4 ▼" [ref=e921] [cursor=pointer]:
+              - generic [ref=e922]:
+                - generic [ref=e923]: 🧪
+                - generic [ref=e924]: 化工建材
+                - generic [ref=e925]: "4"
+              - generic [ref=e926]: ▼
+            - button "🔩 冶金 3 ▼" [ref=e928] [cursor=pointer]:
+              - generic [ref=e929]:
+                - generic [ref=e930]: 🔩
+                - generic [ref=e931]: 冶金
+                - generic [ref=e932]: "3"
+              - generic [ref=e933]: ▼
+            - button "🧵 纺织家具 2 ▼" [ref=e935] [cursor=pointer]:
+              - generic [ref=e936]:
+                - generic [ref=e937]: 🧵
+                - generic [ref=e938]: 纺织家具
+                - generic [ref=e939]: "2"
+              - generic [ref=e940]: ▼
+            - button "💻 电子科技 4 ▼" [ref=e942] [cursor=pointer]:
+              - generic [ref=e943]:
+                - generic [ref=e944]: 💻
+                - generic [ref=e945]: 电子科技
+                - generic [ref=e946]: "4"
+              - generic [ref=e947]: ▼
+            - button "🚗 汽车 1 ▼" [ref=e949] [cursor=pointer]:
+              - generic [ref=e950]:
+                - generic [ref=e951]: 🚗
+                - generic [ref=e952]: 汽车
+                - generic [ref=e953]: "1"
+              - generic [ref=e954]: ▼
+            - button "📺 家电 1 ▼" [ref=e956] [cursor=pointer]:
+              - generic [ref=e957]:
+                - generic [ref=e958]: 📺
+                - generic [ref=e959]: 家电
+                - generic [ref=e960]: "1"
+              - generic [ref=e961]: ▼
+            - button "☀️ 新能源 1 ▼" [ref=e963] [cursor=pointer]:
+              - generic [ref=e964]:
+                - generic [ref=e965]: ☀️
+                - generic [ref=e966]: 新能源
+                - generic [ref=e967]: "1"
+              - generic [ref=e968]: ▼
+            - button "💊 医药 2 ▼" [ref=e970] [cursor=pointer]:
+              - generic [ref=e971]:
+                - generic [ref=e972]: 💊
+                - generic [ref=e973]: 医药
+                - generic [ref=e974]: "2"
+              - generic [ref=e975]: ▼
+            - button "💎 奢侈品 2 ▼" [ref=e977] [cursor=pointer]:
+              - generic [ref=e978]:
+                - generic [ref=e979]: 💎
+                - generic [ref=e980]: 奢侈品
+                - generic [ref=e981]: "2"
+              - generic [ref=e982]: ▼
+            - button "📦 retail 10 ▼" [ref=e984] [cursor=pointer]:
+              - generic [ref=e985]:
+                - generic [ref=e986]: 📦
+                - generic [ref=e987]: retail
+                - generic [ref=e988]: "10"
+              - generic [ref=e989]: ▼
+          - generic [ref=e991]:
+            - generic [ref=e992]: 可用资金
+            - generic [ref=e993]: ¥17,562,568.411
+        - generic [ref=e994]:
+          - generic [ref=e995]:
+            - generic [ref=e996]:
+              - generic [ref=e997]:
+                - button "◀" [ref=e998] [cursor=pointer]
+                - button "建筑详情" [disabled]
+              - generic [ref=e999]:
+                - heading "🏭 生产管理" [level=2] [ref=e1000]
+                - generic [ref=e1001]:
+                  - generic [ref=e1002]: "建筑: 4/100"
+                  - generic [ref=e1003]: ¥17,562.6K
+            - generic [ref=e1004]:
+              - button "🏗️ 建造队列" [ref=e1005] [cursor=pointer]
+              - tablist [ref=e1007]:
+                - tab "网格" [selected] [ref=e1008] [cursor=pointer]
+                - tab "列表" [ref=e1009] [cursor=pointer]
+          - generic [ref=e1011]:
+            - generic [ref=e1012]:
+              - generic [ref=e1013]:
+                - generic [ref=e1014]:
+                  - generic [ref=e1015]: 📊
+                  - heading "生产概览" [level=3] [ref=e1016]
+                - tablist [ref=e1018]:
+                  - tab "日" [selected] [ref=e1019] [cursor=pointer]
+                  - tab "周" [ref=e1020] [cursor=pointer]
+                  - tab "月" [ref=e1021] [cursor=pointer]
+              - generic [ref=e1022]:
+                - generic [ref=e1024]:
+                  - generic [ref=e1025]: ⚡
+                  - generic [ref=e1026]:
+                    - paragraph [ref=e1027]: 日产能
+                    - paragraph [ref=e1028]: ¥144.0K
+                - generic [ref=e1030]:
+                  - generic [ref=e1031]: 🔧
+                  - generic [ref=e1032]:
+                    - paragraph [ref=e1033]: 运营建筑
+                    - paragraph [ref=e1034]: 4/4
+                - generic [ref=e1036]:
+                  - generic [ref=e1037]: ⚠️
+                  - generic [ref=e1038]:
+                    - paragraph [ref=e1039]: 瓶颈数
+                    - paragraph [ref=e1040]: "0"
+                - generic [ref=e1042]:
+                  - generic [ref=e1043]: 💰
+                  - generic [ref=e1044]:
+                    - paragraph [ref=e1045]: 日预估利润
+                    - paragraph [ref=e1046]: ¥138.5K
+                - generic [ref=e1048]:
+                  - generic [ref=e1049]: 📈
+                  - generic [ref=e1050]:
+                    - paragraph [ref=e1051]: 综合效率
+                    - paragraph [ref=e1052]: 100.0%
+              - generic [ref=e1054]:
+                - generic [ref=e1055]:
+                  - generic [ref=e1056]: "资源流向:"
+                  - generic [ref=e1057]:
+                    - generic [ref=e1058]: 原材料
+                    - generic [ref=e1059]: →
+                    - generic [ref=e1060]: 加工品
+                    - generic [ref=e1061]: →
+                    - generic [ref=e1062]: 成品
+                    - generic [ref=e1063]: →
+                    - generic [ref=e1064]: 零售
+                - generic [ref=e1067]: 产能充足
+            - generic [ref=e1068]:
+              - generic [ref=e1069] [cursor=pointer]:
+                - generic [ref=e1070]:
+                  - generic [ref=e1071]:
+                    - img "铁矿场" [ref=e1073]
+                    - generic [ref=e1075]:
+                      - generic [ref=e1076]:
+                        - generic [ref=e1077]: 铁矿场
+                        - generic [ref=e1078]: Lv.1
+                      - generic [ref=e1079]:
+                        - generic [ref=e1080]: 生产中
+                        - generic [ref=e1081]: 生产铁矿石
+                  - generic [ref=e1084]:
+                    - generic [ref=e1085]: 效率
+                    - generic [ref=e1086]: 100%
+                - generic [ref=e1090]:
+                  - generic [ref=e1091]:
+                    - generic [ref=e1093]: 📥 输入
+                    - generic [ref=e1094]: 无需原料
+                  - generic [ref=e1095]:
+                    - generic [ref=e1097]: 📤 输出
+                    - generic [ref=e1099]:
+                      - img "铁矿石" [ref=e1100]
+                      - generic [ref=e1102]: +200/日
+                - generic [ref=e1105]:
+                  - generic [ref=e1106]:
+                    - generic [ref=e1107]:
+                      - generic [ref=e1108]: 产量控制
+                      - generic [ref=e1109]: 自动模式
+                    - paragraph [ref=e1110]: 自动模式下会按市场情况动态调整。
+                  - switch [checked] [ref=e1111]
+                - generic [ref=e1114]:
+                  - generic [ref=e1115]: 专属方式
+                  - button "⛏️" [ref=e1118]
+                  - generic [ref=e1119]:
+                    - generic [ref=e1121]:
+                      - generic [ref=e1122]: ⚙️
+                      - generic [ref=e1123]: 生产方式
+                      - generic [ref=e1124]: ·
+                      - generic [ref=e1125]: 铁矿开采
+                    - generic [ref=e1126]:
+                      - generic [ref=e1127]:
+                        - generic [ref=e1128]: 最终投入产出
+                        - generic [ref=e1129]: 所有槽位共同生效
+                      - generic [ref=e1130]:
+                        - generic [ref=e1131]: 无需原料
+                        - generic [ref=e1132]: →
+                        - generic [ref=e1133]:
+                          - img "铁矿石" [ref=e1134]
+                          - generic [ref=e1136]: 铁矿石
+                          - generic [ref=e1137]: "200"
+                      - generic [ref=e1138]:
+                        - generic [ref=e1139]:
+                          - generic [ref=e1140]: 👷
+                          - generic [ref=e1141]: 工资
+                          - generic [ref=e1142]: "50"
+                        - generic [ref=e1143]:
+                          - generic [ref=e1144]: ⚡
+                          - generic [ref=e1145]: 能耗
+                          - generic [ref=e1146]: "200"
+                        - generic [ref=e1147]:
+                          - generic [ref=e1148]: ⏱
+                          - generic [ref=e1149]: 周期
+                          - generic [ref=e1150]: "1"
+                - generic [ref=e1151]:
+                  - generic [ref=e1152]:
+                    - generic [ref=e1153]: 💰
+                    - generic [ref=e1154]: ¥10K/日
+                  - button "升级 ¥200K" [ref=e1155]
+              - generic [ref=e1156] [cursor=pointer]:
+                - generic [ref=e1157]:
+                  - generic [ref=e1158]:
+                    - img "农场" [ref=e1160]
+                    - generic [ref=e1162]:
+                      - generic [ref=e1163]:
+                        - generic [ref=e1164]: 农场
+                        - generic [ref=e1165]: Lv.1
+                      - generic [ref=e1166]:
+                        - generic [ref=e1167]: 生产中
+                        - generic [ref=e1168]: 生产粮食
+                  - generic [ref=e1171]:
+                    - generic [ref=e1172]: 效率
+                    - generic [ref=e1173]: 100%
+                - generic [ref=e1177]:
+                  - generic [ref=e1178]:
+                    - generic [ref=e1180]: 📥 输入
+                    - generic [ref=e1181]: 无需原料
+                  - generic [ref=e1182]:
+                    - generic [ref=e1184]: 📤 输出
+                    - generic [ref=e1186]:
+                      - img "粮食" [ref=e1187]
+                      - generic [ref=e1189]: +400/日
+                - generic [ref=e1192]:
+                  - generic [ref=e1193]:
+                    - generic [ref=e1194]:
+                      - generic [ref=e1195]: 产量控制
+                      - generic [ref=e1196]: 自动模式
+                    - paragraph [ref=e1197]: 自动模式下会按市场情况动态调整。
+                  - switch [checked] [ref=e1198]
+                - generic [ref=e1201]:
+                  - generic [ref=e1202]: 专属方式
+                  - button "⚙️" [ref=e1205]
+                  - generic [ref=e1206]:
+                    - generic [ref=e1208]:
+                      - generic [ref=e1209]: ⚙️
+                      - generic [ref=e1210]: 生产方式
+                      - generic [ref=e1211]: ·
+                      - generic [ref=e1212]: 粮食种植
+                    - generic [ref=e1213]:
+                      - generic [ref=e1214]:
+                        - generic [ref=e1215]: 最终投入产出
+                        - generic [ref=e1216]: 所有槽位共同生效
+                      - generic [ref=e1217]:
+                        - generic [ref=e1218]: 无需原料
+                        - generic [ref=e1219]: →
+                        - generic [ref=e1220]:
+                          - img "粮食" [ref=e1221]
+                          - generic [ref=e1223]: 粮食
+                          - generic [ref=e1224]: "400"
+                      - generic [ref=e1225]:
+                        - generic [ref=e1226]:
+                          - generic [ref=e1227]: 👷
+                          - generic [ref=e1228]: 工资
+                          - generic [ref=e1229]: "80"
+                        - generic [ref=e1230]:
+                          - generic [ref=e1231]: ⚡
+                          - generic [ref=e1232]: 能耗
+                          - generic [ref=e1233]: "50"
+                        - generic [ref=e1234]:
+                          - generic [ref=e1235]: ⏱
+                          - generic [ref=e1236]: 周期
+                          - generic [ref=e1237]: "1"
+                - generic [ref=e1238]:
+                  - generic [ref=e1239]:
+                    - generic [ref=e1240]: 💰
+                    - generic [ref=e1241]: ¥6K/日
+                  - button "升级 ¥120K" [ref=e1242]
+              - generic [ref=e1243] [cursor=pointer]:
+                - generic [ref=e1244]:
+                  - generic [ref=e1245]:
+                    - img "钢铁厂" [ref=e1247]
+                    - generic [ref=e1249]:
+                      - generic [ref=e1250]:
+                        - generic [ref=e1251]: 钢铁厂
+                        - generic [ref=e1252]: Lv.1
+                      - generic [ref=e1253]:
+                        - generic [ref=e1254]: 生产中
+                        - generic [ref=e1255]: 生产钢材
+                  - generic [ref=e1258]:
+                    - generic [ref=e1259]: 效率
+                    - generic [ref=e1260]: 100%
+                - generic [ref=e1264]:
+                  - generic [ref=e1265]:
+                    - generic [ref=e1267]: 📥 输入
+                    - generic [ref=e1268]:
+                      - generic [ref=e1269]:
+                        - generic [ref=e1270]: 铁矿石
+                        - generic [ref=e1273]: 100%
+                      - generic [ref=e1274]:
+                        - generic [ref=e1275]: 煤炭
+                        - generic [ref=e1278]: 100%
+                  - generic [ref=e1279]:
+                    - generic [ref=e1281]: 📤 输出
+                    - generic [ref=e1283]:
+                      - img "钢材" [ref=e1284]
+                      - generic [ref=e1286]: +280/日
+                - generic [ref=e1289]:
+                  - generic [ref=e1290]:
+                    - generic [ref=e1291]:
+                      - generic [ref=e1292]: 产量控制
+                      - generic [ref=e1293]: 自动模式
+                    - paragraph [ref=e1294]: 自动模式下会按市场情况动态调整。
+                  - switch [checked] [ref=e1295]
+                - generic [ref=e1298]:
+                  - generic [ref=e1299]: 专属方式
+                  - button "⚙️" [ref=e1302]
+                  - generic [ref=e1303]:
+                    - generic [ref=e1305]:
+                      - generic [ref=e1306]: ⚙️
+                      - generic [ref=e1307]: 生产方式
+                      - generic [ref=e1308]: ·
+                      - generic [ref=e1309]: 炼钢
+                    - generic [ref=e1310]:
+                      - generic [ref=e1311]:
+                        - generic [ref=e1312]: 最终投入产出
+                        - generic [ref=e1313]: 所有槽位共同生效
+                      - generic [ref=e1314]:
+                        - generic [ref=e1315]:
+                          - img "铁矿石" [ref=e1316]
+                          - generic [ref=e1318]: 铁矿石
+                          - generic [ref=e1319]: "200"
+                        - generic [ref=e1320]:
+                          - img "煤炭" [ref=e1321]
+                          - generic [ref=e1323]: 煤炭
+                          - generic [ref=e1324]: "80"
+                        - generic [ref=e1325]: →
+                        - generic [ref=e1326]:
+                          - img "钢材" [ref=e1327]
+                          - generic [ref=e1329]: 钢材
+                          - generic [ref=e1330]: "280"
+                      - generic [ref=e1331]:
+                        - generic [ref=e1332]:
+                          - generic [ref=e1333]: 👷
+                          - generic [ref=e1334]: 工资
+                          - generic [ref=e1335]: "160"
+                        - generic [ref=e1336]:
+                          - generic [ref=e1337]: ⚡
+                          - generic [ref=e1338]: 能耗
+                          - generic [ref=e1339]: "960"
+                        - generic [ref=e1340]:
+                          - generic [ref=e1341]: ⏱
+                          - generic [ref=e1342]: 周期
+                          - generic [ref=e1343]: "1"
+                - generic [ref=e1344]:
+                  - generic [ref=e1345]:
+                    - generic [ref=e1346]: 💰
+                    - generic [ref=e1347]: ¥123K/日
+                  - button "升级 ¥2.6M" [ref=e1348]
+              - generic [ref=e1349] [cursor=pointer]:
+                - generic [ref=e1350]:
+                  - generic [ref=e1351]:
+                    - img "便利店" [ref=e1353]
+                    - generic [ref=e1355]:
+                      - generic [ref=e1356]:
+                        - generic [ref=e1357]: 便利店
+                        - generic [ref=e1358]: Lv.1
+                      - generic [ref=e1359]:
+                        - generic [ref=e1360]: 生产中
+                        - generic [ref=e1361]: 便利店
+                  - generic [ref=e1364]:
+                    - generic [ref=e1365]: 效率
+                    - generic [ref=e1366]: 100%
+                - generic [ref=e1371]:
+                  - generic [ref=e1372]:
+                    - generic [ref=e1373]:
+                      - generic [ref=e1374]: 产量控制
+                      - generic [ref=e1375]: 自动模式
+                    - paragraph [ref=e1376]: 自动模式下会按市场情况动态调整。
+                  - switch [checked] [ref=e1377]
+                - generic [ref=e1379]:
+                  - generic [ref=e1380]:
+                    - generic [ref=e1381]: 💰
+                    - generic [ref=e1382]: ¥-513/日
+                  - button "升级 ¥300K" [ref=e1383]
+        - generic [ref=e1385]:
+          - generic [ref=e1386]:
+            - generic [ref=e1387]:
+              - generic [ref=e1388]: 🏗️
+              - heading "建造队列" [level=3] [ref=e1389]
+              - generic [ref=e1390]: "0"
+            - button "✕" [ref=e1391] [cursor=pointer]
+          - tablist [ref=e1393]:
+            - tab "建造 0" [selected] [ref=e1394] [cursor=pointer]:
+              - text: 建造
+              - generic [ref=e1395]: "0"
+            - tab "拆除 0" [ref=e1396] [cursor=pointer]:
+              - text: 拆除
+              - generic [ref=e1397]: "0"
+          - generic [ref=e1399]: 暂无建造任务
+  - button "!" [ref=e416] [cursor=pointer]:
+    - img [ref=e417]
+    - generic [ref=e420]: "!"

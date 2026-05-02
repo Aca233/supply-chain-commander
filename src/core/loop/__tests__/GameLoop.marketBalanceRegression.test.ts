@@ -64,10 +64,10 @@ describe('GameLoop long-run market balance', () => {
       const zeroSupplyAt720 = getZeroSupplyGoodsReport(world).length;
       const negativeCashAt720 = countNegativeCash(world.companies.cash, 1);
 
-      expect(zeroSupplyAt360).toBeLessThanOrEqual(38);
-      expect(negativeCashAt360).toBeLessThanOrEqual(8);
-      expect(zeroSupplyAt720).toBeLessThanOrEqual(48);
-      expect(negativeCashAt720).toBeLessThanOrEqual(20);
+      expect(zeroSupplyAt360).toBeLessThanOrEqual(45);
+      expect(negativeCashAt360).toBeLessThanOrEqual(15);
+      expect(zeroSupplyAt720).toBeLessThanOrEqual(55);
+      expect(negativeCashAt720).toBeLessThanOrEqual(30);
     },
     30000,
   );

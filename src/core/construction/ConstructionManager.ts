@@ -108,7 +108,8 @@ export interface ConstructionQueueSystem {
   // 时间追踪
   startTicks: Uint32Array;
   requiredTicks: Uint32Array;
-  progressTicks: Uint32Array;
+  // 修复：原 Uint32Array 与 Float32 speedBoosts 相加会截断小数，导致 1.5×加速实际只生效为 1×。
+  progressTicks: Float32Array;
   
   // 加速
   speedBoosts: Float32Array;
@@ -154,7 +155,7 @@ export function createConstructionQueueSystem(maxTasks: number = 1000): Construc
     
     startTicks: new Uint32Array(maxTasks),
     requiredTicks: new Uint32Array(maxTasks),
-    progressTicks: new Uint32Array(maxTasks),
+    progressTicks: new Float32Array(maxTasks),
     
     speedBoosts: new Float32Array(maxTasks).fill(1.0),
     

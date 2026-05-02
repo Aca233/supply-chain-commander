@@ -33,19 +33,21 @@ export function formatNumber(value: number, decimals: number = 0): string {
 /**
  * 格式化货币
  */
-export function formatCurrency(value: number, decimals: number = 1): string {
+export function formatCurrency(value: number, decimals?: number): string {
   if (value === undefined || value === null || isNaN(value)) {
     return '¥0';
   }
 
+  const resolvedDecimals = decimals ?? (Math.abs(value) < 1000 && !Number.isInteger(value) ? 2 : 1);
+
   if (Math.abs(value) >= 1000) {
     return `¥${(value / 1000).toLocaleString('zh-CN', {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
+      minimumFractionDigits: resolvedDecimals,
+      maximumFractionDigits: resolvedDecimals,
     })}K`;
   }
 
-  const smallValueDecimals = Number.isInteger(value) ? 0 : Math.min(decimals, 2);
+  const smallValueDecimals = decimals ?? (Number.isInteger(value) ? 0 : 2);
 
   return `¥${value.toLocaleString('zh-CN', {
     minimumFractionDigits: smallValueDecimals,

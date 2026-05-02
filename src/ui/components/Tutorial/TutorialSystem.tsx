@@ -19,6 +19,13 @@ import {
   DialogBody,
   DialogFooter,
 } from '@/ui/design-system';
+import {
+  createDefaultTutorialState,
+  dismissTutorialWelcome,
+  startTutorialFlow,
+  TUTORIAL_STORAGE_KEY,
+  type TutorialState,
+} from './tutorialState';
 
 // ============ 教程步骤定义 ============
 
@@ -199,17 +206,6 @@ const TUTORIAL_CHAPTERS: TutorialChapter[] = [
 
 // ============ 教程状态管理 ============
 
-interface TutorialState {
-  isActive: boolean;
-  currentChapterIndex: number;
-  currentStepIndex: number;
-  completedChapters: string[];
-  completedSteps: string[];
-  showWelcome: boolean;
-}
-
-const TUTORIAL_STORAGE_KEY = 'supply_chain_tutorial_progress';
-
 function loadTutorialState(): TutorialState {
   try {
     const saved = localStorage.getItem(TUTORIAL_STORAGE_KEY);
@@ -220,14 +216,7 @@ function loadTutorialState(): TutorialState {
     console.error('Failed to load tutorial state:', e);
   }
   
-  return {
-    isActive: false,
-    currentChapterIndex: 0,
-    currentStepIndex: 0,
-    completedChapters: [],
-    completedSteps: [],
-    showWelcome: true,
-  };
+  return createDefaultTutorialState();
 }
 
 function saveTutorialState(state: TutorialState): void {
@@ -243,6 +232,7 @@ function saveTutorialState(state: TutorialState): void {
 interface TutorialContextValue {
   state: TutorialState;
   startTutorial: () => void;
+  dismissWelcome: () => void;
   nextStep: () => void;
   prevStep: () => void;
   skipChapter: () => void;
@@ -293,13 +283,11 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   
   // 开始教程
   const startTutorial = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      isActive: true,
-      showWelcome: false,
-      currentChapterIndex: 0,
-      currentStepIndex: 0,
-    }));
+    setState(prev => startTutorialFlow(prev));
+  }, []);
+
+  const dismissWelcome = useCallback(() => {
+    setState(prev => dismissTutorialWelcome(prev));
   }, []);
   
   // 下一步
@@ -393,19 +381,13 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   
   // 重置教程
   const resetTutorial = useCallback(() => {
-    setState({
-      isActive: false,
-      currentChapterIndex: 0,
-      currentStepIndex: 0,
-      completedChapters: [],
-      completedSteps: [],
-      showWelcome: true,
-    });
+    setState(createDefaultTutorialState());
   }, []);
   
   const value: TutorialContextValue = {
     state,
     startTutorial,
+    dismissWelcome,
     nextStep,
     prevStep,
     skipChapter,
@@ -522,27 +504,25 @@ export const TutorialDialog: React.FC = () => {
 // ============ 欢迎对话框 ============
 
 export const TutorialWelcomeDialog: React.FC = () => {
-  const { state, startTutorial } = useTutorial();
-  const [open, setOpen] = useState(state.showWelcome);
-  
-  // 当showWelcome变化时更新
-  useEffect(() => {
-    setOpen(state.showWelcome);
-  }, [state.showWelcome]);
-  
+  const { state, startTutorial, dismissWelcome } = useTutorial();
+
   const handleStart = () => {
-    setOpen(false);
     startTutorial();
   };
   
   const handleSkip = () => {
-    setOpen(false);
-    // 保存跳过状态
-    saveTutorialState({ ...state, showWelcome: false });
+    dismissWelcome();
   };
   
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={state.showWelcome}
+      onOpenChange={(open) => {
+        if (!open) {
+          dismissWelcome();
+        }
+      }}
+    >
       <DialogContent size="md" variant="game">
         <DialogHeader>
           <DialogTitle className="text-2xl">🎮 欢迎来到供应链指挥官！</DialogTitle>

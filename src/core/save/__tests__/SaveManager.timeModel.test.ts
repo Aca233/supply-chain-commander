@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_SLOTS } from '@/core/constants';
 import { createGameWorld } from '@/core/world/GameWorld';
 import { BuildingId } from '@/data/buildings';
 import { SaveManager, SerializedWorld } from '../SaveManager';
@@ -28,7 +29,7 @@ describe('SaveManager day-model migration', () => {
         owners: [0],
         levels: [1],
         efficiencies: [1],
-        outputModeIds: [0],
+        slotMethods: new Array(MAX_SLOTS).fill(0),
         isActive: [1],
       },
       companies: {

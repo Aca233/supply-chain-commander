@@ -153,9 +153,9 @@ export const MonthlyPriceTable: React.FC = () => {
 
   // 格式化大数字
   const formatNumber = (value: number) => {
-    if (value >= 1000000) {
+    if (Math.abs(value) >= 1000000) {
       return `${(value / 1000000).toFixed(2)}M`;
-    } else if (value >= 1000) {
+    } else if (Math.abs(value) >= 1000) {
       return `${(value / 1000).toFixed(2)}K`;
     }
     return value.toFixed(0);

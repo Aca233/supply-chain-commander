@@ -16,6 +16,7 @@
 import { GameWorld } from '../world/GameWorld';
 import { CONSUMER_TIERS, ConsumerTier } from './DemandCurve';
 import { ALL_GOODS, CONSUMER_GOODS, GoodsDefinition } from '@/data/goods';
+import { CONSUMER_MARKET_CONFIG } from './ConsumerMarket';
 import {
   BUILDINGS_BY_ID,
   isRetailBuilding,
@@ -23,8 +24,10 @@ import {
   getRetailTypeIndex,
   RetailConfig,
 } from '@/data/buildings';
+import { getBuildingRecipeFromInstance } from '../production/ProductionEngine';
 import { createBuyOrder, finalizeFilledOrder, getOrderBookView, getActiveOrderIndices } from '../market/OrderBook';
 import { getOrderBookIndex } from '../market/OrderBookIndex';
+import { recordFinalConsumption } from './MarketStats';
 import {
   GOODS_COUNT,
   MAX_RETAIL_STORES,
@@ -35,6 +38,7 @@ import {
   RETAIL_PRICE_ADJUST_INTERVAL,
   RETAIL_MAX_TURNOVER_DAYS,
   TICKS_PER_DAY,
+  RETAIL_BUY_ORDER_EXPIRY,
 } from '../constants';
 import { recordTrade, TradeOrderRef } from '../market/TradeLedger';
 
@@ -57,8 +61,45 @@ const retailGoodsCache: RetailGoodsCache = {
 };
 
 function invalidateRetailGoodsCache(): void {
+  retailGoodsCache.storesByGoods.clear();
   retailGoodsCache.lastUpdate = -1000;
 }
+
+function resetRetailRuntimeCaches(): void {
+  invalidateRetailGoodsCache();
+  attractivenessCache.cache.clear();
+  attractivenessCache.lastUpdate = -1000;
+  companyBuyOrderCaches.clear();
+  lastRestockTicks = null;
+  restockBatchIndex = 0;
+  consumptionBatchIndex = 0;
+}
+
+function isRetailStoreOperational(world: GameWorld, retailId: number): boolean {
+  const buildingId = world.retail.buildingIds[retailId];
+  return world.buildings.isActive[buildingId] === 1;
+}
+
+function createAggregateConsumerTier(): ConsumerTier {
+  const totalPopulation = CONSUMER_TIERS.reduce((sum, tier) => sum + tier.population, 0);
+  const weightedBaseIncome = CONSUMER_TIERS.reduce((sum, tier) => sum + tier.baseIncome * tier.population, 0) / totalPopulation;
+  const weightedPricePreference = CONSUMER_TIERS.reduce((sum, tier) => sum + tier.pricePreference * tier.population, 0) / totalPopulation;
+  const weightedQualityPreference = CONSUMER_TIERS.reduce((sum, tier) => sum + tier.qualityPreference * tier.population, 0) / totalPopulation;
+
+  return {
+    id: -1,
+    name: '综合消费者',
+    population: totalPopulation,
+    baseIncome: weightedBaseIncome,
+    incomeVariance: 0,
+    savingsRate: 0,
+    pricePreference: weightedPricePreference,
+    qualityPreference: weightedQualityPreference,
+    budgetShares: new Map(),
+  };
+}
+
+const AGGREGATE_CONSUMER_TIER = createAggregateConsumerTier();
 
 /** 店铺吸引力缓存 */
 interface StoreAttractivenessCache {
@@ -76,7 +117,7 @@ const attractivenessCache: StoreAttractivenessCache = {
 
 /** 消费批次控制 */
 let consumptionBatchIndex = 0;
-const CONSUMPTION_BATCH_SIZE = 10;  // 每tick处理10种商品（从5提高到10）
+const CONSUMPTION_BATCH_SIZE = 10;  // 非 day-model 兼容：多 tick/天时按批次轮转
 
 // ==================== 性能优化：可复用对象池 ====================
 
@@ -234,7 +275,10 @@ export function initRetailSystem(world: GameWorld): void {
   if (!world.retail) {
     world.retail = createRetailSystem();
   }
-  
+
+  // 重置模块级缓存，避免新世界/新存档沿用旧运行态数据
+  resetRetailRuntimeCaches();
+
   const b = world.buildings;
   
   // 扫描所有建筑，注册零售店
@@ -357,6 +401,11 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
   if (!world.retail || world.retail.count === 0) {
     return result;
   }
+
+  if (world.tick > TICKS_PER_DAY && world.tick % TICKS_PER_DAY === 0) {
+    updateReputations(world);
+    resetDailyStats(world);
+  }
   
   // 1. 处理收货（将公司库存转移到零售店）
   const deliveredCount = processRetailDelivery(world);
@@ -374,12 +423,6 @@ export function updateRetailSystem(world: GameWorld): RetailTickResult {
   // 4. 动态价格调整（每24tick一次）
   if (world.tick % RETAIL_PRICE_ADJUST_INTERVAL === 0) {
     result.priceAdjustments = adjustRetailPrices(world);
-  }
-  
-  // 5. 更新声誉（每天结算一次）
-  if (world.tick % TICKS_PER_DAY === 0) {
-    updateReputations(world);
-    resetDailyStats(world);
   }
   
   // 调试日志（每100 tick输出一次）
@@ -492,8 +535,6 @@ function purchaseFromSellOrders(
     totalSpent += actualCost;
     remainingQty -= buyQty;
     
-    // 更新市场价格
-    world.goods.prices[goodsId] = sellOrder.price;
   }
   
   return { purchased: totalPurchased, spent: totalSpent };
@@ -559,16 +600,20 @@ function cleanupBuyOrderCache(currentTick: number): void {
 
 /** 进货间隔控制 - 使用更高效的Uint32Array */
 // 【P1修复】将进货间隔从24tick降低到6tick（每6小时检查一次）
-const RESTOCK_INTERVAL = 6;  // 每6 tick检查一次进货（原为24，一天4次）
-const RESTOCK_BATCH_SIZE = 10;  // 每tick最多处理10个零售店
+const RESTOCK_INTERVAL = 3;  // 缩短到 3 tick，原 6 太慢导致零售断货后等几小时才补
+const RESTOCK_BATCH_SIZE = 20;  // 提高到 20，分批快速覆盖所有零售店
 let restockBatchIndex = 0;
 
 // 【P1修复】紧急进货阈值 - 库存低于10%时触发紧急进货
 const EMERGENCY_RESTOCK_THRESHOLD = 0.1;  // 10%库存触发紧急进货
-const EMERGENCY_RESTOCK_INTERVAL = 2;  // 紧急进货间隔仅2tick
+const EMERGENCY_RESTOCK_INTERVAL = 2;  // 紧急进货间隔保持 2 tick
 
 // 使用TypedArray替代Map，更高效
 let lastRestockTicks: Uint32Array | null = null;
+
+const RETAIL_TARGET_COVER_DAYS = 5;
+const RETAIL_DISPLAY_STOCK_MIN = 20;
+const RETAIL_DISPLAY_STOCK_MAX = 50;
 
 function getLastRestockTick(retailId: number, goodsId: number): number {
   if (!lastRestockTicks) return 0;
@@ -582,6 +627,57 @@ function setLastRestockTick(retailId: number, goodsId: number, tick: number): vo
   }
   const idx = retailId * GOODS_COUNT + goodsId;
   lastRestockTicks[idx] = tick;
+}
+
+function getRetailTargetStock(world: GameWorld, retailId: number, goodsId: number, capacity: number): number {
+  if (capacity <= 0) return 0;
+
+  const idx = retailId * GOODS_COUNT + goodsId;
+  const recentDailySales = world.retail.dailySales[idx] || 0;
+  const displayFloor = Math.min(
+    capacity,
+    Math.max(RETAIL_DISPLAY_STOCK_MIN, Math.min(RETAIL_DISPLAY_STOCK_MAX, capacity * 0.1)),
+  );
+  const salesDrivenTarget = recentDailySales * RETAIL_TARGET_COVER_DAYS;
+
+  return Math.min(capacity * RETAIL_TARGET_STOCK_LEVEL, Math.max(displayFloor, salesDrivenTarget));
+}
+
+/**
+ * 统计某公司自有零售店当前需要从公司库存补入的商品量
+ * 用于阻止内部调拨货物被自动卖出。
+ */
+export function getCompanyRetailGoodsNeeds(world: GameWorld, ownerId: number): Map<number, number> {
+  const retail = world.retail;
+  const needsByGoods = new Map<number, number>();
+
+  if (!retail || retail.count === 0) {
+    return needsByGoods;
+  }
+
+  for (let retailId = 0; retailId < retail.count; retailId++) {
+    if (retail.owners[retailId] !== ownerId) continue;
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
+    const buildingId = retail.buildingIds[retailId];
+    const buildingType = world.buildings.types[buildingId] as number;
+    const retailConfig = getRetailConfig(buildingType);
+    if (!retailConfig) continue;
+
+    for (const goodsId of retailConfig.allowedGoodsIds) {
+      const idx = retailId * GOODS_COUNT + goodsId;
+      const capacity = retail.inventoryCapacities[idx];
+      const currentStock = retail.inventories[idx];
+      const targetStock = getRetailTargetStock(world, retailId, goodsId, capacity);
+      const needed = Math.max(0, targetStock - currentStock);
+
+      if (needed > 0) {
+        needsByGoods.set(goodsId, (needsByGoods.get(goodsId) || 0) + needed);
+      }
+    }
+  }
+
+  return needsByGoods;
 }
 
 /**
@@ -611,6 +707,8 @@ function processRestocking(world: GameWorld): number {
   
   // 只处理本批次的零售店
   for (let retailId = startIdx; retailId < endIdx; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId] as number;
     const retailConfig = getRetailConfig(buildingType);
@@ -626,8 +724,10 @@ function processRestocking(world: GameWorld): number {
       
       // 检查是否需要进货（库存低于阈值时触发）
       const stockRatio = capacity > 0 ? currentStock / capacity : 0;
-      // 使用常量中定义的进货阈值，默认0.3（30%以下触发进货）
-      const restockThreshold = RETAIL_RESTOCK_THRESHOLD;
+      // 修复 P1：双轨进货冲突 — 批发系统在 stockRatio<0.5 时已主动直供，市场买单仅作 backup
+      // Why: 之前批发 + 挂市场买单并行，同一商品被同时进货两次，导致库存爆仓 + 撤多余买单日志
+      // How: 挂市场买单仅在 stockRatio<0.15 (即批发未能补足) 才触发，避免双轨冲突
+      const restockThreshold = RETAIL_RESTOCK_THRESHOLD * 0.5;  // 0.30 → 0.15
       
       // 【P1修复】紧急进货检查 - 库存极低时使用更短的进货间隔
       const isEmergency = stockRatio < EMERGENCY_RESTOCK_THRESHOLD;
@@ -646,7 +746,7 @@ function processRestocking(world: GameWorld): number {
           console.log(`[紧急进货 T${world.tick}] 零售店#${retailId} ${goods?.name || goodsId} 库存:${(stockRatio * 100).toFixed(1)}%`);
         }
         
-        const targetStock = capacity * 0.9;
+        const targetStock = getRetailTargetStock(world, retailId, goodsId, capacity);
         
         // ============ 关键修复：检查现有买单和公司库存 ============
         const existingBuyOrders = countExistingBuyOrders(world, ownerId, goodsId);
@@ -667,9 +767,13 @@ function processRestocking(world: GameWorld): number {
         if (!goods) continue;
         const basePrice = goods.basePrice;
         
-        // 计算愿意支付的最高价格（基准价的 130%）
+        // 计算愿意支付的最高价格
+        // Why: 原 1.5× 报价过激，紧急时叠加 1.15× 共 1.725× 直接撞 PriceEngine 天花板，把
+        //      市价拉爆并污染零售成本锚点。改为温和 1.10×（紧急 1.15×），仍能撮合主流卖单。
         const currentMarketPrice = world.goods.prices[goodsId] || basePrice;
-        const maxBuyPrice = Math.max(basePrice, currentMarketPrice) * 1.3;
+        const desiredPrice = Math.max(basePrice * 1.10, currentMarketPrice * 1.10);
+        const absoluteCap = basePrice * 2.5;  // 极限上限从 5× 降到 2.5×
+        const maxBuyPrice = Math.min(desiredPrice, absoluteCap);
         
         // 检查公司资金
         const ownerCash = c.cash[ownerId];
@@ -710,14 +814,15 @@ function processRestocking(world: GameWorld): number {
           const actualOrderQty = Math.min(stillNeeded, Math.floor(finalNeeded));
           if (actualOrderQty < minOrderQty) continue;
           
-          // 【P1修复】紧急进货时愿意支付更高价格
-          const priceMultiplier = isEmergency ? 1.15 : 1.0;
-          
+          // 紧急进货时温和加价（原 1.15×，叠加噪声后 1.265×；现 1.08×，叠加后 1.19×）
+          const priceMultiplier = isEmergency ? 1.08 : 1.0;
+
           const currentCash = c.cash[ownerId];
-          const buyPrice = Math.max(basePrice, currentMarketPrice) * priceMultiplier * (1.0 + Math.random() * 0.1);
+          const buyPrice = Math.max(basePrice, currentMarketPrice) * priceMultiplier * (1.0 + Math.random() * 0.05);
           
           if (currentCash >= actualOrderQty * buyPrice) {
-            const orderId = createBuyOrder(world, ownerId, goodsId, actualOrderQty, buyPrice);
+            // 零售补货买单使用更长 expiry，避免被每 tick 清理（原默认 1 tick 死循环）
+            const orderId = createBuyOrder(world, ownerId, goodsId, actualOrderQty, buyPrice, RETAIL_BUY_ORDER_EXPIRY);
             
             if (orderId !== null) {
               ordersPlaced++;
@@ -833,6 +938,8 @@ export function processWholesaleSupply(
   
   // 遍历本批次的零售店
   for (let retailId = startIdx; retailId < endIdx && dealsThisTick < config.maxWholesaleDealsPerTick; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId] as number;
     const retailConfig = getRetailConfig(buildingType);
@@ -849,14 +956,14 @@ export function processWholesaleSupply(
       const currentStock = retail.inventories[retailIdx];
       const capacity = retail.inventoryCapacities[retailIdx];
       const stockRatio = capacity > 0 ? currentStock / capacity : 1;
+      const targetStock = getRetailTargetStock(world, retailId, goodsId, capacity);
       
       // 检查零售店是否需要进货
-      if (stockRatio >= config.retailRestockThreshold) {
+      if (stockRatio >= config.retailRestockThreshold || currentStock >= targetStock) {
         continue;  // 库存充足，不需要批发
       }
       
       // 计算需要的数量
-      const targetStock = capacity * 0.8;  // 目标补充到80%
       const neededQuantity = targetStock - currentStock;
       
       if (neededQuantity < config.minWholesaleQuantity) {
@@ -933,20 +1040,33 @@ function findWholesaleProducer(
     const inventory = c.inventories[invIdx];
     const reserved = c.inventoryReserved[invIdx] || 0;
     const available = inventory - reserved;
-    
+
     // 检查是否有足够的可用库存
     if (available < config.minWholesaleQuantity) continue;
-    
-    // 计算该公司的库存容量（估算）
-    const estimatedCapacity = inventory * 3;  // 简化估算
-    const surplusRatio = available / Math.max(estimatedCapacity, 100);
-    
-    // 如果库存不够充裕，跳过
-    if (surplusRatio < config.producerSurplusThreshold) continue;
-    
-    // 计算批发吸引力分数
-    // 分数 = 可用库存量 × 库存过剩程度
-    const score = available * surplusRatio;
+
+    // 修复：用"库存天数"替代假容量估算（estimatedCapacity = inventory * 3 让任何库存都
+    //       按 0.33 surplusRatio 算，库存越多越被卡住，导致大库存生产商进不了批发）
+    // Why: 之前 surplusRatio 计算反向逻辑——库存大 = capacity 大 = surplusRatio 仍是 0.33
+    //      → 5 年模拟里 SNACKS / 家电 大库存生产商始终无法批发供货零售
+    // How: inventoryDays = inventory / dailyOutput，>=7 天才进入批发供给池
+    let dailyOutput = 0;
+    const buildings = world.buildings;
+    for (let bi = 0; bi < buildings.count; bi++) {
+      if (buildings.owners[bi] !== companyId || !buildings.isActive[bi]) continue;
+      const prod = getBuildingRecipeFromInstance(world, bi);
+      const ticks = Math.max(1, prod.ticksRequired || 1);
+      for (const out of prod.outputs) {
+        if (out.goodsId === goodsId) {
+          dailyOutput += (out.amount * (buildings.efficiencies[bi] || 1)) / ticks;
+        }
+      }
+    }
+    const inventoryDays = dailyOutput > 0 ? inventory / dailyOutput : 999;
+    // 至少 7 天库存才批发；非生产者 (dailyOutput=0) 视为纯囤货可批发
+    if (dailyOutput > 0 && inventoryDays < 7) continue;
+
+    // 计算批发吸引力分数：库存天数越多越积压，越优先卖
+    const score = available * Math.min(inventoryDays / 30, 3);
     
     if (score > bestScore) {
       bestScore = score;
@@ -1133,6 +1253,8 @@ export function processRetailDelivery(world: GameWorld): number {
   
   // 遍历所有零售店
   for (let retailId = 0; retailId < retail.count; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId] as number;
     const retailConfig = getRetailConfig(buildingType);
@@ -1197,6 +1319,8 @@ function updateRetailGoodsCache(world: GameWorld): void {
   const retail = world.retail;
   
   for (let retailId = 0; retailId < retail.count; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId];
     const retailConfig = getRetailConfig(buildingType);
@@ -1249,9 +1373,6 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
   const retail = world.retail;
   if (retail.count === 0) return result;
   
-  // 更新缓存
-  updateRetailGoodsCache(world);
-  
   let totalDemand = 0;
   let satisfiedDemand = 0;
   
@@ -1259,23 +1380,37 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
   const consumerGoodsIds = CONSUMER_GOODS.map(g => g.id);
   const totalGoods = consumerGoodsIds.length;
   
-  // 批量处理：每tick只处理一部分商品
-  const startIdx = consumptionBatchIndex * CONSUMPTION_BATCH_SIZE;
-  const endIdx = Math.min(startIdx + CONSUMPTION_BATCH_SIZE, totalGoods);
-  const goodsToProcess = consumerGoodsIds.slice(startIdx, endIdx);
-  
-  // 更新批次索引
-  consumptionBatchIndex = (consumptionBatchIndex + 1) % Math.ceil(totalGoods / CONSUMPTION_BATCH_SIZE);
+  // day-model 下 1 tick = 1 天，消费品必须每天全量处理；否则会把日消费摊成多天轮询。
+  const goodsToProcess = TICKS_PER_DAY === 1
+    ? consumerGoodsIds
+    : (() => {
+        const startIdx = consumptionBatchIndex * CONSUMPTION_BATCH_SIZE;
+        const endIdx = Math.min(startIdx + CONSUMPTION_BATCH_SIZE, totalGoods);
+        consumptionBatchIndex = (consumptionBatchIndex + 1) % Math.ceil(totalGoods / CONSUMPTION_BATCH_SIZE);
+        return consumerGoodsIds.slice(startIdx, endIdx);
+      })();
   
   // 预计算所有层级的总人口
   const totalPopulation = CONSUMER_TIERS.reduce((sum, t) => sum + t.population, 0);
-  
+
+  // P2 修复：店级客流 cap — 单店每 tick 跨所有商品累计客流 ≤ customerCapacity
+  // Why: 之前按"库存比例"分配，库存最多的店瞬间被秒空，单店日客流可达数千远超物理容纳
+  // How: 用 retailConfig.customerCapacity 作为店级硬上限；每 1 客流 = 2 件商品（既有约定）
+  const tickCustomersByStore = new Map<number, number>();
+  const storeCapacityCache = new Map<number, number>();
+  function getStoreCustomerCap(retailId: number): number {
+    let cap = storeCapacityCache.get(retailId);
+    if (cap !== undefined) return cap;
+    const buildingId = retail.buildingIds[retailId];
+    const buildingType = world.buildings.types[buildingId];
+    const cfg = getRetailConfig(buildingType);
+    cap = cfg?.customerCapacity ?? 50;
+    storeCapacityCache.set(retailId, cap);
+    return cap;
+  }
+
   // 遍历本批次的商品
   for (const goodsId of goodsToProcess) {
-    // 快速获取有货的店铺
-    const storeIds = retailGoodsCache.storesByGoods.get(goodsId);
-    if (!storeIds || storeIds.length === 0) continue;
-    
     // 计算该商品的总需求
     let goodsDemand = world.goods.demands[goodsId];
     if (goodsDemand < 10) {
@@ -1288,72 +1423,48 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
     if (tickDemand <= 0.001) continue;
     
     totalDemand += tickDemand;
-    
-    // 简化分配：按库存比例分配
-    let remainingDemand = tickDemand;
-    let totalStock = 0;
-    
-    // 计算总库存
-    for (const retailId of storeIds) {
-      const idx = retailId * GOODS_COUNT + goodsId;
-      totalStock += retail.inventories[idx];
-    }
-    
-    if (totalStock <= 0) continue;
-    
-    // 按库存比例分配并执行购买
-    for (const retailId of storeIds) {
-      if (remainingDemand <= 0) break;
-      
-      const idx = retailId * GOODS_COUNT + goodsId;
-      const stock = retail.inventories[idx];
-      if (stock <= 0) continue;
-      
-      // 按库存占比分配
-      const allocation = Math.min(stock, remainingDemand * (stock / totalStock));
-      if (allocation <= 0.01) continue;
-      
-      // 快速执行购买
-      const price = retail.retailPrices[idx];
-      const actualQty = Math.min(allocation, stock);
-      const spent = actualQty * price;
-      
-      // 扣减库存
-      retail.inventories[idx] -= actualQty;
-      retail.dailySales[idx] += actualQty;
-      retail.dailyRevenue[retailId] += spent;
-      
-      // 计算成本
-      const cost = actualQty * retail.purchaseCosts[idx];
-      retail.dailyCost[retailId] += cost;
-      
-      // 资金流入零售商（从家庭资金池扣款，闭合货币循环）
-      const householdBudget = world.households.cash[0];
-      if (spent > householdBudget) {
-        // 家庭资金不足，跳过此笔消费
-        continue;
-      }
-      world.households.cash[0] -= spent;
-      world.households.totalConsumptionSpent += spent;
+
+    const stores = findStoresWithGoods(world, goodsId, AGGREGATE_CONSUMER_TIER);
+    if (stores.length === 0) continue;
+
+    const allocations = allocateDemandToStores(
+      world,
+      goodsId,
+      tickDemand,
+      stores,
+      AGGREGATE_CONSUMER_TIER,
+    );
+
+    for (const storeAllocation of allocations) {
+      const retailId = storeAllocation.retailId;
+
+      // P2: 店级客流 cap — 跨所有商品本 tick 累计 ≤ customerCapacity
+      const storeCap = getStoreCustomerCap(retailId);
+      const usedCustomers = tickCustomersByStore.get(retailId) ?? 0;
+      const remainingCap = Math.max(0, storeCap - usedCustomers);
+      const remainingItemsAtCap = remainingCap * 2;  // 1 客流 ≈ 2 件商品
+      if (remainingItemsAtCap <= 0.01) continue;
+
+      const purchase = executeRetailPurchase(
+        world,
+        retailId,
+        goodsId,
+        Math.min(storeAllocation.quantity, remainingItemsAtCap),
+        AGGREGATE_CONSUMER_TIER,
+      );
+
+      if (purchase.quantity <= 0) continue;
 
       const ownerId = retail.owners[retailId];
-      world.companies.cash[ownerId] += spent;
       if (ownerId === 0) {
-        result.playerRevenue += spent;
+        result.playerRevenue += purchase.spent;
       }
 
-      // 更新市场供给统计
-      world.goods.supplies[goodsId] += actualQty;
-      
-      // 估算客流
-      const customers = Math.ceil(actualQty / 2);
-      retail.totalCustomers[retailId] += customers;
-      
-      result.totalQuantity += actualQty;
-      result.totalSpent += spent;
-      result.customerCount += customers;
-      satisfiedDemand += actualQty;
-      remainingDemand -= actualQty;
+      tickCustomersByStore.set(retailId, usedCustomers + purchase.customers);
+      result.totalQuantity += purchase.quantity;
+      result.totalSpent += purchase.spent;
+      result.customerCount += purchase.customers;
+      satisfiedDemand += purchase.quantity;
     }
   }
   
@@ -1418,6 +1529,8 @@ function findStoresWithGoods(
   const stores: RetailStoreInfo[] = [];
   
   for (let retailId = 0; retailId < retail.count; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId];
     const retailConfig = getRetailConfig(buildingType);
@@ -1433,11 +1546,19 @@ function findStoresWithGoods(
     const retailPrice = retail.retailPrices[idx];
     const goods = ALL_GOODS.find(g => g.id === goodsId);
     const basePrice = goods?.basePrice || 100;
+    const priceReference = getRetailPriceReference(world, retailId, goodsId, basePrice);
+    const acceptablePriceRatio = Math.max(
+      CONSUMER_MARKET_CONFIG.maxPremiumRatio,
+      1 + Math.max(0, retailConfig.markupRange[1]),
+    );
+    const acceptablePrice = priceReference * acceptablePriceRatio;
+    if (retailPrice > acceptablePrice) continue;
+
     const reputation = retail.reputation[retailId];
     
     // 计算吸引力分数
     // 价格因素（价格越低分数越高）
-    const priceScore = Math.max(0, 2 - retailPrice / basePrice) * tier.pricePreference;
+    const priceScore = Math.max(0, 2 - retailPrice / Math.max(1, priceReference)) * tier.pricePreference;
     // 声誉因素
     const reputationScore = (reputation / 100) * (1 - tier.pricePreference) * 0.5;
     // 库存因素（有货就行）
@@ -1475,13 +1596,16 @@ function allocateDemandToStores(
   let remainingDemand = totalDemand;
   
   // 计算总吸引力
-  const totalAttractiveness = stores.reduce((sum, s) => sum + Math.max(0.1, s.attractiveness), 0);
+  const totalAttractiveness = stores.reduce((sum, s) => sum + Math.max(0, s.attractiveness), 0);
+  if (totalAttractiveness <= 0) {
+    return allocation;
+  }
   
   for (const store of stores) {
     if (remainingDemand <= 0) break;
     
     // 按吸引力占比分配
-    const share = Math.max(0.1, store.attractiveness) / totalAttractiveness;
+    const share = Math.max(0, store.attractiveness) / totalAttractiveness;
     let allocatedQty = totalDemand * share;
     
     // 不能超过库存和剩余需求
@@ -1497,6 +1621,27 @@ function allocateDemandToStores(
   }
   
   return allocation;
+}
+
+function getRetailPriceReference(
+  world: GameWorld,
+  retailId: number,
+  goodsId: number,
+  basePrice: number,
+): number {
+  const retail = world.retail;
+  const idx = retailId * GOODS_COUNT + goodsId;
+  const marketPrice = world.goods.prices[goodsId] || 0;
+
+  if (retail.purchaseCosts[idx] > 0) {
+    return retail.purchaseCosts[idx];
+  }
+
+  if (marketPrice > 0) {
+    return marketPrice;
+  }
+
+  return basePrice;
 }
 
 /**
@@ -1521,6 +1666,9 @@ function executeRetailPurchase(
   
   const price = retail.retailPrices[idx];
   const totalSpent = actualQty * price;
+  if (totalSpent > world.households.cash[0]) {
+    return { quantity: 0, spent: 0, customers: 0 };
+  }
   
   // 扣减库存
   retail.inventories[idx] -= actualQty;
@@ -1534,17 +1682,14 @@ function executeRetailPurchase(
   retail.dailyCost[retailId] += cost;
   
   // 资金流入零售商（从家庭资金池扣款，闭合货币循环）
-  if (totalSpent > world.households.cash[0]) {
-    return { quantity: 0, spent: 0, customers: 0 };
-  }
   world.households.cash[0] -= totalSpent;
   world.households.totalConsumptionSpent += totalSpent;
 
   const ownerId = retail.owners[retailId];
   world.companies.cash[ownerId] += totalSpent;
   
-  // 更新市场供给统计（商品被最终消费）
-  world.goods.supplies[goodsId] += actualQty;
+  // 更新最终消费：零售库存被家庭实际消化，需同步减少市场供给压力
+  recordFinalConsumption(world, goodsId, actualQty);
   
   // 估算客流（假设每位顾客购买少量）
   const avgPurchasePerCustomer = 2;
@@ -1567,7 +1712,8 @@ function executeRetailPurchase(
 function adjustRetailPrices(world: GameWorld): number {
   const retail = world.retail;
   let adjustments = 0;
-  
+
+  // 价格调整不要求店铺激活：未运营的店仍需在 UI 上呈现合理标价
   for (let retailId = 0; retailId < retail.count; retailId++) {
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId];
@@ -1587,8 +1733,13 @@ function adjustRetailPrices(world: GameWorld): number {
       const turnoverDays = stock / salesRate;
       
       let newMarkup = retail.markups[idx];
-      const [minMarkup, maxMarkup] = retailConfig.markupRange;
-      
+      const configuredMarkup = (retailConfig.markupRange[0] + retailConfig.markupRange[1]) / 2;
+
+      // 兼容历史零 markup 存档/运行态：先回填到当前业态的默认中值，再参与正常调价。
+      if (newMarkup <= 0 && configuredMarkup > 0) {
+        newMarkup = configuredMarkup;
+      }
+
       if (stockRatio > 0.8 || turnoverDays > RETAIL_MAX_TURNOVER_DAYS) {
         // 库存积压，降价促销
         newMarkup *= 0.95;
@@ -1598,10 +1749,11 @@ function adjustRetailPrices(world: GameWorld): number {
         newMarkup *= 1.05;
         adjustments++;
       }
-      
-      // 限制在合理范围内
-      newMarkup = Math.max(minMarkup, Math.min(maxMarkup, newMarkup));
-      
+
+      // 自动调价不应跌破业态最低加价；同时保留 0 的防御性下限。
+      const minimumMarkup = Math.max(0, retailConfig.markupRange[0]);
+      newMarkup = Math.max(minimumMarkup, newMarkup);
+
       retail.markups[idx] = newMarkup;
       
       // 更新零售价格：优先以真实进货成本为锚，缺失时使用实时市场价，再退回基准价
@@ -1672,10 +1824,9 @@ export function setRetailMarkup(
     return false;
   }
   
-  // 限制在合理范围
-  const [minMarkup, maxMarkup] = retailConfig.markupRange;
-  markup = Math.max(minMarkup * 0.5, Math.min(maxMarkup * 1.5, markup));
-  
+  // 防御性下限：避免负 markup
+  markup = Math.max(0, markup);
+
   const goods = ALL_GOODS.find(g => g.id === goodsId);
   if (!goods) return false;
   
@@ -1695,6 +1846,8 @@ function updateReputations(world: GameWorld): void {
   const retail = world.retail;
   
   for (let retailId = 0; retailId < retail.count; retailId++) {
+    if (!isRetailStoreOperational(world, retailId)) continue;
+
     let reputationChange = 0;
     
     // 销售量影响（卖得多声誉涨）

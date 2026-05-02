@@ -1,0 +1,41 @@
+- generic [ref=e2]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - heading "S U P P L Y C H A I N" [level=1] [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: S
+          - generic [ref=e11]: U
+          - generic [ref=e12]: P
+          - generic [ref=e13]: P
+          - generic [ref=e14]: L
+          - generic [ref=e15]: "Y"
+        - generic [ref=e16]:
+          - generic [ref=e17]: C
+          - generic [ref=e18]: H
+          - generic [ref=e19]: A
+          - generic [ref=e20]: I
+          - generic [ref=e21]: "N"
+      - heading "COMMANDER" [level=2] [ref=e22]
+      - paragraph [ref=e23]: 建立你的商业帝国
+    - generic [ref=e24]:
+      - button "新 游 戏" [ref=e25] [cursor=pointer]:
+        - img [ref=e27]
+        - generic [ref=e29]: 新 游 戏
+      - button "继续游戏" [disabled] [ref=e30]:
+        - img [ref=e32]
+        - generic [ref=e34]: 继续游戏
+      - button "加载存档" [ref=e35] [cursor=pointer]:
+        - img [ref=e37]
+        - generic [ref=e39]: 加载存档
+      - button "设 置" [ref=e40] [cursor=pointer]:
+        - img [ref=e42]
+        - generic [ref=e45]: 设 置
+      - button "退 出" [ref=e46] [cursor=pointer]:
+        - img [ref=e48]
+        - generic [ref=e51]: 退 出
+  - contentinfo [ref=e52]:
+    - generic [ref=e53]: v0.1.0-alpha
+    - generic [ref=e54]:
+      - text: Made with
+      - generic [ref=e55]: ❤️
+      - text: for simulation game enthusiasts

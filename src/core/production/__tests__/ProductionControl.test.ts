@@ -97,7 +97,6 @@ describe('ProductionControl', () => {
     world.construction.existingBuildingIds[queueIdx] = -1;
     world.construction.statuses[queueIdx] = ConstructionStatus.IN_PROGRESS;
     world.construction.startTicks[queueIdx] = world.tick - buildTime;
-    world.construction.outputModeIds[queueIdx] = 0;
 
     const result = processConstructionAndDemolitionTick(world);
     expect(result.newBuildings.length).toBe(1);

@@ -1,84 +1,68 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { LEGACY_HOURS_PER_DAY, MAX_INPUTS, MAX_SLOTS } from '@/core/constants';
-import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
-import { initializeBuildingProductionMethods } from '@/core/production/ProductionMethods';
-import { createGameWorld } from '@/core/world/GameWorld';
-import { addBuilding } from '@/core/world/WorldInitializer';
+import {
+  getBuildingDefaultMethods,
+  getBuildingProductionVariants,
+  getRecipeForBuilding,
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
+import { TICKS_PER_DAY } from '@/core/constants';
+import { BuildingId } from '@/data/buildings';
 import {
   calculateDailyConsumption,
   calculateTheoreticalOutput,
   initProductionCache,
-  updateAllProduction,
 } from '../ProductionEngine';
 
-describe('ProductionEngine day-model normalization', () => {
+describe('ProductionEngine day-model normalization (Vic3 recipe)', () => {
   beforeEach(() => {
     initializeBuildingProductionMethods();
     initProductionCache();
   });
 
-  it('preserves the legacy daily output for a one-day tick', () => {
-    const building = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
-    const expected =
-      building.production.outputs[0].amount /
-      (building.production.ticksRequired / LEGACY_HOURS_PER_DAY);
-
-    const [output] = calculateTheoreticalOutput(BuildingId.IRON_MINE, 1);
-
-    expect(output.amount).toBeCloseTo(expected);
+  it('default method recipe is available for IRON_MINE', () => {
+    const recipe = getRecipeForBuilding(
+      BuildingId.IRON_MINE,
+      getBuildingDefaultMethods(BuildingId.IRON_MINE),
+    );
+    expect(recipe.outputs.length).toBeGreaterThan(0);
+    expect(recipe.laborRequired).toBeGreaterThanOrEqual(0);
+    expect(recipe.energyRequired).toBeGreaterThanOrEqual(0);
   });
 
-  it('preserves the legacy daily input consumption for a one-day tick', () => {
-    const building = BUILDINGS_BY_ID.get(BuildingId.STEEL_MILL)!;
-    const expected =
-      building.production.inputs[0].amount /
-      (building.production.ticksRequired / LEGACY_HOURS_PER_DAY);
-
-    const [input] = calculateDailyConsumption(BuildingId.STEEL_MILL);
-
-    expect(input.amount).toBeCloseTo(expected);
+  it('calculateTheoreticalOutput returns the default-method output amount', () => {
+    const outputs = calculateTheoreticalOutput(BuildingId.IRON_MINE, 1);
+    const recipe = getRecipeForBuilding(
+      BuildingId.IRON_MINE,
+      getBuildingDefaultMethods(BuildingId.IRON_MINE),
+    );
+    expect(outputs).toHaveLength(recipe.outputs.length);
+    expect(outputs[0].goodsId).toBe(recipe.outputs[0].goodsId);
+    expect(outputs[0].amount).toBeCloseTo(recipe.outputs[0].amount);
   });
 
-  it('produces one full legacy day of output in a single simulation tick', () => {
-    const world = createGameWorld();
-    world.companies.count = 1;
-    world.companies.cash[0] = 1_000_000;
-
-    addBuilding(world, 0, BuildingId.IRON_MINE, 0);
-
-    const building = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
-    const expected =
-      building.production.outputs[0].amount /
-      (building.production.ticksRequired / LEGACY_HOURS_PER_DAY);
-
-    updateAllProduction(world);
-
-    expect(world.goods.supplies[building.production.outputs[0].goodsId]).toBeCloseTo(expected);
+  it('calculateDailyConsumption normalizes default-method inputs to a daily rate', () => {
+    const inputs = calculateDailyConsumption(BuildingId.STEEL_MILL);
+    const recipe = getRecipeForBuilding(
+      BuildingId.STEEL_MILL,
+      getBuildingDefaultMethods(BuildingId.STEEL_MILL),
+    );
+    expect(inputs).toHaveLength(recipe.inputs.length);
+    expect(inputs[0].goodsId).toBe(recipe.inputs[0].goodsId);
+    expect(inputs[0].amount).toBeCloseTo(
+      (recipe.inputs[0].amount / recipe.ticksRequired) * TICKS_PER_DAY,
+    );
   });
 
-  it('consumes one full legacy day of inputs in a single simulation tick', () => {
-    const world = createGameWorld();
-    world.companies.count = 1;
-    world.companies.cash[0] = 1_000_000;
+  it('building production variants expose outputs from method configs', () => {
+    const variants = getBuildingProductionVariants(BuildingId.FOOD_FACTORY);
+    expect(variants.length).toBeGreaterThan(0);
+    // 每个 variant 都应有非空名字（不再有匿名的"默认配方"占位条目）
+    expect(variants.every((variant) => variant.name && variant.name.length > 0)).toBe(true);
 
-    const buildingId = addBuilding(world, 0, BuildingId.STEEL_MILL, 0);
-    const building = BUILDINGS_BY_ID.get(BuildingId.STEEL_MILL)!;
-    const expected =
-      building.production.inputs[0].amount /
-      (building.production.ticksRequired / LEGACY_HOURS_PER_DAY);
-
-    for (let slotIndex = 0; slotIndex < MAX_SLOTS; slotIndex++) {
-      world.buildings.slotMethods[buildingId * MAX_SLOTS + slotIndex] = 0;
+    for (const variant of variants) {
+      const recipe = getRecipeForBuilding(BuildingId.FOOD_FACTORY, variant.slotMethods);
+      expect(recipe.outputs.length).toBeGreaterThan(0);
     }
-
-    for (const [index, input] of building.production.inputs.entries()) {
-      const dailyInput = input.amount / (building.production.ticksRequired / LEGACY_HOURS_PER_DAY);
-      world.buildings.inputBuffers[buildingId * MAX_INPUTS + index] = dailyInput * 2;
-    }
-
-    updateAllProduction(world);
-
-    expect(world.buildings.inputBuffers[buildingId * MAX_INPUTS]).toBeCloseTo(expected);
   });
 });

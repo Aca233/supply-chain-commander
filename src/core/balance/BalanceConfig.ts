@@ -502,10 +502,10 @@ export const PRICE_CONFIG_META: ConfigFieldMeta[] = [
 export const AI_CONFIG_META: ConfigFieldMeta[] = [
   { key: 'decisionInterval', label: 'AI决策间隔', description: 'AI做出决策的间隔时间', min: 1, max: 24, step: 1, format: 'tick', unit: 'tick' },
   { key: 'batchSize', label: '批处理大小', description: '每tick处理的AI数量', min: 1, max: 50, step: 1, format: 'number' },
-  { key: 'buyOrderExpiry', label: '买单过期时间', description: '普通买单的存活时间', min: 50, max: 500, step: 10, format: 'tick', unit: 'tick' },
-  { key: 'sellOrderExpiry', label: '卖单过期时间', description: '普通卖单的存活时间', min: 50, max: 500, step: 10, format: 'tick', unit: 'tick' },
-  { key: 'urgentOrderExpiry', label: '紧急订单过期', description: '紧急订单的存活时间', min: 10, max: 100, step: 5, format: 'tick', unit: 'tick' },
-  { key: 'buildingMaterialOrderExpiry', label: '建材订单过期', description: '建造材料订单的存活时间', min: 100, max: 1000, step: 50, format: 'tick', unit: 'tick' },
+  { key: 'buyOrderExpiry', label: '买单过期时间', description: '普通买单的存活时间', min: 1, max: 30, step: 1, format: 'tick', unit: '天' },
+  { key: 'sellOrderExpiry', label: '卖单过期时间', description: '普通卖单的存活时间', min: 1, max: 30, step: 1, format: 'tick', unit: '天' },
+  { key: 'urgentOrderExpiry', label: '紧急订单过期', description: '紧急订单的存活时间', min: 1, max: 14, step: 1, format: 'tick', unit: '天' },
+  { key: 'buildingMaterialOrderExpiry', label: '建材订单过期', description: '建造材料订单的存活时间', min: 1, max: 60, step: 1, format: 'tick', unit: '天' },
 ];
 
 export const PLAYER_CONFIG_META: ConfigFieldMeta[] = [

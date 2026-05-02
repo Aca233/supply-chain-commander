@@ -26,12 +26,16 @@ vi.mock('@/data/buildings', () => ({
     },
   ],
   isRetailBuilding: () => false,
-  getBuildingProduction: () => ({
+}));
+
+vi.mock('@/core/production/ProductionEngine', () => ({
+  getBuildingRecipeFromInstance: () => ({
     outputs: [{ goodsId: 1, amount: 10 }],
     inputs: [{ goodsId: 2, amount: 5 }],
     ticksRequired: 1,
+    laborRequired: 0,
+    energyRequired: 0,
   }),
-  hasMultipleOutputModes: () => false,
 }));
 
 vi.mock('@/data/goods', () => ({
@@ -70,10 +74,6 @@ vi.mock('../ProductionMethodsPanel', () => ({
   ProductionMethodsPanel: () => React.createElement('div', null, 'ProductionMethodsPanel'),
 }));
 
-vi.mock('../SubsidiaryPanel', () => ({
-  SubsidiaryPanel: () => React.createElement('div', null, 'SubsidiaryPanel'),
-}));
-
 vi.mock('../BuildingUpgradePanel', () => ({
   UpgradeConfirmDialog: () => null,
 }));
@@ -99,7 +99,6 @@ function createWorld() {
   return {
     buildings: {
       types: new Uint8Array([1]),
-      outputModeIds: new Uint8Array([0]),
       levels: new Uint8Array([1]),
       efficiencies: new Float32Array([1]),
       isActive: new Uint8Array([1]),
@@ -124,7 +123,6 @@ describe('BuildingDetailPanel daily rates', () => {
       playerCash: 1_000_000,
       upgradeBuilding: vi.fn(),
       toggleBuildingActive: vi.fn(),
-      setOutputMode: vi.fn(),
       demolishBuilding: vi.fn(),
       getBuildingProductionControl: () => ({
         ownerCompanyId: 0,
@@ -151,6 +149,8 @@ describe('BuildingDetailPanel daily rates', () => {
     expect(html).toContain('10 单位');
     expect(html).toContain('需求: 5/日');
     expect(html).toContain('+10/日');
-    expect(html).toContain('¥700');
+    expect(html).toContain('¥13');
+    expect(html).toContain('¥1.0K');
+    expect(html).toContain('¥988');
   });
 });

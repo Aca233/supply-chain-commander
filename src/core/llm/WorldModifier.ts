@@ -9,7 +9,8 @@ import { GameWorld } from '@/core/world/GameWorld';
 import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS } from '@/data/buildings';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_SLOTS } from '@/core/constants';
+import { getDefaultSlotMethods } from '@/core/production/ProductionMethods';
 import { GOODS_ALIASES, BUILDING_ALIASES } from './GodModePrompt';
 
 /**
@@ -380,9 +381,11 @@ export function grantBuilding(
     world.buildings.owners[slotId] = companyId;
     world.buildings.levels[slotId] = 1;
     world.buildings.isActive[slotId] = 1;
-    // v4.0: 使用outputModeIds而非recipeIds
-    const defaultOutputMode = buildingDef.production?.outputModes?.[0]?.modeId || 0;
-    world.buildings.outputModeIds[slotId] = defaultOutputMode;
+    const slotMethods = getDefaultSlotMethods(buildingTypeId);
+    const slotOffset = slotId * MAX_SLOTS;
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      world.buildings.slotMethods[slotOffset + i] = slotMethods[i] ?? 0;
+    }
     world.buildings.progress[slotId] = 0;
     
     grantedCount++;

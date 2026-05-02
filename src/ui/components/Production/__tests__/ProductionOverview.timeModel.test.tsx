@@ -30,10 +30,15 @@ vi.mock('@/data/buildings', () => ({
       energyCost: 100,
     },
   ],
-  getBuildingProduction: () => ({
+}));
+
+vi.mock('@/core/production/ProductionEngine', () => ({
+  getBuildingRecipeFromInstance: () => ({
     outputs: [{ goodsId: 1, amount: 10 }],
     inputs: [],
     ticksRequired: 1,
+    laborRequired: 0,
+    energyRequired: 0,
   }),
 }));
 
@@ -56,7 +61,6 @@ function createWorld() {
       owners: new Uint16Array([0]),
       isActive: new Uint8Array([1]),
       efficiencies: new Float32Array([1]),
-      outputModeIds: new Uint8Array([0]),
       types: new Uint8Array([1]),
       inputBuffers: new Float32Array(8),
     },
@@ -76,7 +80,6 @@ function createWorldWithTwoPlayerBuildings() {
       owners: new Uint16Array([0, 0]),
       isActive: new Uint8Array([1, 0]),
       efficiencies: new Float32Array([1, 1]),
-      outputModeIds: new Uint8Array([0, 0]),
       types: new Uint8Array([1, 1]),
       inputBuffers: new Float32Array(16),
     },
@@ -99,7 +102,7 @@ describe('ProductionOverview time model', () => {
     const html = renderToStaticMarkup(React.createElement(ProductionOverview));
 
     expect(html).toContain('日产能:¥1.0K');
-    expect(html).toContain('日预估利润:¥700');
+    expect(html).toContain('日预估利润:¥987.5');
   });
 
   it('derives total building count from the current world instead of cached store count', () => {

@@ -12,6 +12,7 @@ import {
   TICKS_PER_MONTH,
   TICKS_PER_YEAR,
 } from '@/core/constants';
+import { calculateCompanyAssetBreakdown } from './FinancialSnapshot';
 
 /**
  * 贷款类型
@@ -132,6 +133,7 @@ export function initializeBankingSystem(world: GameWorld): void {
   for (let i = 0; i < world.companies.count; i++) {
     const profile = createCreditProfile(world, i);
     bankingState.creditProfiles.set(i, profile);
+    syncBorrowerDebtState(world, i);
   }
 }
 
@@ -142,12 +144,7 @@ function createCreditProfile(world: GameWorld, companyId: number): CreditProfile
   const { score, rating } = assessCreditworthiness(world, companyId);
   
   // 计算信用额度（基于资产）
-  const cash = world.companies.cash[companyId];
-  let assets = cash;
-  for (let i = 0; i < GOODS_COUNT; i++) {
-    assets += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
-  }
-  
+  const assets = calculateCompanyAssetBreakdown(world, companyId).totalAssets;
   const maxCreditLine = assets * getCreditMultiplier(rating);
   
   return {
@@ -185,15 +182,7 @@ function assessCreditworthiness(world: GameWorld, companyId: number): {
   else if (cash < 100000) score -= 100;
   
   // 资产规模（+/-100分）
-  let totalAssets = cash;
-  for (let i = 0; i < GOODS_COUNT; i++) {
-    totalAssets += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
-  }
-  for (let i = 0; i < world.buildings.count; i++) {
-    if (world.buildings.owners[i] === companyId) {
-      totalAssets += 500000;
-    }
-  }
+  const totalAssets = calculateCompanyAssetBreakdown(world, companyId).totalAssets;
   
   if (totalAssets > 10000000) score += 100;
   else if (totalAssets > 5000000) score += 50;
@@ -370,14 +359,13 @@ export function applyForLoan(
   
   // 更新信用档案
   profile.currentLoans.push(loan.id);
-  profile.totalDebt += amount;
-  profile.availableCredit -= amount;
   profile.totalLoansHistory++;
   
   // 发放贷款（从银行存款划转，闭合货币循环）
   bankingState.totalDeposits -= amount;
   world.companies.cash[borrowerId] += amount;
   bankingState.totalLoansOutstanding += amount;
+  syncBorrowerDebtState(world, borrowerId);
 
   return { approved: true, loanId: loan.id };
 }
@@ -410,26 +398,47 @@ function calculateMonthlyPayment(principal: number, annualRate: number, termTick
   return payment;
 }
 
+function calculateOutstandingDebt(companyId: number): number {
+  let totalDebt = 0;
+
+  for (const [, loan] of bankingState.loans) {
+    if (loan.borrowerId === companyId && loan.status !== 'paid') {
+      totalDebt += loan.remainingPrincipal;
+    }
+  }
+
+  return totalDebt;
+}
+
+function syncBorrowerDebtState(
+  world: GameWorld,
+  companyId: number,
+  options: { freezeAvailableCredit?: boolean } = {},
+): void {
+  const totalDebt = calculateOutstandingDebt(companyId);
+  world.companies.totalLiabilities[companyId] = totalDebt;
+
+  const profile = bankingState.creditProfiles.get(companyId);
+  if (!profile) {
+    return;
+  }
+
+  profile.totalDebt = totalDebt;
+  profile.debtToEquityRatio = totalDebt / calculateEquity(world, companyId);
+
+  if (options.freezeAvailableCredit) {
+    profile.availableCredit = 0;
+    return;
+  }
+
+  profile.availableCredit = Math.max(0, profile.maxCreditLine - totalDebt);
+}
+
 /**
  * 计算权益
  */
 function calculateEquity(world: GameWorld, companyId: number): number {
-  let assets = world.companies.cash[companyId];
-  
-  for (let i = 0; i < GOODS_COUNT; i++) {
-    assets += world.companies.inventories[companyId * GOODS_COUNT + i] * world.goods.prices[i];
-  }
-  
-  for (let i = 0; i < world.buildings.count; i++) {
-    if (world.buildings.owners[i] === companyId) {
-      assets += 500000;
-    }
-  }
-  
-  const profile = bankingState.creditProfiles.get(companyId);
-  const liabilities = profile?.totalDebt || 0;
-  
-  return Math.max(1, assets - liabilities);
+  return Math.max(1, calculateCompanyAssetBreakdown(world, companyId).netWorth);
 }
 
 /**
@@ -449,18 +458,20 @@ export function makePayment(
     return { success: false, reason: '贷款已结清或违约' };
   }
   
-  const paymentAmount = amount || loan.monthlyPayment;
-  
+  const interestPortion = loan.remainingPrincipal * (loan.interestRate / 12);
+  // 还款金额不得低于当期利息，否则本金会因负 principalPortion 反向增加
+  const requestedAmount = amount ?? loan.monthlyPayment;
+  const paymentAmount = Math.max(requestedAmount, interestPortion);
+
   if (world.companies.cash[loan.borrowerId] < paymentAmount) {
-    return { success: false, reason: '现金不足' };
+    return { success: false, reason: '现金不足（至少需覆盖本期利息）' };
   }
-  
+
   // 扣款
   world.companies.cash[loan.borrowerId] -= paymentAmount;
 
-  // 分配到本金和利息
-  const interestPortion = loan.remainingPrincipal * (loan.interestRate / 12);
-  const principalPortion = paymentAmount - interestPortion;
+  // 分配到本金和利息（principalPortion 永远 >= 0）
+  const principalPortion = Math.max(0, paymentAmount - interestPortion);
 
   loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPortion);
   loan.totalInterestPaid += interestPortion;
@@ -479,11 +490,11 @@ export function makePayment(
     const profile = bankingState.creditProfiles.get(loan.borrowerId);
     if (profile) {
       profile.currentLoans = profile.currentLoans.filter(id => id !== loanId);
-      profile.totalDebt -= loan.principal;
-      profile.availableCredit += loan.principal;
       profile.totalRepaidOnTime++;
     }
   }
+
+  syncBorrowerDebtState(world, loan.borrowerId);
   
   return { success: true };
 }
@@ -525,10 +536,10 @@ export function prepayLoan(
   const profile = bankingState.creditProfiles.get(loan.borrowerId);
   if (profile) {
     profile.currentLoans = profile.currentLoans.filter(id => id !== loanId);
-    profile.totalDebt -= loan.principal;
-    profile.availableCredit += loan.principal;
     profile.totalRepaidOnTime++;
   }
+
+  syncBorrowerDebtState(world, loan.borrowerId);
   
   return { success: true, penalty };
 }
@@ -539,10 +550,18 @@ export function prepayLoan(
 function processOverdueLoans(world: GameWorld): void {
   for (const [loanId, loan] of bankingState.loans) {
     if (loan.status !== 'active') continue;
-    
-    if (world.tick > loan.nextPaymentTick + TICKS_PER_MONTH) {
-      loan.missedPayments++;
-      
+
+    // 逾期判定：基于"已经错过多少个月供周期"，而非每 tick 累加
+    // missedPayments = 当前 tick 超过下次缴款日的整月数
+    const monthsOverdue = Math.floor(
+      (world.tick - loan.nextPaymentTick) / TICKS_PER_MONTH
+    );
+
+    if (monthsOverdue > 0 && monthsOverdue !== loan.missedPayments) {
+      // 仅当跨入新一个逾期月时才重新计数与计滞纳金（防止 per-tick 累加）
+      const previousMissed = loan.missedPayments;
+      loan.missedPayments = monthsOverdue;
+
       if (loan.missedPayments >= 3) {
         // 违约
         loan.status = 'defaulted';
@@ -552,18 +571,23 @@ function processOverdueLoans(world: GameWorld): void {
         if (profile) {
           profile.totalDefaulted++;
           profile.currentLoans = profile.currentLoans.filter(id => id !== loanId);
-          profile.availableCredit = 0; // 冻结信用额度
           
           // 重新评估信用
           const { score, rating } = assessCreditworthiness(world, loan.borrowerId);
           profile.score = score;
           profile.rating = rating;
         }
+
+        syncBorrowerDebtState(world, loan.borrowerId, { freezeAvailableCredit: true });
         
         // TODO: 处理抵押物清算
       } else {
-        // 加收滞纳金
-        loan.remainingPrincipal *= 1.02; // 2%滞纳金
+        // 仅对新增逾期月计收 2% 滞纳金（避免每 tick 复利）
+        const newMissedMonths = loan.missedPayments - previousMissed;
+        if (newMissedMonths > 0) {
+          loan.remainingPrincipal *= Math.pow(1.02, newMissedMonths);
+          syncBorrowerDebtState(world, loan.borrowerId);
+        }
       }
     }
   }
@@ -590,7 +614,7 @@ export function updateBankingSystem(world: GameWorld): void {
       // 重新计算信用额度
       const equity = calculateEquity(world, companyId);
       profile.maxCreditLine = equity * getCreditMultiplier(rating);
-      profile.availableCredit = profile.maxCreditLine - profile.totalDebt;
+      profile.availableCredit = Math.max(0, profile.maxCreditLine - profile.totalDebt);
       profile.debtToEquityRatio = profile.totalDebt / equity;
     }
   }

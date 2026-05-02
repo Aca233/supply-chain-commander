@@ -923,7 +923,16 @@ const SERVICE_CONFIGS: BuildingConstructionConfig[] = [
   },
 ];
 
-// ==================== 零售类建筑材料 (ID 40) ====================
+// ==================== 零售类建筑材料 (ID 40-49) ====================
+// 共用升级材料模板：所有零售业态升级路径相同（按规模缩放 baseMaterials 即可）
+const RETAIL_BASE_UPGRADE_MATERIALS = [
+  [],
+  [{ goodsId: GoodsId.STEEL, amount: 80 }, { goodsId: GoodsId.BUILDING_MATERIALS, amount: 40 }],
+  [{ goodsId: GoodsId.STEEL, amount: 160 }, { goodsId: GoodsId.ELECTRONICS, amount: 20 }],
+  [{ goodsId: GoodsId.STEEL, amount: 240 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 1 }],
+  [{ goodsId: GoodsId.STEEL, amount: 320 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 2 }],
+];
+
 const RETAIL_CONFIGS: BuildingConstructionConfig[] = [
   {
     buildingTypeId: BuildingId.CONVENIENCE_STORE, // 40 便利店
@@ -936,15 +945,136 @@ const RETAIL_CONFIGS: BuildingConstructionConfig[] = [
       { goodsId: GoodsId.ELECTRONICS, amount: 20 },
       { goodsId: GoodsId.FURNITURE, amount: 80 },
     ],
-    upgradeMaterials: [
-      [],
-      [{ goodsId: GoodsId.STEEL, amount: 80 }, { goodsId: GoodsId.BUILDING_MATERIALS, amount: 40 }],
-      [{ goodsId: GoodsId.STEEL, amount: 160 }, { goodsId: GoodsId.ELECTRONICS, amount: 20 }],
-      [{ goodsId: GoodsId.STEEL, amount: 240 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 1 }],
-      [{ goodsId: GoodsId.STEEL, amount: 320 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 2 }],
-    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
     buildTime: 36,
     workers: 25,
+  },
+  {
+    buildingTypeId: BuildingId.SUPERMARKET, // 41 超市
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 600 },
+      { goodsId: GoodsId.CEMENT, amount: 900 },
+      { goodsId: GoodsId.GLASS, amount: 380 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 320 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 150 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 60 },
+      { goodsId: GoodsId.FURNITURE, amount: 220 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 60,
+    workers: 70,
+  },
+  {
+    buildingTypeId: BuildingId.ELECTRONICS_STORE, // 42 电器商场
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 480 },
+      { goodsId: GoodsId.CEMENT, amount: 700 },
+      { goodsId: GoodsId.GLASS, amount: 460 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 240 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 120 },
+      { goodsId: GoodsId.FURNITURE, amount: 140 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 75,
+    workers: 80,
+  },
+  {
+    buildingTypeId: BuildingId.CAR_DEALERSHIP, // 43 4S 店
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 850 },
+      { goodsId: GoodsId.CEMENT, amount: 1200 },
+      { goodsId: GoodsId.GLASS, amount: 700 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 380 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 180 },
+      { goodsId: GoodsId.FURNITURE, amount: 80 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 90,
+    workers: 100,
+  },
+  {
+    buildingTypeId: BuildingId.CLOTHING_STORE, // 44 服装店
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 320 },
+      { goodsId: GoodsId.CEMENT, amount: 460 },
+      { goodsId: GoodsId.GLASS, amount: 220 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 160 },
+      { goodsId: GoodsId.FURNITURE, amount: 120 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 45,
+    workers: 40,
+  },
+  {
+    buildingTypeId: BuildingId.FURNITURE_MALL, // 45 家具城
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 600 },
+      { goodsId: GoodsId.CEMENT, amount: 850 },
+      { goodsId: GoodsId.GLASS, amount: 320 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 280 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 140 },
+      { goodsId: GoodsId.FURNITURE, amount: 60 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 70,
+    workers: 75,
+  },
+  {
+    buildingTypeId: BuildingId.PHARMACY, // 46 药房
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 280 },
+      { goodsId: GoodsId.CEMENT, amount: 400 },
+      { goodsId: GoodsId.GLASS, amount: 200 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 140 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 30 },
+      { goodsId: GoodsId.FURNITURE, amount: 80 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 40,
+    workers: 35,
+  },
+  {
+    buildingTypeId: BuildingId.LUXURY_STORE, // 47 奢侈品店
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 520 },
+      { goodsId: GoodsId.CEMENT, amount: 700 },
+      { goodsId: GoodsId.GLASS, amount: 600 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 280 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 120 },
+      { goodsId: GoodsId.FURNITURE, amount: 180 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 80,
+    workers: 60,
+  },
+  {
+    buildingTypeId: BuildingId.ENERGY_SERVICE_STORE, // 48 能源服务店
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 420 },
+      { goodsId: GoodsId.CEMENT, amount: 600 },
+      { goodsId: GoodsId.GLASS, amount: 260 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 200 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 80 },
+      { goodsId: GoodsId.FURNITURE, amount: 60 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 65,
+    workers: 55,
+  },
+  {
+    buildingTypeId: BuildingId.DEPARTMENT_STORE, // 49 综合百货
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 1200 },
+      { goodsId: GoodsId.CEMENT, amount: 1800 },
+      { goodsId: GoodsId.GLASS, amount: 850 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 560 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 280 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 120 },
+      { goodsId: GoodsId.FURNITURE, amount: 380 },
+    ],
+    upgradeMaterials: RETAIL_BASE_UPGRADE_MATERIALS,
+    buildTime: 100,
+    workers: 130,
   },
 ];
 
@@ -955,7 +1085,7 @@ const ALL_CONSTRUCTION_CONFIGS: BuildingConstructionConfig[] = [
   ...MANUFACTURING_CONFIGS,   // ID 27-36
   ...LUXURY_CONFIGS,          // ID 37-38
   ...SERVICE_CONFIGS,         // ID 39
-  ...RETAIL_CONFIGS,          // ID 40
+  ...RETAIL_CONFIGS,          // ID 40-49
 ];
 
 // ==================== 导出配置 ====================

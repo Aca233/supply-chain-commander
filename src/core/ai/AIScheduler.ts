@@ -443,19 +443,13 @@ class AISchedulerManager {
         applied++;
         
         // 调试日志
-        if (result.decisions.length > 0 && world.tick % 50 === 0) {
-          console.log(`[AIScheduler] 应用Worker决策: 公司${result.companyId}, ${result.decisions.length}个决策, ${count}个成功`);
-        }
-      } catch (error) {
+} catch (error) {
         console.warn(`[AIScheduler] 应用决策失败 公司${result.companyId}:`, error);
       }
     }
     
     // 如果还有待处理结果，记录一下
-    if (this.pendingWorkerResults.length > 0 && world.tick % 100 === 0) {
-      console.log(`[AIScheduler] 待处理Worker结果: ${this.pendingWorkerResults.length}个`);
-    }
-  }
+}
   
   /**
    * Standard层级决策

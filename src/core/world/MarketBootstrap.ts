@@ -1,8 +1,8 @@
-import { getBuildingProduction } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 
 import { GOODS_COUNT } from '../constants';
 import { createBuyOrder, createSellOrder } from '../market/OrderBook';
+import { getBuildingRecipeFromInstance } from '../production/ProductionEngine';
 import { GameWorld } from './GameWorld';
 
 export function getBootstrapBuyerCompanyIds(world: GameWorld, goodsId: number): number[] {
@@ -14,14 +14,7 @@ export function getBootstrapBuyerCompanyIds(world: GameWorld, goodsId: number): 
       continue;
     }
 
-    const production = getBuildingProduction(
-      world.buildings.types[buildingId],
-      world.buildings.outputModeIds[buildingId],
-    );
-    if (!production) {
-      continue;
-    }
-
+    const production = getBuildingRecipeFromInstance(world, buildingId);
     if (production.inputs.some(input => input.goodsId === goodsId)) {
       buyerIds.add(ownerId);
     }

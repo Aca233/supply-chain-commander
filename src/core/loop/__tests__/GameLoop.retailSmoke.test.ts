@@ -55,4 +55,29 @@ describe('GameLoop retail smoke', () => {
     expect(totalRetailCustomers).toBeGreaterThan(0);
     expect(ticksWithRetailSales).toBeGreaterThan(0);
   });
+
+  it('publishes per-tick retail sales and revenue into economy stats', async () => {
+    vi.resetModules();
+
+    const { initializeWorld } = await import('../../world/WorldInitializer');
+    const { createGameLoop } = await import('../GameLoop');
+
+    const world = initializeWorld();
+    const loop = createGameLoop(world);
+
+    try {
+      for (let tick = 0; tick < 100; tick++) {
+        const result = loop.manualTick();
+        if (result.retailResult.totalRevenue > 0) {
+          expect(world.economyStats.retailRevenue).toBeCloseTo(result.retailResult.totalRevenue);
+          expect(world.economyStats.retailSales).toBeCloseTo(result.retailResult.totalSales);
+          return;
+        }
+      }
+    } finally {
+      loop.destroy();
+    }
+
+    throw new Error('Expected at least one retail sale within 100 ticks');
+  });
 });

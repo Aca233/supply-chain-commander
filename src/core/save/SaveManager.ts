@@ -2,17 +2,15 @@
  * 游戏存档管理器
  * 处理游戏状态的保存和加载
  *
- * v4.0更新：使用outputModeIds替代recipeIds
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, legacyHourTicksToDayTicks } from '@/core/constants';
+import { GOODS_COUNT, MAX_SLOTS, legacyHourTicksToDayTicks } from '@/core/constants';
 import {
   BankruptcyResolutionSnapshot,
   BankruptcyStrategySettings,
   bankruptcyResolution,
 } from '@/core/finance/BankruptcyResolution';
-import { BUILDINGS_BY_ID, getBuildingProduction, getAvailableOutputModes } from '@/data/buildings';
 import { backfillManualTargetsFromCurrentEfficiency, hydrateProductionControlState } from '@/core/production/ProductionControl';
 
 export interface SaveMetadata {
@@ -34,6 +32,7 @@ export interface SerializedWorld {
     prices: number[];
     supplies: number[];
     demands: number[];
+    demandPressure?: number[];
   };
   buildings: {
     count: number;
@@ -43,10 +42,10 @@ export interface SerializedWorld {
     efficiencies: number[];
     productionControlModes?: number[];
     manualEfficiencyTargets?: number[];
-    outputModeIds: number[];  // v4.0更新：替代recipeIds
+    oversupplySuspendedGoods?: number[];
+    oversupplySuspendedUntilTick?: number[];
+    slotMethods: number[];
     isActive: number[];
-    // 兼容旧存档
-    recipeIds?: number[];
   };
   companies: {
     count: number;
@@ -78,7 +77,13 @@ export interface SaveData {
 
 const SAVE_PREFIX = 'supply_chain_save_';
 const SETTINGS_KEY = 'supply_chain_settings';
-const CURRENT_VERSION = '1.0.0';
+const CURRENT_VERSION = '3.0.0';
+const SUPPORTED_VERSIONS = new Set<string>([CURRENT_VERSION]);
+const STORAGE_QUOTA_BYTES = 5 * 1024 * 1024;
+
+function getStorage(): Storage | null {
+  return typeof localStorage === 'undefined' ? null : localStorage;
+}
 
 export class SaveManager {
   private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
@@ -100,6 +105,7 @@ export class SaveManager {
         prices: Array.from(world.goods.prices),
         supplies: Array.from(world.goods.supplies),
         demands: Array.from(world.goods.demands),
+        demandPressure: Array.from(world.goods.demandPressure),
       },
       buildings: {
         count: world.buildings.count,
@@ -109,7 +115,9 @@ export class SaveManager {
         efficiencies: Array.from(world.buildings.efficiencies),
         productionControlModes: Array.from(world.buildings.productionControlModes),
         manualEfficiencyTargets: Array.from(world.buildings.manualEfficiencyTargets),
-        outputModeIds: Array.from(world.buildings.outputModeIds),  // v4.0更新
+        oversupplySuspendedGoods: Array.from(world.buildings.oversupplySuspendedGoods),
+        oversupplySuspendedUntilTick: Array.from(world.buildings.oversupplySuspendedUntilTick),
+        slotMethods: this.serializeSlotMethods(world),
         isActive: Array.from(world.buildings.isActive),
       },
       companies: {
@@ -123,6 +131,15 @@ export class SaveManager {
     };
   }
   
+  private serializeSlotMethods(world: GameWorld): number[] {
+    const length = world.buildings.count * MAX_SLOTS;
+    const arr: number[] = new Array(length);
+    for (let i = 0; i < length; i++) {
+      arr[i] = world.buildings.slotMethods[i] ?? 0;
+    }
+    return arr;
+  }
+
   private serializeInventories(world: GameWorld): number[][] {
     const inventories: number[][] = [];
     for (let i = 0; i < world.companies.count; i++) {
@@ -143,12 +160,22 @@ export class SaveManager {
     world.goods.prices.set(data.goods.prices);
     world.goods.supplies.set(data.goods.supplies);
     world.goods.demands.set(data.goods.demands);
+    if (data.goods.demandPressure) {
+      world.goods.demandPressure.set(data.goods.demandPressure);
+      world.goods.demandPressureTick = world.tick;
+    } else {
+      world.goods.demandPressure.set(data.goods.demands);
+      world.goods.demandPressureTick = world.tick;
+    }
     
     world.buildings.count = data.buildings.count;
     world.buildings.types.set(data.buildings.types);
     world.buildings.owners.set(data.buildings.owners);
     world.buildings.levels.set(data.buildings.levels);
     world.buildings.efficiencies.set(data.buildings.efficiencies);
+    world.buildings.slotMethods.set(data.buildings.slotMethods);
+    world.buildings.oversupplySuspendedGoods.fill(-1);
+    world.buildings.oversupplySuspendedUntilTick.fill(0);
 
     if (data.buildings.productionControlModes) {
       world.buildings.productionControlModes.set(data.buildings.productionControlModes);
@@ -156,27 +183,15 @@ export class SaveManager {
     if (data.buildings.manualEfficiencyTargets) {
       world.buildings.manualEfficiencyTargets.set(data.buildings.manualEfficiencyTargets);
     }
-    
-    // v4.0更新：处理outputModeIds，兼容旧存档的recipeIds
-    if (data.buildings.outputModeIds) {
-      world.buildings.outputModeIds.set(data.buildings.outputModeIds);
-    } else if (data.buildings.recipeIds) {
-      // 旧存档迁移：将recipeIds映射到outputModeIds
-      this.migrateRecipeIdsToOutputModeIds(data.buildings.recipeIds, data.buildings.types, world);
+    if (data.buildings.oversupplySuspendedGoods) {
+      world.buildings.oversupplySuspendedGoods.set(data.buildings.oversupplySuspendedGoods);
     }
-    
-    // 验证并修复建筑生产模式
-    this.validateAndFixBuildingOutputModes(world);
-    
-    // 恢复建筑激活状态（修复建筑暂停问题）
-    if (data.buildings.isActive) {
-      world.buildings.isActive.set(data.buildings.isActive);
-    } else {
-      // 兼容旧存档：如果没有isActive数据，默认所有建筑激活
-      for (let i = 0; i < data.buildings.count; i++) {
-        world.buildings.isActive[i] = 1;
-      }
+    if (data.buildings.oversupplySuspendedUntilTick) {
+      world.buildings.oversupplySuspendedUntilTick.set(data.buildings.oversupplySuspendedUntilTick);
     }
+
+    // 恢复建筑激活状态
+    world.buildings.isActive.set(data.buildings.isActive);
 
     if (data.buildings.manualEfficiencyTargets) {
       hydrateProductionControlState(world);
@@ -197,73 +212,6 @@ export class SaveManager {
     }
 
     bankruptcyResolution.hydrate(data.bankruptcy);
-  }
-  
-  /**
-   * 旧存档迁移：将recipeIds映射到outputModeIds
-   * 由于配方系统已删除，我们使用默认模式0
-   */
-  private migrateRecipeIdsToOutputModeIds(
-    recipeIds: number[],
-    buildingTypes: number[],
-    world: GameWorld
-  ): void {
-    console.log('[存档迁移] 检测到旧版存档，正在迁移recipeIds到outputModeIds...');
-    
-    for (let i = 0; i < recipeIds.length; i++) {
-      // 旧存档的recipeIds无法直接映射，使用默认模式0
-      world.buildings.outputModeIds[i] = 0;
-    }
-    
-    console.log(`[存档迁移] 完成迁移 ${recipeIds.length} 个建筑到默认生产模式`);
-  }
-  
-  /**
-   * 验证并修复建筑生产模式
-   * v4.0更新：使用outputModeIds替代recipeIds
-   */
-  private validateAndFixBuildingOutputModes(world: GameWorld): void {
-    let fixedCount = 0;
-    
-    for (let i = 0; i < world.buildings.count; i++) {
-      const buildingTypeId = world.buildings.types[i];
-      const currentModeId = world.buildings.outputModeIds[i];
-      const buildingLevel = world.buildings.levels[i];
-      
-      const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
-      if (!buildingDef) {
-        console.warn(`[存档修复] 未知建筑类型: ${buildingTypeId}`);
-        continue;
-      }
-      
-      // 零售建筑不需要生产模式
-      if (buildingDef.category === 'retail') {
-        continue;
-      }
-      
-      // 检查当前模式是否有效
-      const availableModes = getAvailableOutputModes(buildingTypeId, buildingLevel);
-      const production = getBuildingProduction(buildingTypeId, currentModeId);
-      
-      if (!production) {
-        // 当前模式无效，使用默认模式0
-        world.buildings.outputModeIds[i] = 0;
-        fixedCount++;
-        console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 生产模式从 ${currentModeId} 修复为 0`);
-      } else if (availableModes.length > 0) {
-        // 检查模式是否在可用列表中
-        const modeExists = availableModes.some(m => m.modeId === currentModeId);
-        if (!modeExists) {
-          world.buildings.outputModeIds[i] = 0;
-          fixedCount++;
-          console.log(`[存档修复] 建筑#${i} (${buildingDef.name}) 模式 ${currentModeId} 不可用，修复为 0`);
-        }
-      }
-    }
-    
-    if (fixedCount > 0) {
-      console.log(`[存档修复] 共修复了 ${fixedCount} 个建筑的生产模式`);
-    }
   }
   
   save(world: GameWorld, currentTick: number, playTime: number, saveName?: string): SaveMetadata {
@@ -300,8 +248,16 @@ export class SaveManager {
     try {
       const json = localStorage.getItem(`${SAVE_PREFIX}${saveId}`);
       if (!json) return null;
-      
+
       const saveData: SaveData = JSON.parse(json);
+      const version = saveData.metadata?.version;
+      if (!version || !SUPPORTED_VERSIONS.has(version)) {
+        console.error(
+          `[存档加载] 版本不兼容：存档版本 ${version ?? '未知'}，当前仅支持 ${CURRENT_VERSION}。请新建游戏。`,
+        );
+        return null;
+      }
+
       this.deserializeWorld(saveData.world, world);
       console.log(`Game loaded: ${saveData.metadata.name}`);
       return saveData;
@@ -376,36 +332,18 @@ export class SaveManager {
   }
   
   saveSettings(settings: GameSettings): void {
+    const storage = getStorage();
+    if (!storage) return;
+
     try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      storage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (error) {
       console.error('Failed to save settings:', error);
     }
   }
   
   loadSettings(): GameSettings {
-    try {
-      const json = localStorage.getItem(SETTINGS_KEY);
-      if (json) {
-        const saved = JSON.parse(json);
-        // 合并默认值，确保新字段有默认值
-        return {
-          gameSpeed: 1,
-          soundEnabled: true,
-          musicEnabled: true,
-          autoSave: true,
-          autoSaveInterval: 60000,
-          maxAutoSaves: 5,
-          language: 'zh-CN',
-          newsGenerationEnabled: true,
-          bankruptcyStrategy: bankruptcyResolution.getStrategy(0),
-          ...saved,
-        };
-      }
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-    }
-    return {
+    const defaultSettings = {
       gameSpeed: 1,
       soundEnabled: true,
       musicEnabled: true,
@@ -416,15 +354,35 @@ export class SaveManager {
       newsGenerationEnabled: true,
       bankruptcyStrategy: bankruptcyResolution.getStrategy(0),
     };
+    const storage = getStorage();
+    if (!storage) return defaultSettings;
+
+    try {
+      const json = storage.getItem(SETTINGS_KEY);
+      if (json) {
+        const saved = JSON.parse(json);
+        // 合并默认值，确保新字段有默认值
+        return {
+          ...defaultSettings,
+          ...saved,
+        };
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+    }
+    return defaultSettings;
   }
   
   getStorageUsage(): { used: number; total: number; percent: number } {
+    const storage = getStorage();
+    if (!storage) return { used: 0, total: STORAGE_QUOTA_BYTES, percent: 0 };
+
     let used = 0;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) used += (localStorage.getItem(key)?.length || 0) * 2;
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key) used += (storage.getItem(key)?.length || 0) * 2;
     }
-    const total = 5 * 1024 * 1024;
+    const total = STORAGE_QUOTA_BYTES;
     return { used, total, percent: (used / total) * 100 };
   }
 }

@@ -11,7 +11,6 @@ import {
   MAX_INPUTS,
   MAX_OUTPUTS,
   MAX_SLOTS,
-  MAX_SUBSIDIARIES,
   HISTORY_SIZE,
   MAX_RETAIL_STORES,
   MAX_TRADES,
@@ -31,7 +30,9 @@ export interface GoodsSystem {
   prices: Float32Array;           // 当前价格
   baseValues: Float32Array;       // 基准价值
   supplies: Float32Array;         // 本tick总供给
-  demands: Float32Array;          // 本tick总需求
+  demands: Float32Array;          // 本tick总需求（gross demand）
+  demandPressure: Float32Array;   // 本tick未满足需求压力（unmet demand）
+  demandPressureTick: number;     // pressure 对应的 tick
   priceHistory: Float32Array;     // [GOODS_COUNT × HISTORY_SIZE]
   historyIndex: number;
   
@@ -54,24 +55,17 @@ export interface BuildingsSystem {
   manualEfficiencyTargets: Float32Array;  // 手动效率目标（0.3-1.5）
   
   // 生产状态
-  slotMethods: Uint32Array;       // [N × MAX_SLOTS] 每槽位当前方法(新系统ID 10000+)
+  slotMethods: Uint32Array;       // [N × MAX_SLOTS] 每槽位当前方法 ID（注册体系 ID ≥ 10000）
   progress: Float32Array;         // 生产进度0-1
   
   // 输入输出缓冲区
   inputBuffers: Float32Array;     // [N × MAX_INPUTS]
   outputBuffers: Float32Array;    // [N × MAX_OUTPUTS]
-  
-  // 产品模式索引（替代原来的recipeIds）
-  outputModeIds: Uint8Array;      // 当前使用的产品模式ID (对应 BuildingProductionConfig.outputModes 中的 modeId)
-  
+
   // 状态标记
   isActive: Uint8Array;           // 是否激活运营
-  
-  // 附属建筑系统
-  subsidiaryIds: Uint16Array;           // [N × MAX_SUBSIDIARIES] 已安装的附属建筑ID
-  subsidiaryConditions: Float32Array;   // [N × MAX_SUBSIDIARIES] 附属建筑状态 0-1
-  subsidiaryInstalledTicks: Uint32Array; // [N × MAX_SUBSIDIARIES] 安装时间
-  subsidiaryCount: Uint8Array;          // [N] 每个建筑已安装的附属建筑数量
+  oversupplySuspendedGoods: Int16Array;      // 自动因过剩休眠的主商品，-1=未休眠
+  oversupplySuspendedUntilTick: Uint32Array; // 自动休眠最早恢复 tick
 }
 
 /** 公司系统数据 */
@@ -196,10 +190,10 @@ export interface ConstructionQueueSystem {
   startTicks: Uint32Array;              // 开始时间
   estimatedEndTicks: Uint32Array;       // 预计完成时间
   materialReserveIds: Uint32Array;      // 预留材料池的起始索引
-  outputModeIds: Uint8Array;            // 新建建筑使用的产品模式ID（替代原来的recipeIds）
-  
+
   // 已有建筑升级专用 (新建时为-1)
   existingBuildingIds: Int16Array;      // 正在升级的建筑ID，-1表示新建
+  slotMethods: Uint32Array;             // [queue × MAX_SLOTS] 新建完成时要应用的槽位方法
   
   // 状态标记
   isActive: Uint8Array;                 // 是否活跃 (位图)
@@ -316,6 +310,8 @@ export function createGoodsSystem(): GoodsSystem {
     baseValues: new Float32Array(GOODS_COUNT),
     supplies: new Float32Array(GOODS_COUNT),
     demands: new Float32Array(GOODS_COUNT),
+    demandPressure: new Float32Array(GOODS_COUNT),
+    demandPressureTick: -1,
     priceHistory: new Float32Array(GOODS_COUNT * HISTORY_SIZE),
     historyIndex: 0,
     names: [],
@@ -329,6 +325,8 @@ export function createGoodsSystem(): GoodsSystem {
 export function createBuildingsSystem(): BuildingsSystem {
   const manualEfficiencyTargets = new Float32Array(MAX_BUILDINGS);
   manualEfficiencyTargets.fill(1.0);
+  const oversupplySuspendedGoods = new Int16Array(MAX_BUILDINGS);
+  oversupplySuspendedGoods.fill(-1);
 
   return {
     count: 0,
@@ -343,13 +341,9 @@ export function createBuildingsSystem(): BuildingsSystem {
     progress: new Float32Array(MAX_BUILDINGS),
     inputBuffers: new Float32Array(MAX_BUILDINGS * MAX_INPUTS),
     outputBuffers: new Float32Array(MAX_BUILDINGS * MAX_OUTPUTS),
-    outputModeIds: new Uint8Array(MAX_BUILDINGS),  // 替代原来的recipeIds
     isActive: new Uint8Array(MAX_BUILDINGS),
-    // 附属建筑系统
-    subsidiaryIds: new Uint16Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
-    subsidiaryConditions: new Float32Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
-    subsidiaryInstalledTicks: new Uint32Array(MAX_BUILDINGS * MAX_SUBSIDIARIES),
-    subsidiaryCount: new Uint8Array(MAX_BUILDINGS),
+    oversupplySuspendedGoods,
+    oversupplySuspendedUntilTick: new Uint32Array(MAX_BUILDINGS),
   };
 }
 
@@ -466,8 +460,8 @@ export function createConstructionQueueSystem(): ConstructionQueueSystem {
     startTicks: new Uint32Array(size),
     estimatedEndTicks: new Uint32Array(size),
     materialReserveIds: new Uint32Array(size),
-    outputModeIds: new Uint8Array(size),  // 替代原来的recipeIds
     existingBuildingIds: new Int16Array(size).fill(-1),
+    slotMethods: new Uint32Array(size * MAX_SLOTS),
     isActive: new Uint8Array(size),
     nextQueueId: 1,
   };

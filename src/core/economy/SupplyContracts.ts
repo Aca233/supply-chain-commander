@@ -3,7 +3,8 @@
  * 允许公司签订长期供货/采购协议
  */
 
-import { TICKS_PER_DAY } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
+import { GameWorld } from '@/core/world/GameWorld';
 
 // ==================== 类型定义 ====================
 
@@ -306,19 +307,20 @@ export class SupplyContractManager {
    * 执行交付
    */
   executeDelivery(
+    world: GameWorld,
     contractId: number,
     quantity: number,
     currentTick: number,
     currentMarketPrice: number
-  ): { success: boolean; value: number; penalty: number; reason?: string } {
+  ): { success: boolean; value: number; penalty: number; actualQuantity: number; reason?: string } {
     const contract = this.contracts.get(contractId);
     if (!contract || contract.status !== ContractStatus.ACTIVE) {
-      return { success: false, value: 0, penalty: 0, reason: '合同不存在或未生效' };
+      return { success: false, value: 0, penalty: 0, actualQuantity: 0, reason: '合同不存在或未生效' };
     }
     
     const records = this.deliveries.get(contractId);
     if (!records) {
-      return { success: false, value: 0, penalty: 0, reason: '无交付记录' };
+      return { success: false, value: 0, penalty: 0, actualQuantity: 0, reason: '无交付记录' };
     }
     
     // 找到当前期次
@@ -327,7 +329,7 @@ export class SupplyContractManager {
     );
     
     if (!currentRecord) {
-      return { success: false, value: 0, penalty: 0, reason: '无待交付期次' };
+      return { success: false, value: 0, penalty: 0, actualQuantity: 0, reason: '无待交付期次' };
     }
     
     // 计算实际价格
@@ -337,41 +339,94 @@ export class SupplyContractManager {
       if (contract.priceFloor) price = Math.max(price, contract.priceFloor);
       if (contract.priceCeiling) price = Math.min(price, contract.priceCeiling);
     }
-    
-    // 计算价值
-    const value = quantity * price;
-    
-    // 检查是否达到最小量
+
+    const requestedQuantity = Math.max(0, Math.min(quantity, contract.maxQuantity));
+    const supplierInventoryIndex = contract.supplierId * GOODS_COUNT + contract.goodsId;
+    const buyerInventoryIndex = contract.buyerId * GOODS_COUNT + contract.goodsId;
+    const availableInventory = Math.max(0, world.companies.inventories[supplierInventoryIndex] ?? 0);
+    const affordableQuantity =
+      price > 0
+        ? Math.max(0, Math.floor(Math.max(0, world.companies.cash[contract.buyerId]) / price))
+        : requestedQuantity;
+    const actualQuantity = Math.min(requestedQuantity, availableInventory, affordableQuantity);
+    const value = actualQuantity * price;
+
+    if (actualQuantity > 0) {
+      world.companies.inventories[supplierInventoryIndex] = Math.max(0, availableInventory - actualQuantity);
+      world.companies.inventories[buyerInventoryIndex] += actualQuantity;
+      world.companies.cash[contract.buyerId] -= value;
+      world.companies.cash[contract.supplierId] += value;
+    }
+
     let penalty = 0;
-    if (quantity < contract.minQuantity) {
-      const shortfall = contract.minQuantity - quantity;
+    let deliveryStatus: DeliveryRecord['status'] = 'delivered';
+    if (actualQuantity === 0) {
+      deliveryStatus = 'missed';
+    } else if (actualQuantity < contract.minQuantity) {
+      deliveryStatus = 'partial';
+    }
+
+    if (actualQuantity < contract.minQuantity) {
+      const shortfall = contract.minQuantity - actualQuantity;
       penalty = shortfall * price * contract.penaltyRate;
-      currentRecord.status = 'partial';
-    } else {
-      currentRecord.status = 'delivered';
+
+      const supplierCapacity = Math.min(requestedQuantity, availableInventory);
+      const buyerCapacity = Math.min(requestedQuantity, affordableQuantity);
+      const penaltyPayer =
+        supplierCapacity < buyerCapacity
+          ? 'supplier'
+          : buyerCapacity < supplierCapacity
+            ? 'buyer'
+            : availableInventory < requestedQuantity
+              ? 'supplier'
+              : 'buyer';
+
+      if (penaltyPayer === 'supplier') {
+        world.companies.cash[contract.supplierId] -= penalty;
+        world.companies.cash[contract.buyerId] += penalty;
+      } else {
+        world.companies.cash[contract.buyerId] -= penalty;
+        world.companies.cash[contract.supplierId] += penalty;
+      }
     }
     
     currentRecord.actualTick = currentTick;
-    currentRecord.actualQuantity = quantity;
+    currentRecord.actualQuantity = actualQuantity;
     currentRecord.price = price;
     currentRecord.value = value;
     currentRecord.penalty = penalty;
+    currentRecord.status = deliveryStatus;
     
     // 更新合同统计
-    contract.totalDelivered += quantity;
+    contract.totalDelivered += actualQuantity;
     contract.totalValue += value;
     contract.currentPeriod++;
+
+    if (deliveryStatus !== 'delivered') {
+      contract.missedDeliveries++;
+      if (contract.missedDeliveries >= 3) {
+        contract.status = ContractStatus.BREACHED;
+      }
+    }
     
     // 更新履约评分
-    const fulfillmentRate = quantity / contract.quantityPerPeriod;
+    const fulfillmentRate = contract.quantityPerPeriod > 0
+      ? actualQuantity / contract.quantityPerPeriod
+      : 0;
     contract.performanceRating = contract.performanceRating * 0.9 + fulfillmentRate * 100 * 0.1;
     
     // 检查合同完成
-    if (contract.currentPeriod >= contract.totalPeriods) {
-      contract.status = ContractStatus.COMPLETED;
+    if (contract.currentPeriod >= contract.totalPeriods && contract.status === ContractStatus.ACTIVE) {
+      contract.status = contract.missedDeliveries > 0 ? ContractStatus.BREACHED : ContractStatus.COMPLETED;
     }
     
-    return { success: true, value, penalty };
+    return {
+      success: deliveryStatus === 'delivered',
+      value,
+      penalty,
+      actualQuantity,
+      reason: deliveryStatus === 'delivered' ? undefined : '合同履约未达到最低交付量',
+    };
   }
   
   /**
@@ -412,7 +467,7 @@ export class SupplyContractManager {
   /**
    * 处理合同执行（每tick调用）
    */
-  processContracts(currentTick: number): ContractExecution[] {
+  processContracts(world: GameWorld, currentTick: number): ContractExecution[] {
     const executions: ContractExecution[] = [];
     
     for (const [contractId, contract] of this.contracts) {
@@ -428,7 +483,13 @@ export class SupplyContractManager {
         // 如果到达交付时间，自动执行（简化处理）
         if (currentTick >= record.scheduledTick) {
           // 自动执行交付
-          const result = this.executeDelivery(contractId, record.quantity, currentTick, record.price);
+          const result = this.executeDelivery(
+            world,
+            contractId,
+            record.quantity,
+            currentTick,
+            world.goods.prices[contract.goodsId] ?? record.price,
+          );
           
           executions.push({
             contractId,
@@ -436,7 +497,7 @@ export class SupplyContractManager {
             supplierId: contract.supplierId,
             buyerId: contract.buyerId,
             goodsId: contract.goodsId,
-            quantity: result.success ? record.quantity : 0,
+            quantity: result.actualQuantity,
             value: result.value,
             penalty: result.penalty,
             success: result.success,

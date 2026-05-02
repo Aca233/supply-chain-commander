@@ -16,12 +16,13 @@ import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHea
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
 import { resetPriceCache } from '../market/PriceCache';
 import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../economy/PriceEngine';
-import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, runAISubsidiaryManagement, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
+import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem, getBankingState } from '../finance/BankingSystem';
 import { applyOperatingCosts } from '../finance/OperatingCosts';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
 import { bankruptcyResolution } from '../finance/BankruptcyResolution';
+import { calculateCompanyAssetBreakdown } from '../finance/FinancialSnapshot';
 import {
   DEFAULT_TICK_INTERVAL,
   BASE_INTEREST_RATE,
@@ -49,7 +50,6 @@ import { distributionManager } from '../economy/DistributionChannels';
 import { supplyContractManager, ContractExecution } from '../economy/SupplyContracts';
 import { advancedOrderManager, AdvancedOrder } from '../market/AdvancedOrders';
 import { decayUnmetDemand } from '../economy/DemandCurve';
-import { applyMarketSubstitution } from '../economy/SubstitutionSystem';
 import { futuresMarket } from '../finance/FuturesMarket';
 import { tradingFeeManager } from '../market/TradingFees';
 import { executeConsumerPurchases, MarketConsumptionSummary, CONSUMER_MARKET_CONFIG } from '../economy/ConsumerMarket';
@@ -108,10 +108,7 @@ export interface TickResult {
   cleanedOrders: number;
   
   aiDecisions: number;  // AI公司决策数量
-  
-  // AI附属建筑管理结果
-  aiSubsidiaryActions: number;
-  
+
   // 新增系统结果
   season: Season;
   seasonalEvents: SeasonalEvent[];
@@ -186,7 +183,7 @@ export class GameLoop {
     
     // 初始化系统
     initRecipeCache();
-    initializeBuildingProductionMethods(); // 初始化建筑专属生产方式系统
+    initializeBuildingProductionMethods();
     initOrderPool();
     resetOrderBookIndex();
     resetPriceCache();
@@ -419,7 +416,7 @@ export class GameLoop {
     const deliveredShipments = logisticsManager.updateShipments(currentTick);
     
     // 6. 处理供应合同执行
-    const executedContracts = supplyContractManager.processContracts(currentTick);
+    const executedContracts = supplyContractManager.processContracts(this.world, currentTick);
     
     endInventory();
     
@@ -474,6 +471,9 @@ export class GameLoop {
     const serviceConsumption = processServiceConsumption(this.world);
     endService();
 
+    this.world.economyStats.retailSales = retailResult.totalSales ?? 0;
+    this.world.economyStats.retailRevenue = retailResult.totalRevenue ?? 0;
+
     const dailyActivitySlot = (currentTick - 1) % TICKS_PER_MONTH;
     this.recentDirectMarketFinalDemand[dailyActivitySlot] = consumerPurchases.totalSpent ?? 0;
     this.recentRetailRevenue[dailyActivitySlot] = retailResult.totalRevenue ?? 0;
@@ -523,9 +523,12 @@ export class GameLoop {
       endPayments();
     }
     
-    // 15. 清理过期订单
-    const cleanedOrders = cleanupExpiredOrders(this.world);
-    advancedOrderManager.checkExpiry(currentTick);
+    // 15. 清理过期订单（每 3 tick 一次，减少误杀有效订单 + 性能优化）
+    let cleanedOrders = 0;
+    if (currentTick % 3 === 0) {
+      cleanedOrders = cleanupExpiredOrders(this.world);
+      advancedOrderManager.checkExpiry(currentTick);
+    }
     
     // ==================== 阶段5: 价格和金融 ====================
     
@@ -549,20 +552,22 @@ export class GameLoop {
       }
       
       // 更新持仓盈亏
-      futuresMarket.updatePositionsPnL(spotPrices);
+      futuresMarket.updatePositionsPnL(this.world, spotPrices);
+
+      for (let companyId = 0; companyId < this.world.companies.count; companyId++) {
+        const marginCall = futuresMarket.checkMarginCall(companyId, this.world.companies.cash[companyId]);
+        if (marginCall.isMarginCall) {
+          futuresMarket.forceLiquidateCompany(this.world, companyId, spotPrices, currentTick);
+        }
+      }
       
       // 处理到期合约
-      futuresMarket.handleExpiry(currentTick, spotPrices);
+      expiredFuturesContracts = futuresMarket.handleExpiry(this.world, currentTick, spotPrices);
       endFutures();
     }
     
     // 17.5. 需求衰减（每天结束时处理未满足的需求）
     decayUnmetDemand(this.world);
-    
-    // 17.6. 商品替代效应（每2天应用一次）
-    if (currentTick % 2 === 0) {
-      applyMarketSubstitution(this.world);
-    }
     
     endPricing();
     
@@ -590,14 +595,6 @@ export class GameLoop {
     updateAcquisitionSystem(this.world);
     
     endFinance();
-    
-    // 22. AI附属建筑管理（每5天一次）
-    let aiSubsidiaryActions = 0;
-    if (currentTick % 5 === 0) {
-      const endAISubsidiary = perfMonitor.startMeasure('ai-subsidiary');
-      aiSubsidiaryActions = runAISubsidiaryManagement(this.world);
-      endAISubsidiary();
-    }
 
     // 23. 更新品牌衰减（每天）
     const endState = perfMonitor.startMeasure('state');
@@ -623,22 +620,30 @@ export class GameLoop {
     }
 
     // 26. 战略建材检查（每15天运行一次）
-    const strategicMaterialDecisions = runStrategicMaterialCheck(this.world);
-    if (strategicMaterialDecisions > 0 && currentTick % 15 === 0) {
-      console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
+    // 修复：原本每 tick 都跑 runStrategicMaterialCheck，仅 console.log 限制在 %15===0。
+    // 实际计算被白白触发 14/15 次。改为只在窗口内执行。
+    if (currentTick % 15 === 0) {
+      const strategicMaterialDecisions = runStrategicMaterialCheck(this.world);
+      if (strategicMaterialDecisions > 0) {
+        console.log(`[战略建材 T${currentTick}] 触发了${strategicMaterialDecisions}个紧急建造决策`);
+      }
     }
 
     // 27. 冷门商品检测与自动补充（每月运行一次）
-    const coldGoodsDecisions = buildForColdGoods(this.world);
-    if (coldGoodsDecisions > 0) {
-      console.log(`[冷门商品 T${currentTick}] 触发了${coldGoodsDecisions}个建造决策`);
+    if (currentTick % TICKS_PER_MONTH === 0) {
+      const coldGoodsDecisions = buildForColdGoods(this.world);
+      if (coldGoodsDecisions > 0) {
+        console.log(`[冷门商品 T${currentTick}] 触发了${coldGoodsDecisions}个建造决策`);
+      }
     }
-    
+
     // 28. 【P2修复】零供应商品强制建造
     // 每100tick运行一次，强制分配AI公司建造完全没有供应的商品
-    const zeroSupplyDecisions = forceBuildzeroSupplyGoods(this.world);
-    if (zeroSupplyDecisions > 0) {
-      console.log(`[零供应强制建造 T${currentTick}] 触发了${zeroSupplyDecisions}个强制建造决策`);
+    if (currentTick % 100 === 0) {
+      const zeroSupplyDecisions = forceBuildzeroSupplyGoods(this.world);
+      if (zeroSupplyDecisions > 0) {
+        console.log(`[零供应强制建造 T${currentTick}] 触发了${zeroSupplyDecisions}个强制建造决策`);
+      }
     }
     
     // ==================== 阶段7: 新闻系统 ====================
@@ -734,7 +739,6 @@ export class GameLoop {
         sellOrders: aiSellOrders,
         buyOrders: aiBuyOrders,
       },
-      aiSubsidiaryActions,
       construction: constructionResult,
       newsGenerated,
     };
@@ -893,24 +897,28 @@ export class GameLoop {
       if (!companies.isAI[i]) continue;
       if (bankruptcyResolution.hasActiveEvent(i)) continue;
       
-      const cash = companies.cash[i];
-      const liabilities = companies.totalLiabilities[i];
-      const assets = companies.totalAssets[i];
-      
-      // 计算净资产
-      const netWorth = cash + assets - liabilities;
+      const { cash, liabilities, netWorth, totalAssets } = calculateCompanyAssetBreakdown(this.world, i);
       
       // 破产条件：
       // 1. 净资产为负
-      // 2. 现金不足以支付运营成本（假设每个建筑需要1000/tick）
-      // 【性能优化】直接读取预计算的建筑数量，无需遍历所有建筑
-      const buildingCount = companies.buildingCounts[i];
-      
-      const operatingCost = buildingCount * 1000;
-      const isCashInsolvent = cash < operatingCost && cash < 10000;
-      const isBalanceInsolvent = netWorth < -liabilities * 0.5;
-      
-      if (isCashInsolvent || isBalanceInsolvent) {
+      // 2. 现金不足以支付活跃运营建筑成本（破产冻结/停用资产不再产生经营成本）
+      let activeBuildingCount = 0;
+      for (let buildingId = 0; buildingId < this.world.buildings.count; buildingId++) {
+        if (this.world.buildings.owners[buildingId] === i && this.world.buildings.isActive[buildingId]) {
+          activeBuildingCount++;
+        }
+      }
+
+      // 收紧后的破产判定：
+      // 1. 现金破产：cash < -2 倍月运营成本，无法持续支付（更早识别失血）
+      // 2. 资产负债表破产：净资产 < 0（资不抵债）
+      // 3. 极端流动性破产：cash 严重为负且没有任何资产兜底
+      const operatingCost = Math.max(activeBuildingCount * 1000, 1000);
+      const isCashInsolvent = cash < -operatingCost * 2;
+      const isBalanceInsolvent = netWorth < 0;
+      const isLiquidityInsolvent = cash < -50000 && totalAssets <= liabilities;
+
+      if (isCashInsolvent || isBalanceInsolvent || isLiquidityInsolvent) {
         this.handleBankruptcy(i);
       }
     }

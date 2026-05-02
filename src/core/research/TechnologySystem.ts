@@ -103,7 +103,7 @@ const PRODUCTION_TECHNOLOGIES: Technology[] = [
       features: ['advanced_recipes'],
     },
     effects: {
-      productionBonus: 0.05,
+      productionBonus: 0,
     },
     tier: 1,
     position: 1,
@@ -122,8 +122,8 @@ const PRODUCTION_TECHNOLOGIES: Technology[] = [
       recipes: [78], // 高级钢材
     },
     effects: {
-      productionBonus: 0.08,
-      qualityBonus: 0.05,
+      productionBonus: 0,
+      qualityBonus: 0,
     },
     tier: 2,
     position: 1,
@@ -142,8 +142,8 @@ const PRODUCTION_TECHNOLOGIES: Technology[] = [
       productionMethods: [101, 102],
     },
     effects: {
-      qualityBonus: 0.1,
-      efficiencyBonus: 0.05,
+      qualityBonus: 0,
+      efficiencyBonus: 0,
     },
     tier: 3,
     position: 1,
@@ -162,8 +162,8 @@ const PRODUCTION_TECHNOLOGIES: Technology[] = [
       features: ['mass_production_mode'],
     },
     effects: {
-      productionBonus: 0.15,
-      costReduction: 0.1,
+      productionBonus: 0,
+      costReduction: 0,
     },
     tier: 4,
     position: 1,
@@ -188,7 +188,7 @@ const LOGISTICS_TECHNOLOGIES: Technology[] = [
       subsidiaries: [10], // 装卸码头
     },
     effects: {
-      storageBonus: 0.1,
+      storageBonus: 0,
     },
     tier: 1,
     position: 2,
@@ -207,8 +207,8 @@ const LOGISTICS_TECHNOLOGIES: Technology[] = [
       subsidiaries: [1, 2], // 基础仓库、冷藏仓库
     },
     effects: {
-      storageBonus: 0.2,
-      costReduction: 0.05,
+      storageBonus: 0,
+      costReduction: 0,
     },
     tier: 2,
     position: 2,
@@ -227,8 +227,8 @@ const LOGISTICS_TECHNOLOGIES: Technology[] = [
       features: ['supply_contracts'],
     },
     effects: {
-      tradingBonus: 0.1,
-      costReduction: 0.08,
+      tradingBonus: 0,
+      costReduction: 0,
     },
     tier: 3,
     position: 2,
@@ -253,7 +253,7 @@ const AUTOMATION_TECHNOLOGIES: Technology[] = [
       productionMethods: [103],
     },
     effects: {
-      efficiencyBonus: 0.1,
+      efficiencyBonus: 0,
     },
     tier: 2,
     position: 3,
@@ -272,8 +272,8 @@ const AUTOMATION_TECHNOLOGIES: Technology[] = [
       subsidiaries: [3], // 自动化仓库
     },
     effects: {
-      efficiencyBonus: 0.15,
-      productionBonus: 0.1,
+      efficiencyBonus: 0,
+      productionBonus: 0,
     },
     tier: 3,
     position: 3,
@@ -292,9 +292,9 @@ const AUTOMATION_TECHNOLOGIES: Technology[] = [
       features: ['smart_production'],
     },
     effects: {
-      efficiencyBonus: 0.25,
-      productionBonus: 0.2,
-      costReduction: 0.15,
+      efficiencyBonus: 0,
+      productionBonus: 0,
+      costReduction: 0,
     },
     tier: 5,
     position: 2,
@@ -319,7 +319,7 @@ const QUALITY_TECHNOLOGIES: Technology[] = [
       subsidiaries: [20], // 品质实验室
     },
     effects: {
-      qualityBonus: 0.08,
+      qualityBonus: 0,
     },
     tier: 1,
     position: 3,
@@ -338,7 +338,7 @@ const QUALITY_TECHNOLOGIES: Technology[] = [
       recipes: [100], // 高品质产品配方
     },
     effects: {
-      qualityBonus: 0.12,
+      qualityBonus: 0,
     },
     tier: 2,
     position: 4,
@@ -357,7 +357,7 @@ const QUALITY_TECHNOLOGIES: Technology[] = [
       buildings: [36], // 奢侈品工坊
     },
     effects: {
-      qualityBonus: 0.2,
+      qualityBonus: 0,
     },
     tier: 4,
     position: 4,
@@ -382,7 +382,7 @@ const MARKET_TECHNOLOGIES: Technology[] = [
       features: ['market_insights'],
     },
     effects: {
-      tradingBonus: 0.05,
+      tradingBonus: 0,
     },
     tier: 1,
     position: 4,
@@ -401,7 +401,7 @@ const MARKET_TECHNOLOGIES: Technology[] = [
       features: ['brand_system'],
     },
     effects: {
-      tradingBonus: 0.1,
+      tradingBonus: 0,
     },
     tier: 2,
     position: 5,
@@ -420,8 +420,8 @@ const MARKET_TECHNOLOGIES: Technology[] = [
       features: ['global_trade'],
     },
     effects: {
-      tradingBonus: 0.2,
-      storageBonus: 0.15,
+      tradingBonus: 0,
+      storageBonus: 0,
     },
     tier: 4,
     position: 5,
@@ -446,7 +446,7 @@ const FINANCE_TECHNOLOGIES: Technology[] = [
       features: ['advanced_loans'],
     },
     effects: {
-      costReduction: 0.03,
+      costReduction: 0,
     },
     tier: 1,
     position: 5,
@@ -465,7 +465,7 @@ const FINANCE_TECHNOLOGIES: Technology[] = [
       features: ['stock_trading'],
     },
     effects: {
-      tradingBonus: 0.08,
+      tradingBonus: 0,
     },
     tier: 2,
     position: 6,
@@ -484,7 +484,7 @@ const FINANCE_TECHNOLOGIES: Technology[] = [
       features: ['acquisitions'],
     },
     effects: {
-      costReduction: 0.1,
+      costReduction: 0,
     },
     tier: 4,
     position: 6,

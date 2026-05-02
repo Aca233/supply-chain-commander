@@ -1,22 +1,22 @@
 /**
  * 游戏核心常量定义
  * 这些常量用于SoA数据结构的大小分配和游戏规则配置
- * 精简版本：约88种商品、44种建筑、60种配方
+ * 精简版本：80种商品、50种建筑、60种配方
  */
 
 // ==================== 数据规模常量 ====================
 
-/** 商品种类数（实际88种，预留空间至128） */
-export const GOODS_COUNT = 128;
+/** 商品种类数（当前运行时统一使用实际 80 种商品） */
+export const GOODS_COUNT = 80;
 
-/** 实际商品数量（用于遍历时的精确计数，与goods.ts中ALL_GOODS数量一致） */
-export const ACTUAL_GOODS_COUNT = 80;
+/** 实际商品数量（与 goods.ts 中 ALL_GOODS 数量保持一致） */
+export const ACTUAL_GOODS_COUNT = GOODS_COUNT;
 
 /** 最大建筑数量（增加以支持更多产业链） */
 export const MAX_BUILDINGS = 3000;
 
 /** 最大公司数量（包括玩家和AI） */
-export const MAX_COMPANIES = 100;
+export const MAX_COMPANIES = 200;
 
 /** 最大订单数量（大幅增加到50万以支持大规模交易，约占25MB内存） */
 export const MAX_ORDERS = 500000;
@@ -30,9 +30,6 @@ export const MAX_OUTPUTS = 4;
 /** 每个建筑最大生产方式槽位 */
 export const MAX_SLOTS = 5;
 
-/** 每个建筑最大附属建筑槽位 */
-export const MAX_SUBSIDIARIES = 6;
-
 /** 价格历史记录长度 */
 export const HISTORY_SIZE = 365;
 
@@ -42,8 +39,8 @@ export const POPS_GROUPS = 8;
 /** 消费品种类数（实际约45种，根据goods.ts中isConsumerGood统计） */
 export const CONSUMER_GOODS_COUNT = 45;
 
-/** 建筑类型数量（44种建筑，精简版产业链） */
-export const BUILDING_TYPES_COUNT = 44;
+/** 建筑类型数量（50种建筑，含 10 种零售业态） */
+export const BUILDING_TYPES_COUNT = 50;
 
 /** 配方数量（60个配方，精简版产业链） */
 export const RECIPE_COUNT = 60;
@@ -174,18 +171,26 @@ export const AI_DECISION_INTERVAL = 6;
 export const AI_BATCH_SIZE = 10;
 
 // ==================== AI订单存活期常量 ====================
+// 注：原值过短（1-2 tick）导致挂单频繁过期被清，撮合机会窗口太短，
+// 表现为"零售店买不到、AI 卖不出"。统一拉长到符合现实的"挂几天"语义。
 
-/** 普通AI买单过期时间（tick）- 约8游戏天 */
-export const AI_BUY_ORDER_EXPIRY = 200;
+/** 普通AI买单过期时间（tick） */
+export const AI_BUY_ORDER_EXPIRY = TICKS_PER_DAY * 5;
 
-/** 普通AI卖单过期时间（tick）- 约12游戏天 */
-export const AI_SELL_ORDER_EXPIRY = 300;
+/** 普通AI卖单过期时间（tick） */
+export const AI_SELL_ORDER_EXPIRY = TICKS_PER_DAY * 5;
 
-/** 紧急订单过期时间（tick）- 约2游戏天 */
-export const URGENT_ORDER_EXPIRY = 50;
+/** 紧急订单过期时间（tick） */
+export const URGENT_ORDER_EXPIRY = TICKS_PER_DAY * 2;
 
-/** 建造材料买单过期时间（tick）- 约25游戏天，比普通买单更长 */
-export const BUILDING_MATERIAL_ORDER_EXPIRY = 600;
+/** 建造材料买单过期时间（tick） */
+export const BUILDING_MATERIAL_ORDER_EXPIRY = TICKS_PER_DAY * 10;
+
+/** 零售补货买单过期时间（tick）— 零售店缺货时挂的买单需要更长窗口等卖方进场 */
+export const RETAIL_BUY_ORDER_EXPIRY = TICKS_PER_DAY * 10;
+
+/** 低周转商品（奢侈品/汽车/高端家电）卖单过期时间（tick）— 长期持仓不应被频繁清理 */
+export const LOW_TURNOVER_SELL_ORDER_EXPIRY = TICKS_PER_DAY * 15;
 
 /** 订单池健康警告阈值（使用率超过此比例时警告） */
 export const ORDER_POOL_WARNING_THRESHOLD = 0.7;
@@ -209,8 +214,8 @@ export const MAX_RETAIL_STORES = 500;
 /** 零售建筑类型起始ID（当前零售目录从便利店开始） */
 export const RETAIL_BUILDING_START_ID = 40;
 
-/** 零售建筑类型数量（当前仅有便利店） */
-export const RETAIL_BUILDING_COUNT = 1;
+/** 零售建筑类型数量（10 种业态：便利店/超市/电器/4S 店/服装/家具/药房/奢侈品/能源服务/百货） */
+export const RETAIL_BUILDING_COUNT = 10;
 
 /** 零售进货触发阈值（库存低于此比例时触发进货） */
 export const RETAIL_RESTOCK_THRESHOLD = 0.3;
@@ -218,8 +223,13 @@ export const RETAIL_RESTOCK_THRESHOLD = 0.3;
 /** 零售目标库存水平 */
 export const RETAIL_TARGET_STOCK_LEVEL = 0.9;
 
-/** 每tick最大客流处理比例（提高以增加市场活跃度） */
-export const RETAIL_MAX_CUSTOMER_RATE = 0.25;  // 从0.15提高到0.25，增加消费速度
+/** 每tick最大客流处理比例
+ * Why: day-model 迁移后 1 tick = 1 天，0.15 意味着每天只消费 15% 的需求池，注入端工资按
+ *      日全额发放、消费端按 15% 回流，2 年内累积导致家庭池吸光所有现金、AI 公司链式破产。
+ * How: 提高到 0.85，让单日能消费 ~85% 的当日需求，留 ~15% 滚到次日；与 hourly 模型下
+ *      0.15×24≈99% 的实际等效日消费速率近似。
+ */
+export const RETAIL_MAX_CUSTOMER_RATE = 0.85;
 
 /** 零售价格调整周期（tick） */
 export const RETAIL_PRICE_ADJUST_INTERVAL = TICKS_PER_DAY;
