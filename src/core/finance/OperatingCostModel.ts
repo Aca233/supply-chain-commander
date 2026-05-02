@@ -28,7 +28,7 @@ export function calculateBuildingDefinitionOperatingCostPerTick(
   ticksPerDay: number = TICKS_PER_DAY,
 ): OperatingCostBreakdown {
   const maintenance = scaleOperatingCostAmount(buildingDef.maintenanceCost, ticksPerDay);
-  const labor = scaleOperatingCostAmount(buildingDef.laborCost, ticksPerDay);
+  const labor = 0;
   const energy = scaleOperatingCostAmount(buildingDef.energyCost * energyMultiplier, ticksPerDay);
   const cashExpense = maintenance + labor + energy;
 

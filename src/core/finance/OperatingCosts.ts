@@ -47,7 +47,7 @@ export function calculateCompanyOperatingCostPerTick(
     if (!buildingDef) continue;
 
     maintenance += buildingDef.maintenanceCost / ticksPerDay;
-    labor += buildingDef.laborCost / ticksPerDay;
+    labor += 0;
 
     // 能耗：基础能耗 + method 配方提供的额外能耗
     const recipeEnergy = getBuildingRecipeEnergy(world, buildingId);
@@ -80,11 +80,6 @@ export function applyOperatingCosts(
       world.companies.cash[companyId] -= breakdown.cashExpense;
     }
 
-    const wagesToHouseholds = breakdown.labor;
-    if (wagesToHouseholds > 0) {
-      world.households.cash[0] += wagesToHouseholds;
-      world.households.totalWagesReceived += wagesToHouseholds;
-    }
   }
 
   return breakdowns;

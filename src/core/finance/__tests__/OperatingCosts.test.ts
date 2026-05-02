@@ -36,7 +36,7 @@ describe('OperatingCosts', () => {
     initializeBuildingProductionMethods();
   });
 
-  it('calculates per-tick maintenance, labor, energy from building base costs + recipe energy delta', () => {
+  it('calculates per-tick maintenance and energy from building base costs + recipe energy delta, excluding payroll', () => {
     const world = createGameWorld();
     world.companies.count = 2;
 
@@ -52,9 +52,7 @@ describe('OperatingCosts', () => {
     expect(breakdown.maintenance).toBeCloseTo(
       (ironMine.maintenanceCost + steelMill.maintenanceCost) / TICKS_PER_DAY,
     );
-    expect(breakdown.labor).toBeCloseTo(
-      (ironMine.laborCost + steelMill.laborCost) / TICKS_PER_DAY,
-    );
+    expect(breakdown.labor).toBeCloseTo(0);
     // Vic3 风格：energy = base energyCost + 所有 method 的 energyDelta 求和
     const expectedEnergy =
       (ironMine.energyCost + recipeEnergyFor(world, ironMineId) +
@@ -78,9 +76,8 @@ describe('OperatingCosts', () => {
     expect(breakdowns[0].cashExpense).toBeCloseTo(breakdowns[0].total);
     expect(breakdowns[0].nonCashExpense).toBeCloseTo(0);
     expect(world.companies.cash[1]).toBeCloseTo(500_000);
-    const expectedHouseholdInflow = breakdowns[0].labor;
-    expect(world.households.cash[0]).toBeCloseTo(expectedHouseholdInflow);
-    expect(world.households.totalWagesReceived).toBeCloseTo(expectedHouseholdInflow);
+    expect(world.households.cash[0]).toBeCloseTo(0);
+    expect(world.households.totalWagesReceived).toBeCloseTo(0);
   });
 
   it('ignores inactive buildings when calculating recurring operating costs', () => {
@@ -98,7 +95,22 @@ describe('OperatingCosts', () => {
       (ironMine.energyCost + recipeEnergyFor(world, activeBuildingId)) / TICKS_PER_DAY;
 
     expect(activeBreakdown.maintenance).toBeCloseTo(ironMine.maintenanceCost / TICKS_PER_DAY);
-    expect(activeBreakdown.labor).toBeCloseTo(ironMine.laborCost / TICKS_PER_DAY);
+    expect(activeBreakdown.labor).toBeCloseTo(0);
     expect(activeBreakdown.energy).toBeCloseTo(expectedEnergy);
+  });
+
+  it('does not deduct old building laborCost as operating cost', () => {
+    const world = createGameWorld();
+    world.companies.count = 1;
+    world.companies.cash[0] = 1_000_000;
+    addOwnedBuilding(world, 0, BuildingId.IRON_MINE);
+
+    const ironMine = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
+    const breakdown = applyOperatingCosts(world)[0];
+
+    expect(breakdown.labor).toBe(0);
+    expect(breakdown.total).toBeLessThan(
+      (ironMine.maintenanceCost + ironMine.laborCost + ironMine.energyCost) / TICKS_PER_DAY,
+    );
   });
 });

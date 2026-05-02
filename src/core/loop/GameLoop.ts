@@ -11,6 +11,12 @@
 import { GameWorld } from '../world/GameWorld';
 import { updateAllProduction, autoFeedBuildings, initRecipeCache } from '../production/ProductionEngine';
 import { initializeBuildingProductionMethods } from '../production/ProductionMethods';
+import {
+  accrueDailyPayroll,
+  addMonthlyLaborGrowth,
+  payMonthlyPayroll,
+  updateMarketWages,
+} from '../labor/LaborSystem';
 import { matchAllOrders, MatchingResult } from '../market/MatchingEngine';
 import { cleanupExpiredOrders, initOrderPool, getOrderPoolStats, getOrderPoolHealth, logOrderPoolPerformance, syncOrderPoolWithWorld } from '../market/OrderBook';
 import { resetOrderBookIndex } from '../market/OrderBookIndex';
@@ -392,6 +398,7 @@ export class GameLoop {
     // 1. 自动补充建筑输入
     const endAutoFeed = perfMonitor.startMeasure('autoFeed');
     autoFeedBuildings(this.world);
+    updateMarketWages(this.world);
     endAutoFeed();
     
     // 2. 获取季节信息（不再直接修改demands）
@@ -579,6 +586,11 @@ export class GameLoop {
     updateBankingSystem(this.world);
     
     // 19.5. 结算建筑运营成本（维护、人力、能耗）
+    accrueDailyPayroll(this.world);
+    if (currentTick % TICKS_PER_MONTH === 0) {
+      payMonthlyPayroll(this.world);
+      addMonthlyLaborGrowth(this.world);
+    }
     applyOperatingCosts(this.world);
     
     // ==================== 阶段6: 品牌和状态更新 ====================
