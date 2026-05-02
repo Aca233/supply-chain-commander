@@ -25,6 +25,16 @@ export interface WorkforceCoverageResult {
   bottleneckRole: LaborRole | null;
 }
 
+export type BuildingLaborRecipeProvider = (
+  world: GameWorld,
+  buildingId: number,
+) => { workforceRequired: WorkforceDemand };
+
+export type AICompanyPersonalityProvider = (
+  world: GameWorld,
+  companyId: number,
+) => { type?: string } | null;
+
 export const EMPTY_WORKFORCE_DEMAND: WorkforceDemand = {
   basic: 0,
   technical: 0,
@@ -242,6 +252,15 @@ export function hydrateLaborState(world: GameWorld): void {
 
 const BASE_HIRE_RATES = [0.12, 0.07, 0.04] as const;
 const BASE_QUIT_RATES = [0.025, 0.018, 0.012] as const;
+const AI_WAGE_MULTIPLIER_FLOOR = 0.8;
+let buildingLaborRecipeProvider: BuildingLaborRecipeProvider | null = null;
+let aiCompanyPersonalityProvider: AICompanyPersonalityProvider | null = null;
+
+interface AIWageAdjustmentProfile {
+  upStep: number;
+  downStep: number;
+  maxMultiplier: number;
+}
 
 function isValidBuilding(world: GameWorld, buildingId: number): boolean {
   return Number.isInteger(buildingId) && buildingId >= 0 && buildingId < world.buildings.maxCount;
@@ -251,9 +270,103 @@ function getSafeLaborValue(value: number): number {
   return Math.max(0, Number.isFinite(value) ? value : 0);
 }
 
+export function setBuildingLaborRecipeProvider(provider: BuildingLaborRecipeProvider): void {
+  buildingLaborRecipeProvider = provider;
+}
+
+export function setAICompanyPersonalityProvider(provider: AICompanyPersonalityProvider): void {
+  aiCompanyPersonalityProvider = provider;
+}
+
 function getBuildingRoleHired(world: GameWorld, buildingId: number, role: LaborRole): number {
   if (!isValidBuilding(world, buildingId) || !isValidLaborRole(role)) return 0;
   return getSafeLaborValue(world.buildings.workforceHired[getBuildingLaborIndex(buildingId, role)] || 0);
+}
+
+function getValidBuildingOwner(world: GameWorld, buildingId: number): number {
+  if (!isValidBuilding(world, buildingId)) return -1;
+  const owner = world.buildings.owners[buildingId];
+  return Number.isInteger(owner) && owner >= 0 && owner < world.companies.count ? owner : -1;
+}
+
+function isBuildingActiveForLaborMarket(world: GameWorld, buildingId: number): boolean {
+  return (
+    Number.isInteger(buildingId) &&
+    buildingId >= 0 &&
+    buildingId < world.buildings.count &&
+    world.buildings.isActive[buildingId] === 1 &&
+    getValidBuildingOwner(world, buildingId) >= 0
+  );
+}
+
+function getActiveWorkforceDemand(world: GameWorld, buildingId: number): WorkforceDemand {
+  const efficiency = world.buildings.efficiencies[buildingId] || 0;
+  if (efficiency <= 0) return { ...EMPTY_WORKFORCE_DEMAND };
+  if (!buildingLaborRecipeProvider) return { ...EMPTY_WORKFORCE_DEMAND };
+
+  const recipe = buildingLaborRecipeProvider(world, buildingId);
+  return scaleWorkforceDemand(recipe.workforceRequired, efficiency);
+}
+
+function getWageMultiplier(world: GameWorld, buildingId: number, role: LaborRole): number {
+  const idx = getBuildingLaborIndex(buildingId, role);
+  return clampWageMultiplier(world.buildings.wageMultipliers[idx] || 1);
+}
+
+function isAICompany(world: GameWorld, companyId: number): boolean {
+  const flags = world.companies.isAI as unknown as ArrayLike<boolean | number> | undefined;
+  const flag = flags?.[companyId];
+  return flag === true || flag === 1;
+}
+
+function getAIWageAdjustmentProfile(world: GameWorld, companyId: number): AIWageAdjustmentProfile {
+  const personality = aiCompanyPersonalityProvider?.(world, companyId) ?? null;
+
+  switch (personality?.type) {
+    case 'aggressive':
+    case 'pioneer':
+      return { upStep: 0.04, downStep: 0.008, maxMultiplier: 1.8 };
+    case 'conservative':
+    case 'cost_leader':
+      return { upStep: 0.015, downStep: 0.02, maxMultiplier: 1.35 };
+    default:
+      return { upStep: 0.025, downStep: 0.012, maxMultiplier: 1.55 };
+  }
+}
+
+function clampAIWageMultiplier(value: number, maxMultiplier: number): number {
+  const clamped = clampWageMultiplier(value);
+  const profileMax = Math.min(WAGE_MULTIPLIER_MAX, Math.max(AI_WAGE_MULTIPLIER_FLOOR, maxMultiplier));
+  return Math.max(AI_WAGE_MULTIPLIER_FLOOR, Math.min(profileMax, clamped));
+}
+
+function estimateCompanyDailyTargetPayroll(world: GameWorld, companyId: number): number {
+  let total = 0;
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!isBuildingActiveForLaborMarket(world, buildingId)) continue;
+    if (getValidBuildingOwner(world, buildingId) !== companyId) continue;
+
+    const activeDemand = getActiveWorkforceDemand(world, buildingId);
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const typedRole = role as LaborRole;
+      const demand = getWorkforceDemandValue(activeDemand, typedRole);
+      if (demand <= 0) continue;
+
+      const wage = getSafeLaborValue(world.labor.marketWages[typedRole] || 0);
+      total += demand * wage * getWageMultiplier(world, buildingId, typedRole);
+    }
+  }
+
+  return total;
+}
+
+function isCompanyCashPressured(world: GameWorld, companyId: number): boolean {
+  const targetMonthlyPayroll = estimateCompanyDailyTargetPayroll(world, companyId) * 30;
+  if (targetMonthlyPayroll <= 0) return false;
+
+  const cash = getSafeLaborValue(world.companies.cash[companyId] || 0);
+  return cash < targetMonthlyPayroll;
 }
 
 export function hireForBuildingRole(
@@ -309,6 +422,89 @@ export function processRoleAttrition(
   world.labor.unemployed[role] += quit;
 
   return quit;
+}
+
+export function adjustAIWageMultipliers(world: GameWorld): void {
+  hydrateLaborState(world);
+
+  const cashPressureByCompany = new Map<number, boolean>();
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!isBuildingActiveForLaborMarket(world, buildingId)) continue;
+
+    const owner = getValidBuildingOwner(world, buildingId);
+    if (!isAICompany(world, owner)) continue;
+
+    const activeDemand = getActiveWorkforceDemand(world, buildingId);
+    if (getTotalWorkforceDemand(activeDemand) <= 0) continue;
+
+    const profile = getAIWageAdjustmentProfile(world, owner);
+    let cashPressured = cashPressureByCompany.get(owner);
+    if (cashPressured === undefined) {
+      cashPressured = isCompanyCashPressured(world, owner);
+      cashPressureByCompany.set(owner, cashPressured);
+    }
+
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const typedRole = role as LaborRole;
+      const demand = getWorkforceDemandValue(activeDemand, typedRole);
+      if (demand <= 0) continue;
+
+      const idx = getBuildingLaborIndex(buildingId, typedRole);
+      const current = clampAIWageMultiplier(world.buildings.wageMultipliers[idx] || 1, profile.maxMultiplier);
+      const hired = getBuildingRoleHired(world, buildingId, typedRole);
+
+      let next = current;
+      if (cashPressured || hired >= demand) {
+        next = current - profile.downStep;
+      } else if (hired < demand) {
+        next = current + profile.upStep;
+      }
+
+      world.buildings.wageMultipliers[idx] = clampAIWageMultiplier(next, profile.maxMultiplier);
+    }
+  }
+}
+
+export function processBuildingLaborMarket(world: GameWorld): void {
+  hydrateLaborState(world);
+  world.labor.demandOpenings.fill(0);
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!isBuildingActiveForLaborMarket(world, buildingId)) continue;
+
+    const activeDemand = getActiveWorkforceDemand(world, buildingId);
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const typedRole = role as LaborRole;
+      const demand = getWorkforceDemandValue(activeDemand, typedRole);
+      if (demand <= 0) continue;
+
+      const opening = Math.max(0, demand - getBuildingRoleHired(world, buildingId, typedRole));
+      world.labor.demandOpenings[typedRole] += opening;
+    }
+  }
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!isBuildingActiveForLaborMarket(world, buildingId)) continue;
+
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const typedRole = role as LaborRole;
+      processRoleAttrition(world, buildingId, typedRole, getWageMultiplier(world, buildingId, typedRole));
+    }
+  }
+
+  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
+    if (!isBuildingActiveForLaborMarket(world, buildingId)) continue;
+
+    const activeDemand = getActiveWorkforceDemand(world, buildingId);
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const typedRole = role as LaborRole;
+      const demand = getWorkforceDemandValue(activeDemand, typedRole);
+      if (demand <= 0) continue;
+
+      hireForBuildingRole(world, buildingId, typedRole, demand, getWageMultiplier(world, buildingId, typedRole));
+    }
+  }
 }
 
 export function updateMarketWages(world: GameWorld): void {

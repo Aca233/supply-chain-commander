@@ -6,6 +6,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
+import { setAICompanyPersonalityProvider } from '@/core/labor/LaborSystem';
 import {
   initializeBuildingProductionMethods,
 } from '@/core/production/ProductionMethods';
@@ -2201,6 +2202,8 @@ export function getCompanyPersonality(world: GameWorld, companyId: number): AIPe
   if (!config) return null;
   return AI_PERSONALITIES[config.personality];
 }
+
+setAICompanyPersonalityProvider(getCompanyPersonality);
 
 /**
  * 根据人格调整决策

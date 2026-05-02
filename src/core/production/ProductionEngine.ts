@@ -28,6 +28,7 @@ import {
 } from './ProductionControl';
 import {
   calculateWorkforceCoverage,
+  setBuildingLaborRecipeProvider,
   type WorkforceCoverageResult,
 } from '@/core/labor/LaborSystem';
 
@@ -66,6 +67,8 @@ export function initProductionCache(): void {
 export function getBuildingRecipeFromInstance(world: GameWorld, buildingId: number): ComputedRecipe {
   return getBuildingRecipe(world, buildingId);
 }
+
+setBuildingLaborRecipeProvider(getBuildingRecipeFromInstance);
 
 // 兼容旧版调用
 export const initRecipeCache = initProductionCache;

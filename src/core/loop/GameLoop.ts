@@ -14,7 +14,9 @@ import { initializeBuildingProductionMethods } from '../production/ProductionMet
 import {
   accrueDailyPayroll,
   addMonthlyLaborGrowth,
+  adjustAIWageMultipliers,
   payMonthlyPayroll,
+  processBuildingLaborMarket,
   updateMarketWages,
 } from '../labor/LaborSystem';
 import { matchAllOrders, MatchingResult } from '../market/MatchingEngine';
@@ -399,6 +401,8 @@ export class GameLoop {
     const endAutoFeed = perfMonitor.startMeasure('autoFeed');
     autoFeedBuildings(this.world);
     updateMarketWages(this.world);
+    adjustAIWageMultipliers(this.world);
+    processBuildingLaborMarket(this.world);
     endAutoFeed();
     
     // 2. 获取季节信息（不再直接修改demands）
