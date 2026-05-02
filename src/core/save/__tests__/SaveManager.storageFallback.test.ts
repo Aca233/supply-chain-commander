@@ -255,4 +255,90 @@ describe('SaveManager storage fallback', () => {
     expect(world.buildings.wageMultipliers[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)]).toBeCloseTo(1.4);
     expect(world.buildings.accruedPayroll[0]).toBe(345);
   });
+
+  it('clears stale building labor slots beyond the loaded building count before reuse', () => {
+    const manager = new SaveManager();
+    const world = createGameWorld();
+    world.companies.count = 1;
+
+    addBuilding(world, 0, BuildingId.IRON_MINE, {
+      slotMethods: getDefaultSlotMethods(BuildingId.IRON_MINE),
+    });
+    const staleBuildingId = addBuilding(world, 0, BuildingId.IRON_MINE, {
+      slotMethods: getDefaultSlotMethods(BuildingId.IRON_MINE),
+    });
+    world.buildings.workforceHired[getBuildingLaborIndex(staleBuildingId, LABOR_ROLE_BASIC)] = 77;
+    world.buildings.workforceHired[getBuildingLaborIndex(staleBuildingId, LABOR_ROLE_TECHNICAL)] = 9;
+    world.buildings.wageMultipliers[getBuildingLaborIndex(staleBuildingId, LABOR_ROLE_BASIC)] = 1.8;
+    world.buildings.wageMultipliers[getBuildingLaborIndex(staleBuildingId, LABOR_ROLE_TECHNICAL)] = 1.6;
+    world.buildings.accruedPayroll[staleBuildingId] = 12_345;
+
+    const smallerSave = createLegacyLaborPayload({
+      labor: {
+        totalSupply: [120_000, 32_000, 8_000],
+        employed: [0, 0, 0],
+        unemployed: [120_000, 32_000, 8_000],
+        marketWages: [120, 260, 520],
+        monthlyGrowth: [600, 120, 30],
+        demandOpenings: [0, 0, 0],
+        lastPayrollTick: 0,
+      },
+      buildings: {
+        count: 1,
+        types: [BuildingId.IRON_MINE],
+        owners: [0],
+        levels: [1],
+        efficiencies: [1],
+        slotMethods: createLegacyLaborPayload().buildings.slotMethods,
+        isActive: [1],
+        workforceHired: [0, 0, 0],
+        wageMultipliers: [1, 1, 1],
+        accruedPayroll: [0],
+      },
+    });
+
+    manager.deserializeWorld(smallerSave, world);
+    const reusedBuildingId = addBuilding(world, 0, BuildingId.IRON_MINE, {
+      slotMethods: getDefaultSlotMethods(BuildingId.IRON_MINE),
+    });
+
+    expect(reusedBuildingId).toBe(staleBuildingId);
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_BASIC)]).toBe(0);
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_TECHNICAL)]).toBe(0);
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_MANAGEMENT)]).toBe(0);
+    expect(world.buildings.wageMultipliers[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_BASIC)]).toBe(1);
+    expect(world.buildings.wageMultipliers[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_TECHNICAL)]).toBe(1);
+    expect(world.buildings.wageMultipliers[getBuildingLaborIndex(reusedBuildingId, LABOR_ROLE_MANAGEMENT)]).toBe(1);
+    expect(world.buildings.accruedPayroll[reusedBuildingId]).toBe(0);
+  });
+
+  it('migrates saves with incomplete labor payloads instead of preserving half-restored counts', () => {
+    const manager = new SaveManager();
+    const world = createGameWorld();
+    const payload = createLegacyLaborPayload({
+      labor: {
+        totalSupply: [120_000, 32_000, 8_000],
+        employed: [999, 0, 0],
+        unemployed: [119_001, 32_000, 8_000],
+        marketWages: [120, 260, 520],
+        monthlyGrowth: [600, 120, 30],
+        demandOpenings: [0, 0, 0],
+        lastPayrollTick: 17,
+      },
+    });
+
+    manager.deserializeWorld(payload, world);
+
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)]).toBe(
+      expectedLegacyHire(LABOR_ROLE_BASIC),
+    );
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_TECHNICAL)]).toBe(
+      expectedLegacyHire(LABOR_ROLE_TECHNICAL),
+    );
+    expect(world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_MANAGEMENT)]).toBe(
+      expectedLegacyHire(LABOR_ROLE_MANAGEMENT),
+    );
+    expect(world.labor.employed[LABOR_ROLE_BASIC]).toBe(expectedLegacyHire(LABOR_ROLE_BASIC));
+    expect(world.labor.unemployed[LABOR_ROLE_BASIC]).toBe(120_000 - expectedLegacyHire(LABOR_ROLE_BASIC));
+  });
 });

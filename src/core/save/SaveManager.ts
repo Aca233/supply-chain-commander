@@ -219,11 +219,34 @@ export class SaveManager {
     }
   }
 
+  private hasNumberArray(value: unknown, minLength: number = 0): value is readonly number[] {
+    return Array.isArray(value) && value.length >= minLength;
+  }
+
+  private hasCompleteSerializedLaborState(data: SerializedWorld): boolean {
+    const labor = data.labor;
+    if (!labor) return false;
+
+    const buildingCount = Math.max(0, data.buildings.count || 0);
+    const buildingLaborLength = buildingCount * LABOR_ROLE_COUNT;
+
+    return (
+      this.hasNumberArray(labor.totalSupply, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(labor.employed, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(labor.unemployed, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(labor.marketWages, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(labor.monthlyGrowth, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(labor.demandOpenings, LABOR_ROLE_COUNT) &&
+      this.hasNumberArray(data.buildings.workforceHired, buildingLaborLength) &&
+      this.hasNumberArray(data.buildings.wageMultipliers, buildingLaborLength) &&
+      this.hasNumberArray(data.buildings.accruedPayroll, buildingCount)
+    );
+  }
+
   private resetBuildingLaborState(world: GameWorld): void {
-    const laborLength = world.buildings.count * LABOR_ROLE_COUNT;
-    world.buildings.workforceHired.fill(0, 0, laborLength);
-    world.buildings.wageMultipliers.fill(1.0, 0, laborLength);
-    world.buildings.accruedPayroll.fill(0, 0, world.buildings.count);
+    world.buildings.workforceHired.fill(0);
+    world.buildings.wageMultipliers.fill(1.0);
+    world.buildings.accruedPayroll.fill(0);
   }
 
   private restoreLaborState(data: SerializedWorld['labor'], world: GameWorld): void {
@@ -312,7 +335,7 @@ export class SaveManager {
   }
   
   deserializeWorld(data: SerializedWorld, world: GameWorld): void {
-    const hasSerializedLabor = data.labor !== undefined;
+    const hasCompleteSerializedLabor = this.hasCompleteSerializedLaborState(data);
 
     // 恢复游戏tick（修复日期重置问题）
     world.tick = this.normalizeLoadedTick(data.currentTick, data.timeModel ?? 'hour');
@@ -372,15 +395,17 @@ export class SaveManager {
       }
     }
 
-    if (!hasSerializedLabor) {
+    if (!hasCompleteSerializedLabor) {
       (world as unknown as { labor?: GameWorld['labor'] }).labor = undefined;
     }
     hydrateLaborState(world);
     this.resetBuildingLaborState(world);
-    this.restoreLaborState(data.labor, world);
-    this.restoreBuildingLaborState(data.buildings, world);
+    if (hasCompleteSerializedLabor) {
+      this.restoreLaborState(data.labor, world);
+      this.restoreBuildingLaborState(data.buildings, world);
+    }
     hydrateLaborState(world);
-    if (!hasSerializedLabor) {
+    if (!hasCompleteSerializedLabor) {
       this.migrateLegacyLaborState(world);
     }
 
