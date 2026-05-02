@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { useGameStore } from '@/stores/gameStore';
+import { useGameStore, type LaborRoleKey } from '@/stores/gameStore';
 import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
@@ -53,6 +53,8 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     getBuildingProductionControl,
     setBuildingProductionControlAuto,
     setBuildingManualProductionTarget,
+    getBuildingLaborView,
+    setBuildingLaborWageMultiplier,
     tick,
     setSelectedGoods,
     setCurrentPage,
@@ -61,6 +63,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
   const [showDemolishModal, setShowDemolishModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const productionControl = getBuildingProductionControl(buildingIndex);
+  const laborView = getBuildingLaborView(buildingIndex);
   const isPlayerOwnedBuilding = productionControl?.ownerCompanyId === 0;
 
   const buildingData = useMemo(() => {
@@ -275,6 +278,10 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     if (!values.length) return;
     setBuildingManualProductionTarget(buildingIndex, values[0] / 100);
   };
+  const handleWageMultiplierChange = (role: LaborRoleKey) => (values: number[]) => {
+    if (!values.length) return;
+    setBuildingLaborWageMultiplier(buildingIndex, role, values[0] / 100);
+  };
 
   const statusConfig = {
     active: { variant: 'success' as const, text: '🟢 正常生产' },
@@ -403,6 +410,91 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
                   </p>
                 </Card>
               )}
+            </div>
+          </Card>
+        )}
+
+        {laborView && (
+          <Card variant="elevated" padding="md">
+            <h4 className="text-xs font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
+              👥 劳动力
+            </h4>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[var(--text-muted)]">劳动力覆盖率</span>
+                <span className={`font-medium tabular-nums ${laborView.coverage >= 1 ? 'text-[var(--success)]' : laborView.coverage >= 0.7 ? 'text-[var(--warning)]' : 'text-[var(--error)]'}`}>
+                  {(laborView.coverage * 100).toFixed(0)}%
+                </span>
+              </div>
+              <ProgressBar
+                value={laborView.coverage * 100}
+                max={100}
+                size="sm"
+                color={laborView.coverage >= 1 ? 'success' : laborView.coverage >= 0.7 ? 'warning' : 'error'}
+              />
+
+              {laborView.bottleneckRole && (
+                <Badge variant="warning" size="sm">
+                  瓶颈: {laborView.roles[laborView.bottleneckRole].name}
+                </Badge>
+              )}
+
+              {(['basic', 'technical', 'management'] as const).map((role) => {
+                const item = laborView.roles[role];
+                return (
+                  <div
+                    key={role}
+                    className="space-y-2 border-t border-[var(--border-muted)] pt-3 first:border-t-0 first:pt-0"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-[var(--text-secondary)]">{item.name}</span>
+                      <span className="text-xs text-[var(--text-muted)] tabular-nums whitespace-nowrap">
+                        {item.hired.toFixed(0)} / {item.activeDemand.toFixed(0)}
+                      </span>
+                    </div>
+                    <ProgressBar
+                      value={item.coverage * 100}
+                      max={100}
+                      size="sm"
+                      color={item.coverage >= 1 ? 'success' : item.coverage >= 0.7 ? 'warning' : 'error'}
+                    />
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)]">
+                      <span>满产需求: {item.fullDemand.toFixed(0)}</span>
+                      <span>缺口: {item.shortage.toFixed(0)}</span>
+                      <span>市场日薪: {formatMoney(item.marketWage)}</span>
+                      <span>实际日薪: {formatMoney(item.actualDailyWage)}</span>
+                    </div>
+                    <Slider
+                      value={[Math.round(item.wageMultiplier * 100)]}
+                      min={50}
+                      max={200}
+                      step={5}
+                      onValueChange={handleWageMultiplierChange(role)}
+                      label={`${item.name}工资倍率`}
+                      showValue
+                      formatValue={(v) => `${(v / 100).toFixed(2)}x`}
+                      variant="game"
+                      color="info"
+                      disabled={!productionControl?.canManage}
+                    />
+                  </div>
+                );
+              })}
+
+              <div className="space-y-2 pt-2 border-t border-[var(--border-muted)]">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">预计月工资</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    {formatMoney(laborView.estimatedMonthlyPayroll)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">本月已计提</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    {formatMoney(laborView.accruedPayroll)}
+                  </span>
+                </div>
+              </div>
             </div>
           </Card>
         )}

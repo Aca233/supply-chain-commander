@@ -103,4 +103,20 @@ describe('gameStore save loading regressions', () => {
     expect(useGameStore.getState().loadGame(metadata.id)).toBe(true);
     expect(useGameStore.getState().playerCash).toBe(432_100);
   });
+
+  it('updates a building labor wage multiplier through the store', async () => {
+    const { useGameStore } = await import('../gameStore');
+
+    const store = useGameStore.getState();
+    store.initGame();
+    const world = store.getWorld()!;
+    const buildingId = 0;
+
+    const updated = store.setBuildingLaborWageMultiplier(buildingId, 'basic', 1.35);
+    const laborView = store.getBuildingLaborView(buildingId)!;
+
+    expect(updated).toBe(true);
+    expect(laborView.roles.basic.wageMultiplier).toBeCloseTo(1.35);
+    expect(world.buildings.wageMultipliers[buildingId * 3]).toBeCloseTo(1.35);
+  });
 });

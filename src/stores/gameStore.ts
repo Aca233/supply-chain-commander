@@ -26,7 +26,14 @@ import { createBuyOrder, createSellOrder, createSellOrderWithReason, cancelOrder
 import { soundManager } from '@/core/sound';
 import { getMarketStats, MarketStats } from '@/core/market/MatchingEngine';
 import { getPriceTrend, PriceTrend, getPriceSummary, PriceSummary } from '@/core/economy/PriceEngine';
-import { getBuildingProductionStatus, BuildingProductionStatus, getBuildingProductionStatusWithMethods, getInventoryQualityName, getInventoryQualityPriceMultiplier } from '@/core/production/ProductionEngine';
+import {
+  getBuildingProductionStatus,
+  BuildingProductionStatus,
+  getBuildingProductionStatusWithMethods,
+  getInventoryQualityName,
+  getInventoryQualityPriceMultiplier,
+  getBuildingRecipeFromInstance,
+} from '@/core/production/ProductionEngine';
 import { QUALITY_INFO, QualityGrade } from '@/core/economy/QualitySystem';
 import {
   perfMonitor,
@@ -118,7 +125,7 @@ import {
   startDemolition as startDemolitionTask,
 } from '@/core/construction/ConstructionTick';
 import { ConstructionStatus, DemolitionStatus } from '@/core/world/GameWorld';
-import { GOODS_COUNT, MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
+import { GOODS_COUNT, MAX_SLOTS, TICKS_PER_DAY, TICKS_PER_MONTH } from '@/core/constants';
 import {
   getRetailStoreDetails,
   getPlayerRetailStores,
@@ -133,7 +140,18 @@ import {
   getMethodById,
   getBuildingSlotCount,
 } from '@/core/production/ProductionMethods';
-import type { WorkforceDemand } from '@/core/labor/LaborSystem';
+import {
+  LABOR_ROLE_BASIC,
+  LABOR_ROLE_MANAGEMENT,
+  LABOR_ROLE_TECHNICAL,
+  calculateWorkforceCoverage,
+  clampWageMultiplier,
+  getActualDailyWage,
+  getBuildingLaborIndex,
+  getRoleName,
+  type LaborRole,
+  type WorkforceDemand,
+} from '@/core/labor/LaborSystem';
 
 // UI bridge：组件层依赖的 slot config 形状
 export interface UiBuildingSlotConfig {
@@ -258,6 +276,30 @@ export interface BuildingProductionControlView {
   };
 }
 
+export type LaborRoleKey = 'basic' | 'technical' | 'management';
+
+export interface BuildingLaborRoleView {
+  role: LaborRoleKey;
+  name: string;
+  fullDemand: number;
+  activeDemand: number;
+  hired: number;
+  shortage: number;
+  coverage: number;
+  marketWage: number;
+  wageMultiplier: number;
+  actualDailyWage: number;
+}
+
+export interface BuildingLaborView {
+  buildingId: number;
+  coverage: number;
+  bottleneckRole: LaborRoleKey | null;
+  estimatedMonthlyPayroll: number;
+  accruedPayroll: number;
+  roles: Record<LaborRoleKey, BuildingLaborRoleView>;
+}
+
 /**
  * 游戏状态
  */
@@ -317,6 +359,8 @@ interface GameActions {
   getBuildingProductionControl: (buildingId: number) => BuildingProductionControlView | null;
   setBuildingProductionControlAuto: (buildingId: number, autoAdjustEnabled: boolean) => boolean;
   setBuildingManualProductionTarget: (buildingId: number, manualTarget: number) => boolean;
+  getBuildingLaborView: (buildingId: number) => BuildingLaborView | null;
+  setBuildingLaborWageMultiplier: (buildingId: number, role: LaborRoleKey, multiplier: number) => boolean;
   demolishBuilding: (buildingId: number) => boolean;
   
   // 贷款
@@ -507,6 +551,20 @@ function countCompanyBuildings(world: GameWorld, ownerCompanyId: number): number
 }
 
 let notificationId = 0;
+
+const LABOR_ROLE_KEYS = ['basic', 'technical', 'management'] as const;
+
+const ROLE_KEY_TO_INDEX: Record<LaborRoleKey, LaborRole> = {
+  basic: LABOR_ROLE_BASIC,
+  technical: LABOR_ROLE_TECHNICAL,
+  management: LABOR_ROLE_MANAGEMENT,
+};
+
+const ROLE_INDEX_TO_KEY: Record<number, LaborRoleKey> = {
+  [LABOR_ROLE_BASIC]: 'basic',
+  [LABOR_ROLE_TECHNICAL]: 'technical',
+  [LABOR_ROLE_MANAGEMENT]: 'management',
+};
 
 // 将world和gameLoop保存在store外部，避免被immer冻结
 let worldRef: GameWorld | null = null;
@@ -1097,6 +1155,80 @@ export const useGameStore = create<GameState & GameActions>()(
           max: PRODUCTION_EFFICIENCY_MAX,
         },
       };
+    },
+
+    getBuildingLaborView: (buildingId: number) => {
+      if (!worldRef) return null;
+      if (buildingId < 0 || buildingId >= worldRef.buildings.count) return null;
+
+      const recipe = getBuildingRecipeFromInstance(worldRef, buildingId);
+      const utilization = worldRef.buildings.efficiencies[buildingId] || 0;
+      const coverage = calculateWorkforceCoverage(
+        worldRef,
+        buildingId,
+        recipe.workforceRequired,
+        utilization,
+      );
+
+      const roleEntries = LABOR_ROLE_KEYS.map((roleKey) => {
+        const role = ROLE_KEY_TO_INDEX[roleKey];
+        const idx = getBuildingLaborIndex(buildingId, role);
+        const fullDemand = recipe.workforceRequired[roleKey];
+        const activeDemand = coverage.activeDemand[roleKey];
+        const hired = worldRef!.buildings.workforceHired[idx] || 0;
+        const actualDailyWage = getActualDailyWage(worldRef!, buildingId, role);
+
+        return [
+          roleKey,
+          {
+            role: roleKey,
+            name: getRoleName(role),
+            fullDemand,
+            activeDemand,
+            hired,
+            shortage: Math.max(0, activeDemand - hired),
+            coverage: coverage.roleCoverage[roleKey],
+            marketWage: worldRef!.labor.marketWages[role] || 0,
+            wageMultiplier: worldRef!.buildings.wageMultipliers[idx] || 1,
+            actualDailyWage,
+          },
+        ] as const;
+      });
+
+      const roles = Object.fromEntries(roleEntries) as BuildingLaborView['roles'];
+      const estimatedMonthlyPayroll = Object.values(roles)
+        .reduce((sum, role) => sum + role.hired * role.actualDailyWage * TICKS_PER_MONTH, 0);
+
+      return {
+        buildingId,
+        coverage: coverage.coverage,
+        bottleneckRole: coverage.bottleneckRole === null
+          ? null
+          : ROLE_INDEX_TO_KEY[coverage.bottleneckRole],
+        estimatedMonthlyPayroll,
+        accruedPayroll: worldRef.buildings.accruedPayroll[buildingId] || 0,
+        roles,
+      };
+    },
+
+    setBuildingLaborWageMultiplier: (buildingId: number, roleKey: LaborRoleKey, multiplier: number) => {
+      if (!worldRef) return false;
+      if (buildingId < 0 || buildingId >= worldRef.buildings.count) return false;
+
+      const role = ROLE_KEY_TO_INDEX[roleKey];
+      if (role === undefined) return false;
+
+      if (!canPlayerManageBuildingProduction(worldRef, 0, buildingId)) {
+        get().addNotification('error', '你没有权限管理该建筑工资（需要 influence_strategy）');
+        return false;
+      }
+
+      const idx = getBuildingLaborIndex(buildingId, role);
+      worldRef.buildings.wageMultipliers[idx] = clampWageMultiplier(multiplier);
+      set((state) => {
+        state.tick = state.tick + 0.001;
+      });
+      return true;
     },
 
     setBuildingProductionControlAuto: (buildingId: number, autoAdjustEnabled: boolean) => {
