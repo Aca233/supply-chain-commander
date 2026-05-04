@@ -44,6 +44,7 @@ import { registerProcessingMethods } from './processing';
 import { registerManufacturingMethods } from './manufacturing';
 import { registerLuxuryMethods } from './luxury';
 import { registerServiceMethods } from './service';
+import { registerWarehouseMethods } from './warehouse';
 
 // 导入统计函数
 import {
@@ -57,6 +58,7 @@ export { PROCESSING_CONFIGS, registerProcessingMethods } from './processing';
 export { MANUFACTURING_CONFIGS, registerManufacturingMethods } from './manufacturing';
 export { LUXURY_CONFIGS, registerLuxuryMethods } from './luxury';
 export { SERVICE_CONFIGS, registerServiceMethods } from './service';
+export { WAREHOUSE_CONFIGS, registerWarehouseMethods } from './warehouse';
 
 let initialized = false;
 
@@ -73,12 +75,13 @@ export function initializeProductionMethods(): void {
   console.log('[ProductionMethods] 开始初始化建筑专属生产方式...');
   const startTime = performance.now();
 
-  // 按产业链顺序注册所有生产方式（40种建筑，ID 0-39）
+  // 按产业链顺序注册所有生产方式（45种建筑，ID 0-39 + 50-54）
   registerExtractionMethods();    // ID 0-14: 采掘类（15种）
   registerProcessingMethods();    // ID 15-26: 加工类（12种）
   registerManufacturingMethods(); // ID 27-36: 制造类（10种）
   registerLuxuryMethods();        // ID 37-38: 奢侈品类（2种）
   registerServiceMethods();       // ID 39: 服务类（1种）
+  registerWarehouseMethods();     // ID 50-54: 仓储类（5种）
 
   const endTime = performance.now();
   initialized = true;
@@ -87,7 +90,7 @@ export function initializeProductionMethods(): void {
   const buildingCount = getRegisteredBuildingCount();
   const methodCount = getRegisteredMethodCount();
   console.log(`[ProductionMethods] 初始化完成:
-  - 建筑数量: ${buildingCount}/40
+  - 建筑数量: ${buildingCount}/45
   - 生产方式总数: ${methodCount}
   - 耗时: ${(endTime - startTime).toFixed(2)}ms`);
 }

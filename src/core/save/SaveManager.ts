@@ -5,7 +5,9 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { GOODS_COUNT, LABOR_ROLE_COUNT, MAX_SLOTS, legacyHourTicksToDayTicks } from '@/core/constants';
+import { GOODS_COUNT, LABOR_ROLE_COUNT, POPS_GROUPS, MAX_SLOTS, legacyHourTicksToDayTicks } from '@/core/constants';
+import { hydratePopulationSystem } from '@/core/population/PopulationSystem';
+import { CONSUMER_TIERS } from '@/core/economy/DemandCurve';
 import {
   BankruptcyResolutionSnapshot,
   BankruptcyStrategySettings,
@@ -79,6 +81,17 @@ export interface SerializedWorld {
     cash: number[];
     isAI: boolean[];
     inventories: number[][];
+  };
+  population?: {
+    populations?: number[];
+    baseIncomes?: number[];
+    effectiveIncomes?: number[];
+    laborParticipationRates?: number[];
+    savingsRates?: number[];
+    pricePreferences?: number[];
+    qualityPreferences?: number[];
+    incomeVariances?: number[];
+    totalPopulation?: number;
   };
   bankruptcy?: BankruptcyResolutionSnapshot;
   currentTick: number;
@@ -177,6 +190,17 @@ export class SaveManager {
         isAI: [...world.companies.isAI],
         inventories: this.serializeInventories(world),
       },
+      population: world.population ? {
+        populations: Array.from(world.population.populations),
+        baseIncomes: Array.from(world.population.baseIncomes),
+        effectiveIncomes: Array.from(world.population.effectiveIncomes),
+        laborParticipationRates: Array.from(world.population.laborParticipationRates),
+        savingsRates: Array.from(world.population.savingsRates),
+        pricePreferences: Array.from(world.population.pricePreferences),
+        qualityPreferences: Array.from(world.population.qualityPreferences),
+        incomeVariances: Array.from(world.population.incomeVariances),
+        totalPopulation: world.population.totalPopulation,
+      } : undefined,
       bankruptcy: bankruptcyResolution.getSnapshot(),
       currentTick,
     };
@@ -268,6 +292,32 @@ export class SaveManager {
     this.copyNumberArray(world.buildings.workforceHired, data.workforceHired, laborLength);
     this.copyNumberArray(world.buildings.wageMultipliers, data.wageMultipliers, laborLength);
     this.copyNumberArray(world.buildings.accruedPayroll, data.accruedPayroll, world.buildings.count);
+  }
+
+  private restorePopulationState(data: NonNullable<SerializedWorld['population']>, world: GameWorld): void {
+    const pop = world.population;
+    if (!pop) return;
+
+    // Float64Array 用 copyNumberArray64 辅助
+    if (data.populations) {
+      const len = Math.min(data.populations.length, pop.populations.length);
+      for (let i = 0; i < len; i++) {
+        const v = data.populations[i];
+        if (Number.isFinite(v)) pop.populations[i] = v;
+      }
+    }
+
+    this.copyNumberArray(pop.baseIncomes, data.baseIncomes);
+    this.copyNumberArray(pop.effectiveIncomes, data.effectiveIncomes);
+    this.copyNumberArray(pop.laborParticipationRates, data.laborParticipationRates);
+    this.copyNumberArray(pop.savingsRates, data.savingsRates);
+    this.copyNumberArray(pop.pricePreferences, data.pricePreferences);
+    this.copyNumberArray(pop.qualityPreferences, data.qualityPreferences);
+    this.copyNumberArray(pop.incomeVariances, data.incomeVariances);
+
+    if (typeof data.totalPopulation === 'number' && Number.isFinite(data.totalPopulation)) {
+      pop.totalPopulation = data.totalPopulation;
+    }
   }
 
   private getActiveBuildingDemand(world: GameWorld, buildingId: number) {
@@ -407,6 +457,13 @@ export class SaveManager {
     hydrateLaborState(world);
     if (!hasCompleteSerializedLabor) {
       this.migrateLegacyLaborState(world);
+    }
+
+    // 恢复人口系统（向后兼容：旧存档无 population 字段时从 CONSUMER_TIERS 初始化）
+    if (data.population?.populations && data.population.populations.length === POPS_GROUPS) {
+      this.restorePopulationState(data.population, world);
+    } else {
+      world.population = hydratePopulationSystem(undefined, CONSUMER_TIERS);
     }
 
     bankruptcyResolution.hydrate(data.bankruptcy);

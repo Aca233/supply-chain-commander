@@ -8,6 +8,7 @@ export interface BuildingOutputEstimate {
 export interface BuildingFinancialEstimateInput {
   isActive: boolean;
   dailyCost: number;
+  laborCost?: number;
   outputs: BuildingOutputEstimate[];
 }
 
@@ -31,10 +32,13 @@ export function calculateBuildingFinancialEstimate(
   const dailyRevenue = input.isActive
     ? input.outputs.reduce((sum, output) => sum + output.dailyAmount * output.price, 0)
     : 0;
+  const baseCost = Number.isFinite(input.dailyCost) ? Math.max(0, input.dailyCost) : 0;
+  const laborCost = Number.isFinite(input.laborCost) ? Math.max(0, input.laborCost ?? 0) : 0;
+  const dailyCost = baseCost + laborCost;
 
   return {
     dailyRevenue,
-    dailyCost: input.dailyCost,
-    dailyProfit: dailyRevenue - input.dailyCost,
+    dailyCost,
+    dailyProfit: dailyRevenue - dailyCost,
   };
 }

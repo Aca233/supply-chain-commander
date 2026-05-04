@@ -8,6 +8,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { ALL_GOODS } from '@/data/goods';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
+import { getCompanyStorageStatus } from '@/core/economy/WarehouseSystem';
 import { formatRelativeTime } from '@/ui/utils/format';
 
 export type AlertLevel = 'critical' | 'warning' | 'info';
@@ -207,22 +208,17 @@ export function useAlerts(): UseAlertsResult {
     }
 
     // ==================== 库存告警 ====================
-    
+
     if (world) {
-      // 仓库快满
-      let totalInventory = 0;
-      for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
-        totalInventory += world.companies.inventories[0 * GOODS_COUNT + i];
-      }
-      // 假设仓库容量 10000 单位
-      const warehouseCapacity = 10000;
-      if (totalInventory > warehouseCapacity * 0.9) {
+      // 使用 WarehouseSystem 获取真实的容量和使用率（已排除电力等服务类商品）
+      const storageStatus = getCompanyStorageStatus(world, 0);
+      if (storageStatus.isWarning) {
         result.push({
           id: `alert-${alertId++}`,
-          level: 'warning',
+          level: storageStatus.isFull ? 'critical' : 'warning',
           category: 'inventory',
-          title: '仓库即将满载',
-          description: `库存 ${totalInventory.toFixed(0)}/${warehouseCapacity}`,
+          title: storageStatus.isFull ? '仓库已满' : '仓库即将满载',
+          description: `库存 ${storageStatus.usage.toFixed(0)}/${storageStatus.capacity.toFixed(0)}（使用率 ${(storageStatus.utilization * 100).toFixed(0)}%）`,
           actionLabel: '清理库存',
           actionView: 'inventory',
           timestamp: tick,

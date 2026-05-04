@@ -1,6 +1,6 @@
 import { BUILDINGS_BY_ID } from '@/data/buildings';
-import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
-import { getBuildingSlotCount, getRecipeForBuilding } from '@/core/production/ProductionMethods';
+import { TICKS_PER_DAY } from '@/core/constants';
+import { calculateStorageCostPerTick } from '@/core/economy/WarehouseSystem';
 
 import { GameWorld } from '../world/GameWorld';
 
@@ -8,27 +8,14 @@ export interface OperatingCostBreakdown {
   maintenance: number;
   labor: number;
   energy: number;
+  /** 仓储费用（基于库存占用量和仓库配置） */
+  storage: number;
   total: number;
   cashExpense: number;
   nonCashExpense: number;
 }
 
 const DEFAULT_TICKS_PER_DAY = TICKS_PER_DAY;
-
-/**
- * 读取建筑当前 method 配方的 energyRequired（绝对值，每天）
- * 若建筑未注册则返回 0
- */
-function getBuildingRecipeEnergy(world: GameWorld, buildingId: number): number {
-  const buildingTypeId = world.buildings.types[buildingId];
-  const slotCount = getBuildingSlotCount(buildingTypeId);
-  const slotOffset = buildingId * MAX_SLOTS;
-  const slotMethods: number[] = [];
-  for (let i = 0; i < slotCount; i++) {
-    slotMethods.push(world.buildings.slotMethods[slotOffset + i] ?? 0);
-  }
-  return getRecipeForBuilding(buildingTypeId, slotMethods).energyRequired;
-}
 
 export function calculateCompanyOperatingCostPerTick(
   world: GameWorld,
@@ -47,19 +34,25 @@ export function calculateCompanyOperatingCostPerTick(
     if (!buildingDef) continue;
 
     maintenance += buildingDef.maintenanceCost / ticksPerDay;
+
+    // 工资由 LaborSystem 的 accrual/payroll 路径结算，避免在运营成本中重复扣款。
     labor += 0;
 
-    // 能耗：基础能耗 + method 配方提供的额外能耗
-    const recipeEnergy = getBuildingRecipeEnergy(world, buildingId);
-    energy += (buildingDef.energyCost + recipeEnergy) / ticksPerDay;
+    // Energy is paid through electricity goods in recipe inputs, not a separate cash drain.
+    energy += 0;
   }
 
-  const cashExpense = maintenance + labor + energy;
+  // 仓储费用：基于库存占用量和仓库配置
+  const storageCost = calculateStorageCostPerTick(world, companyId, ticksPerDay);
+  const storage = storageCost.total;
+
+  const cashExpense = maintenance + labor + energy + storage;
 
   return {
     maintenance,
     labor,
     energy,
+    storage,
     total: cashExpense,
     cashExpense,
     nonCashExpense: 0,

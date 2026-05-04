@@ -7,7 +7,6 @@
 
 import { GameWorld } from '@/core/world/GameWorld';
 import { ALL_GOODS, GoodsDefinition, CONSUMER_GOODS, GoodsId } from '@/data/goods';
-import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
 import { GOODS_COUNT, TICKS_PER_DAY, ACTUAL_GOODS_COUNT, MAX_SUPPLY_DEMAND_RATIO, MAX_INPUTS } from '@/core/constants';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import { getDemandPressure } from './MarketStats';
@@ -248,19 +247,22 @@ export function calculateTierDemand(
   
   const currentPrice = world.goods.prices[goodsId];
   const basePrice = goodsDef.basePrice;
-  
+
   // 1. 计算有效收入
+  // 优先使用 world.population 的动态有效收入（受就业和工资反馈），回退到静态 baseIncome
   const cycleFactor = world.economyStats.cyclePosition;
-  const effectiveIncome = tier.baseIncome * (1 + (cycleFactor - 0.5) * 0.2) * economyMultiplier;
-  
+  const popIncomeBase = world.population?.effectiveIncomes?.[tier.id] ?? tier.baseIncome;
+  const effectiveIncome = popIncomeBase * (1 + (cycleFactor - 0.5) * 0.2) * economyMultiplier;
+
   // 2. 计算该商品类别的预算
   const categoryBudget = tier.budgetShares.get(goodsDef.category) || 0.1;
   const availableBudget = effectiveIncome * (1 - tier.savingsRate) * categoryBudget;
-  
+
   // 3. 计算基础需求量（假设价格为基准价时的需求）
-  // 使用人口和人均消费率
+  // 优先使用 world.population 的动态人口数，回退到静态 tier.population
   const perCapitaBaseConsumption = getPerCapitaConsumption(goodsDef, tier);
-  const baseQuantity = tier.population * perCapitaBaseConsumption;
+  const tierPopulation = world.population?.populations?.[tier.id] ?? tier.population;
+  const baseQuantity = tierPopulation * perCapitaBaseConsumption;
   
   // 4. 应用价格弹性
   const priceElasticity = calculatePriceElasticity(goodsDef, currentPrice, tier);
@@ -459,7 +461,8 @@ export function calculateMarketDemand(
   let totalWeight = 0;
   
   for (const tier of CONSUMER_TIERS) {
-    const weight = tier.population * tier.baseIncome;
+    const tierPop = world.population?.populations?.[tier.id] ?? tier.population;
+    const weight = tierPop * tier.baseIncome;
     weightedPriceElasticity += calculatePriceElasticity(goodsDef, world.goods.prices[goodsId], tier) * weight;
     weightedIncomeElasticity += calculateIncomeElasticity(goodsDef, tier) * weight;
     totalWeight += weight;
@@ -665,34 +668,6 @@ function priceElasticityMultiplier(world: GameWorld, goodsId: number): number {
   return Math.max(0.1, Math.min(2.5, Math.pow(priceRatio, elasticity)));
 }
 
-const ELECTRICITY_UNITS_PER_POWER_POINT = 1000;
-
-function calculateOperationalElectricityDemand(world: GameWorld): number {
-  let totalDemand = 0;
-
-  for (let buildingId = 0; buildingId < world.buildings.count; buildingId++) {
-    if (!world.buildings.isActive[buildingId]) continue;
-
-    const buildingTypeId = world.buildings.types[buildingId];
-    if (buildingTypeId === BuildingId.POWER_PLANT) continue;
-
-    const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
-    if (!buildingDef || buildingDef.powerConsumption <= 0) continue;
-
-    const level = Math.max(1, world.buildings.levels[buildingId] || 1);
-    const efficiency = Math.max(0.1, world.buildings.efficiencies[buildingId] || 1);
-    const levelMultiplier = buildingDef.capacityMultipliers[level - 1] ?? 1;
-
-    totalDemand +=
-      buildingDef.powerConsumption *
-      ELECTRICITY_UNITS_PER_POWER_POINT *
-      levelMultiplier *
-      efficiency;
-  }
-
-  return totalDemand * priceElasticityMultiplier(world, GoodsId.ELECTRICITY);
-}
-
 export function calculateDerivedDemand(world: GameWorld): void {
   // 派生需求衰减系数：防止上游需求过度膨胀
   const DERIVED_DEMAND_FACTOR = 0.6;
@@ -702,15 +677,6 @@ export function calculateDerivedDemand(world: GameWorld): void {
   const derivedDemands = new Float32Array(ACTUAL_GOODS_COUNT);
   
   const buildings = world.buildings;
-  const operationalElectricityDemand = calculateOperationalElectricityDemand(world);
-
-  if (operationalElectricityDemand > 0) {
-    derivedDemands[GoodsId.ELECTRICITY] += operationalElectricityDemand;
-    world.goods.demands[GoodsId.ELECTRICITY] = Math.max(
-      world.goods.demands[GoodsId.ELECTRICITY],
-      operationalElectricityDemand,
-    );
-  }
 
   // 只根据真实存在且活跃的建筑生成派生需求，不能用全建筑模板虚构供应链需求。
   for (let buildingId = 0; buildingId < buildings.count; buildingId++) {

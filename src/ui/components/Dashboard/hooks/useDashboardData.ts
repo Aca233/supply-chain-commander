@@ -7,7 +7,7 @@ import { useMemo, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { getActiveOrderIndices } from '@/core/market/OrderBook';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
-import { ALL_GOODS } from '@/data/goods';
+import { ALL_GOODS, isServiceGoods } from '@/data/goods';
 import { formatMonthDay } from '@/core/world/GameWorld';
 import { getStock } from '@/core/finance/StockMarket';
 import { ControlLevel } from '@/core/finance/CompanyProfile';
@@ -544,6 +544,9 @@ export function useDashboardData(): DashboardData {
     let totalItems = 0;
 
     for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
+      // 服务类商品（电力等）不计入库存统计
+      if (isServiceGoods(i)) continue;
+
       const quantity = world.companies.inventories[0 * GOODS_COUNT + i];
       if (quantity <= 0) continue;
 

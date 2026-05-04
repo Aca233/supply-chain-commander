@@ -1,10 +1,8 @@
 /**
  * 建筑类型定义
- * 重构版本：包含40种建筑（ID 0-39，连续无跳跃）
- * 分类：采掘15 + 加工12 + 制造10 + 奢侈品2 + 服务1
+ * 包含55种建筑（ID 0-54，连续无跳跃）
+ * 分类：采掘15 + 加工12 + 制造10 + 奢侈品2 + 服务1 + 零售10 + 仓储5
  * 所有建筑消耗电力（发电厂除外）
- * 
- * 重构：删除配方机制，将生产属性直接内置到建筑定义中
  */
 
 import { GoodsId } from './goods';
@@ -18,24 +16,36 @@ export interface RetailConfig {
   allowedGoodsIds: number[];
 }
 
+/** 仓库建筑专属配置 */
+export interface WarehouseConfig {
+  /** 基础存储容量（单位数） */
+  storageCapacity: number;
+  /** 每单位每天仓储费（运营成本之外的额外费用） */
+  storageCostPerUnit: number;
+  /** 限定可存放的商品类别（空数组 = 通用仓库，不限制） */
+  allowedGoodsCategories: ('raw' | 'basic' | 'intermediate' | 'final')[];
+  /** 易腐品损耗降低系数 0-1（0=无降低，0.7=降低70%损耗） */
+  spoilageReduction: number;
+}
+
 export interface BuildingTypeDefinition {
   id: number;
   key: string;
   name: string;
-  category: 'extraction' | 'processing' | 'manufacturing' | 'luxury' | 'service' | 'retail';
-  
+  category: 'extraction' | 'processing' | 'manufacturing' | 'luxury' | 'service' | 'retail' | 'warehouse';
+
   // 建造成本
   buildCost: number;
   buildTime: number;
-  
+
   // 运营成本
   maintenanceCost: number;
   laborCost: number;
   energyCost: number;
-  
+
   // 电力消耗（每tick）
   powerConsumption: number;
-  
+
   // 升级
   maxLevel: number;
   upgradeCosts: number[];
@@ -43,9 +53,12 @@ export interface BuildingTypeDefinition {
   efficiencyMultipliers: number[];
 
   description: string;
-  
+
   // 零售建筑专属配置
   retailConfig?: RetailConfig;
+
+  // 仓库建筑专属配置
+  warehouseConfig?: WarehouseConfig;
 }
 
 // ==================== 采掘类建筑（ID 0-14，共15种）====================
@@ -1058,7 +1071,126 @@ export const RETAIL_BUILDINGS: BuildingTypeDefinition[] = [
 ];
 export const RETAIL_BUILDINGS_LIST = RETAIL_BUILDINGS;
 
-// 合并所有建筑（50种建筑，ID 0-49连续）
+// ==================== 仓储类建筑（ID 50-54，共5种）====================
+const WAREHOUSE_BUILDINGS: BuildingTypeDefinition[] = [
+  {
+    id: 50,
+    key: 'small_warehouse',
+    name: '小型仓库',
+    category: 'warehouse',
+    buildCost: 800000,
+    buildTime: 720,
+    maintenanceCost: 2000,
+    laborCost: 6000,
+    energyCost: 1200,
+    powerConsumption: 8,
+    maxLevel: 5,
+    upgradeCosts: [0, 300000, 600000, 1200000, 2400000],
+    capacityMultipliers: [1, 1.3, 1.6, 2.0, 2.5],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    warehouseConfig: {
+      storageCapacity: 5000,
+      storageCostPerUnit: 0.02,
+      allowedGoodsCategories: [],
+      spoilageReduction: 0,
+    },
+    description: '通用小型仓库，满足初期存储需求',
+  },
+  {
+    id: 51,
+    key: 'large_warehouse',
+    name: '大型仓库',
+    category: 'warehouse',
+    buildCost: 2800000,
+    buildTime: 1440,
+    maintenanceCost: 6000,
+    laborCost: 16000,
+    energyCost: 3000,
+    powerConsumption: 18,
+    maxLevel: 5,
+    upgradeCosts: [0, 1000000, 2000000, 4000000, 8000000],
+    capacityMultipliers: [1, 1.3, 1.6, 2.0, 2.5],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    warehouseConfig: {
+      storageCapacity: 20000,
+      storageCostPerUnit: 0.015,
+      allowedGoodsCategories: [],
+      spoilageReduction: 0,
+    },
+    description: '大规模通用仓库，规模效应降低单位仓储成本',
+  },
+  {
+    id: 52,
+    key: 'cold_storage',
+    name: '冷链仓库',
+    category: 'warehouse',
+    buildCost: 2000000,
+    buildTime: 1080,
+    maintenanceCost: 8000,
+    laborCost: 12000,
+    energyCost: 6000,
+    powerConsumption: 30,
+    maxLevel: 5,
+    upgradeCosts: [0, 700000, 1400000, 2800000, 5600000],
+    capacityMultipliers: [1, 1.3, 1.6, 2.0, 2.5],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    warehouseConfig: {
+      storageCapacity: 8000,
+      storageCostPerUnit: 0.04,
+      allowedGoodsCategories: [],
+      spoilageReduction: 0.7,
+    },
+    description: '恒温冷藏仓库，大幅降低易腐品损耗',
+  },
+  {
+    id: 53,
+    key: 'bulk_yard',
+    name: '散货堆场',
+    category: 'warehouse',
+    buildCost: 1200000,
+    buildTime: 480,
+    maintenanceCost: 3000,
+    laborCost: 8000,
+    energyCost: 800,
+    powerConsumption: 5,
+    maxLevel: 5,
+    upgradeCosts: [0, 400000, 800000, 1600000, 3200000],
+    capacityMultipliers: [1, 1.3, 1.6, 2.0, 2.5],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    warehouseConfig: {
+      storageCapacity: 50000,
+      storageCostPerUnit: 0.005,
+      allowedGoodsCategories: ['raw', 'basic'],
+      spoilageReduction: 0,
+    },
+    description: '露天散货堆场，仅限大宗原料和基础材料，容量巨大但成本极低',
+  },
+  {
+    id: 54,
+    key: 'automated_warehouse',
+    name: '自动化仓库',
+    category: 'warehouse',
+    buildCost: 6000000,
+    buildTime: 2160,
+    maintenanceCost: 4000,
+    laborCost: 5000,
+    energyCost: 8000,
+    powerConsumption: 40,
+    maxLevel: 5,
+    upgradeCosts: [0, 2000000, 4000000, 8000000, 16000000],
+    capacityMultipliers: [1, 1.3, 1.6, 2.0, 2.5],
+    efficiencyMultipliers: [1, 1, 1, 1, 1],
+    warehouseConfig: {
+      storageCapacity: 35000,
+      storageCostPerUnit: 0.01,
+      allowedGoodsCategories: [],
+      spoilageReduction: 0.2,
+    },
+    description: '全自动化立体仓库，高容量低人力，适合大型企业',
+  },
+];
+
+// 合并所有建筑（55种建筑，ID 0-54连续）
 export const ALL_BUILDINGS: BuildingTypeDefinition[] = [
   ...EXTRACTION_BUILDINGS,
   ...PROCESSING_BUILDINGS,
@@ -1066,6 +1198,7 @@ export const ALL_BUILDINGS: BuildingTypeDefinition[] = [
   ...LUXURY_BUILDINGS,
   ...SERVICE_BUILDINGS,
   ...RETAIL_BUILDINGS,
+  ...WAREHOUSE_BUILDINGS,
 ];
 
 // 建筑ID到定义的映射
@@ -1086,6 +1219,7 @@ export const BUILDINGS_BY_CATEGORY = {
   luxury: ALL_BUILDINGS.filter(b => b.category === 'luxury'),
   service: ALL_BUILDINGS.filter(b => b.category === 'service'),
   retail: ALL_BUILDINGS.filter(b => b.category === 'retail'),
+  warehouse: ALL_BUILDINGS.filter(b => b.category === 'warehouse'),
 };
 
 // 按产业链分组（用于UI显示）
@@ -1131,6 +1265,9 @@ export const BUILDINGS_BY_INDUSTRY: Record<string, BuildingTypeDefinition[]> = {
 
   // 零售产业链：便利店/超市/电器/4S店/服装/家具/药房/奢侈品店/能源服务/综合百货
   retail: ALL_BUILDINGS.filter(b => b.id >= 40 && b.id <= 49),
+
+  // 仓储物流：仓库与堆场
+  warehouse: ALL_BUILDINGS.filter(b => b.id >= 50 && b.id <= 54),
 };
 
 // 建筑ID常量
@@ -1191,6 +1328,12 @@ export const BuildingId = {
   LUXURY_STORE: 47,
   ENERGY_SERVICE_STORE: 48,
   DEPARTMENT_STORE: 49,
+  // 仓储类
+  SMALL_WAREHOUSE: 50,
+  LARGE_WAREHOUSE: 51,
+  COLD_STORAGE: 52,
+  BULK_YARD: 53,
+  AUTOMATED_WAREHOUSE: 54,
 } as const;
 
 /**
@@ -1251,8 +1394,26 @@ export function getBuildingPowerConsumption(buildingTypeId: number): number {
   return building?.powerConsumption ?? 0;
 }
 
+/**
+ * 检查建筑是否为仓库类
+ */
+export function isWarehouseBuilding(buildingTypeId: number): boolean {
+  const building = BUILDINGS_BY_ID.get(buildingTypeId);
+  return building?.category === 'warehouse';
+}
+
+/**
+ * 获取仓库建筑配置
+ */
+export function getWarehouseConfig(buildingTypeId: number): WarehouseConfig | undefined {
+  const building = BUILDINGS_BY_ID.get(buildingTypeId);
+  return building?.warehouseConfig;
+}
+
+/** 所有仓库建筑列表 */
+export const WAREHOUSE_BUILDINGS_LIST = WAREHOUSE_BUILDINGS;
 
 /**
  * 获取建筑总数
  */
-export const BUILDING_COUNT = ALL_BUILDINGS.length; // 41
+export const BUILDING_COUNT = ALL_BUILDINGS.length;

@@ -6,6 +6,7 @@ import {
   accrueDailyPayroll,
   accrueDailyPayrollForBuilding,
   addMonthlyLaborGrowth,
+  calculateBuildingDailyPayrollCost,
   LABOR_ROLE_BASIC,
   LABOR_ROLE_COUNT,
   LABOR_ROLE_MANAGEMENT,
@@ -97,6 +98,23 @@ describe('LaborSystem', () => {
   it('uses monthly time constant for payroll cadence expectations', () => {
     expect(TICKS_PER_MONTH).toBe(30);
   });
+
+  it('calculates current daily payroll from hired workers and wage multipliers without accruing it', () => {
+    const world = createGameWorld();
+    world.buildings.count = 1;
+    world.buildings.isActive[0] = 1;
+    world.labor.marketWages[LABOR_ROLE_BASIC] = 100;
+    world.labor.marketWages[LABOR_ROLE_TECHNICAL] = 250;
+    world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 3;
+    world.buildings.workforceHired[getBuildingLaborIndex(0, LABOR_ROLE_TECHNICAL)] = 2;
+    world.buildings.wageMultipliers[getBuildingLaborIndex(0, LABOR_ROLE_BASIC)] = 1.5;
+    world.buildings.wageMultipliers[getBuildingLaborIndex(0, LABOR_ROLE_TECHNICAL)] = 1.2;
+
+    const payroll = calculateBuildingDailyPayrollCost(world, 0);
+
+    expect(payroll).toBeCloseTo(3 * 100 * 1.5 + 2 * 250 * 1.2);
+    expect(world.buildings.accruedPayroll[0]).toBe(0);
+  });
 });
 
 describe('labor hiring, attrition, market wages, and payroll', () => {
@@ -185,15 +203,34 @@ describe('labor hiring, attrition, market wages, and payroll', () => {
     expect(world.labor.marketWages[LABOR_ROLE_BASIC]).toBe(1);
   });
 
-  it('adds monthly labor growth to supply and unemployment', () => {
+  it('adds monthly labor growth scaled by unemployment rate', () => {
     const world = createGameWorld();
+    // 让管理人员的失业率低于 5%，使增长因子 = 1.0
+    world.labor.totalSupply[LABOR_ROLE_MANAGEMENT] = 8000;
+    world.labor.employed[LABOR_ROLE_MANAGEMENT] = 7800;
+    world.labor.unemployed[LABOR_ROLE_MANAGEMENT] = 200; // 2.5% 失业率
+
     const beforeSupply = world.labor.totalSupply[LABOR_ROLE_MANAGEMENT];
     const beforeUnemployed = world.labor.unemployed[LABOR_ROLE_MANAGEMENT];
 
     addMonthlyLaborGrowth(world);
 
+    // 低失业率 → growthFactor=1.0 → 完整增长 30
     expect(world.labor.totalSupply[LABOR_ROLE_MANAGEMENT]).toBe(beforeSupply + 30);
     expect(world.labor.unemployed[LABOR_ROLE_MANAGEMENT]).toBe(beforeUnemployed + 30);
+  });
+
+  it('reduces monthly labor growth when unemployment is high', () => {
+    const world = createGameWorld();
+    // 初始状态：100% 失业 → growthFactor=0.2
+    const beforeSupply = world.labor.totalSupply[LABOR_ROLE_MANAGEMENT];
+    const beforeUnemployed = world.labor.unemployed[LABOR_ROLE_MANAGEMENT];
+
+    addMonthlyLaborGrowth(world);
+
+    const expectedGrowth = Math.round(30 * 0.2); // 6
+    expect(world.labor.totalSupply[LABOR_ROLE_MANAGEMENT]).toBe(beforeSupply + expectedGrowth);
+    expect(world.labor.unemployed[LABOR_ROLE_MANAGEMENT]).toBe(beforeUnemployed + expectedGrowth);
   });
 
   it('uses clamped wage multipliers for actual daily wages', () => {

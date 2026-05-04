@@ -339,7 +339,7 @@ function executeB2BPurchases(
       if (currentStock < neededPerCycle * 8) {
         // 计算采购量（补充到15个周期的用量，从10提升到15）
         const targetStock = neededPerCycle * 15;
-        const buyQuantity = Math.min(targetStock - currentStock, 2000);  // 提高单次采购上限到2000
+        const buyQuantity = targetStock - currentStock;
         
         if (buyQuantity > 1) {
           // 从市场购买

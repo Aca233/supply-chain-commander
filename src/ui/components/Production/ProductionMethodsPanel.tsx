@@ -11,12 +11,12 @@ import {
   type BuildingSlotType,
   type BuildingProductionMethod,
 } from '@/core/production/ProductionMethods';
-import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
 
 interface ProductionMethodsPanelProps {
   buildingId: number;
   buildingTypeId: number;
   buildingLevel: number;
+  compact?: boolean;
 }
 
 const GLASS_SLOT_COLORS: { bg: string; border: string; active: string; glow: string }[] = [
@@ -51,11 +51,17 @@ type MethodEffectGroups = {
 };
 
 const GOODS_NAME_BY_ID = new Map(ALL_GOODS.map((goods) => [goods.id, goods.name]));
+const WORKFORCE_ROLE_LABELS = [
+  { key: 'basic', label: '普通工人' },
+  { key: 'technical', label: '技术工人' },
+  { key: 'management', label: '管理人员' },
+] as const;
 
 export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
   buildingId,
   buildingTypeId,
   buildingLevel,
+  compact = false,
 }) => {
   const {
     getBuildingCurrentMethods,
@@ -134,11 +140,16 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
       }
     }
 
-    const workforceDelta = getTotalWorkforceDemand(method.workforceDelta);
-    if (workforceDelta !== 0) {
-      const formatted = formatDelta(workforceDelta);
+    for (const role of WORKFORCE_ROLE_LABELS) {
+      const amount = method.workforceDelta[role.key] || 0;
+      const formatted = formatDelta(amount);
       if (formatted) {
-        meta.push({ icon: '👷', label: '人力', value: formatted, isPositive: workforceDelta < 0 });
+        meta.push({
+          icon: '👷',
+          label: role.label,
+          value: formatted,
+          isPositive: amount < 0,
+        });
       }
     }
 
@@ -168,7 +179,7 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
         size={compact ? 13 : 14}
         className={effect.isPositive ? 'drop-shadow-[0_0_4px_rgba(74,222,128,0.35)]' : 'drop-shadow-[0_0_4px_rgba(251,113,133,0.35)]'}
       />
-      <span className={`${compact ? 'max-w-[72px]' : 'max-w-[88px]'} truncate text-[rgba(255,243,217,0.88)]`}>
+      <span className={`${compact ? 'max-w-[72px]' : 'max-w-[88px]'} truncate text-white/78`}>
         {effect.goodsName}
       </span>
       <span className="tabular-nums font-semibold">{effect.value.replace('+', '')}</span>
@@ -187,12 +198,12 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
 
     return (
       <div
-        className={`rounded-xl border border-[#b89353]/60 bg-[linear-gradient(180deg,rgba(74,60,42,0.96),rgba(36,28,20,0.98))] shadow-[inset_0_1px_0_rgba(255,234,196,0.14),0_10px_20px_rgba(0,0,0,0.22)] ${
+        className={`rounded-lg border border-white/[0.085] bg-[#121820] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ${
           compact ? 'px-2.5 py-1.5' : 'px-3 py-2'
         }`}
       >
         <div className={`flex ${compact ? 'items-center gap-2' : 'items-start gap-3'} min-w-0`}>
-          <div className={`flex items-center justify-center rounded-lg border border-[#c7a96f]/35 bg-[rgba(217,186,126,0.08)] text-[#e7cf9c] ${compact ? 'h-7 w-7 text-sm' : 'h-8 w-8 text-base'}`}>
+          <div className={`flex items-center justify-center rounded-md border border-white/[0.10] bg-white/[0.045] text-white/78 ${compact ? 'h-7 w-7 text-sm' : 'h-8 w-8 text-base'}`}>
             {getMethodIcon(method, { id: method.slotId, buildingTypeId, name: '', icon: '⚙️', description: '', order: 0 })}
           </div>
 
@@ -200,11 +211,11 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             {showMethodName && (
               <div className={`flex min-w-0 items-center justify-between gap-2 ${compact ? 'mb-1' : 'mb-1.5'}`}>
                 <div className="min-w-0">
-                  <div className={`truncate font-medium text-[#f4e6c6] ${compact ? 'text-[12px]' : 'text-sm'}`}>
+                  <div className={`truncate font-medium text-white/84 ${compact ? 'text-[12px]' : 'text-sm'}`}>
                     {slotName ? `${slotName} · ${method.name}` : method.name}
                   </div>
                   {!compact && method.description && (
-                    <div className="truncate text-[10px] text-[rgba(245,229,196,0.46)]">
+                    <div className="truncate text-[10px] text-white/38">
                       {method.description}
                     </div>
                   )}
@@ -219,7 +230,7 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
 
             <div className={`flex min-w-0 items-center ${compact ? 'gap-1.5' : 'gap-2'} flex-wrap`}>
               {effects.inputs.length === 0 ? (
-                <span className="text-[10px] text-[rgba(255,234,196,0.55)]">无需原料</span>
+                <span className="text-[10px] text-white/42">无需原料</span>
               ) : (
                 effects.inputs.map((effect, index) => renderGoodsEntry(effect, `input-${index}`, compact))
               )}
@@ -240,8 +251,8 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
                     key={`meta-${index}`}
                     className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${
                       effect.isPositive
-                        ? 'border-[#7b6a4d] bg-[rgba(255,240,205,0.06)] text-[rgba(242,227,198,0.8)]'
-                        : 'border-rose-400/20 bg-rose-400/8 text-rose-200/85'
+                        ? 'border-white/[0.08] bg-white/[0.035] text-white/58'
+                        : 'border-rose-400/20 bg-rose-400/[0.055] text-rose-200/85'
                     }`}
                   >
                     <span>{effect.icon}</span>
@@ -272,12 +283,14 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
   }));
 
   const finalRecipeMeta: MetaMethodEffect[] = [
-    ...(getTotalWorkforceDemand(finalRecipe.workforceRequired) > 0 ? [{
-      icon: '👷',
-      label: '工资',
-      value: `${getTotalWorkforceDemand(finalRecipe.workforceRequired)}`,
-      isPositive: false,
-    }] : []),
+    ...WORKFORCE_ROLE_LABELS
+      .map((role) => ({
+        icon: '👷',
+        label: role.label,
+        value: `${Math.max(0, finalRecipe.workforceRequired[role.key] || 0)}`,
+        isPositive: true,
+      }))
+      .filter(effect => effect.value !== '0'),
     ...(finalRecipe.energyRequired > 0 ? [{
       icon: '⚡',
       label: '能耗',
@@ -293,19 +306,19 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
   ];
 
   const renderFinalRecipeBar = () => (
-    <div className="rounded-xl border border-[#b89353]/65 bg-[linear-gradient(180deg,rgba(70,56,38,0.98),rgba(29,23,17,1))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,238,202,0.16),0_12px_28px_rgba(0,0,0,0.24)]">
+    <div className="rounded-lg border border-white/[0.085] bg-[#121820] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium tracking-[0.08em] text-[#efdfba]">
+        <span className="text-[11px] font-medium tracking-[0.08em] text-white/68">
           最终投入产出
         </span>
-        <span className="text-[10px] text-[rgba(245,229,196,0.56)]">
+        <span className="text-[10px] text-white/36">
           所有槽位共同生效
         </span>
       </div>
 
       <div className="flex min-w-0 items-center gap-2 flex-wrap">
         {finalRecipeInputs.length === 0 ? (
-          <span className="text-[10px] text-[rgba(255,234,196,0.55)]">无需原料</span>
+          <span className="text-[10px] text-white/42">无需原料</span>
         ) : (
           finalRecipeInputs.map((effect, index) => renderGoodsEntry(effect, `final-input-${index}`))
         )}
@@ -317,7 +330,7 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
         {finalRecipeOutputs.length > 0 ? (
           finalRecipeOutputs.map((effect, index) => renderGoodsEntry(effect, `final-output-${index}`))
         ) : (
-          <span className="text-[10px] text-[rgba(255,234,196,0.55)]">无产出</span>
+          <span className="text-[10px] text-white/42">无产出</span>
         )}
       </div>
 
@@ -327,8 +340,8 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
             key={`final-meta-${index}`}
             className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${
               effect.isPositive
-                ? 'border-[#7b6a4d] bg-[rgba(255,240,205,0.06)] text-[rgba(242,227,198,0.8)]'
-                : 'border-rose-400/20 bg-rose-400/8 text-rose-200/85'
+                ? 'border-white/[0.08] bg-white/[0.035] text-white/58'
+                : 'border-rose-400/20 bg-rose-400/[0.055] text-rose-200/85'
             }`}
           >
             <span>{effect.icon}</span>
@@ -404,37 +417,36 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
 
     return createPortal(
       <div
-        className="fixed z-[9999] min-w-[260px] overflow-y-auto
-                   bg-gradient-to-br from-white/[0.12] to-white/[0.06]
-                   backdrop-blur-xl border border-white/[0.15] rounded-xl
-                   shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
+        className="fixed z-[9999] min-w-[280px] overflow-y-auto
+                   rounded-lg border border-white/[0.12] bg-[#111720]
+                   shadow-[0_18px_48px_rgba(0,0,0,0.46)]"
         style={{
           top: Math.max(10, dropdownPos.top),
           left: dropdownPos.left,
           maxHeight: `${maxHeight}px`,
         }}
       >
-        <div className="p-2.5 border-b border-white/[0.1] sticky top-0 bg-black/20 backdrop-blur-sm">
+        <div className="sticky top-0 border-b border-white/[0.08] bg-[#141b24] p-2.5">
           <div className="flex items-center gap-2">
             <span className="text-lg">{slot.icon}</span>
             <div>
-              <div className="text-sm font-medium text-white">{slot.name}</div>
+              <div className="text-sm font-medium text-white/86">{slot.name}</div>
               {slot.description && (
-                <div className="text-xs text-white/50">{slot.description}</div>
+                <div className="text-xs text-white/40">{slot.description}</div>
               )}
             </div>
           </div>
         </div>
         <div className="p-1">
           <button
-            className={`w-full text-left px-2 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-all
+            className={`w-full text-left px-2 py-1.5 rounded-md text-sm flex items-center gap-2 transition-all
                         ${currentMethodId === 0
-                          ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
-                          : 'hover:bg-white/[0.08] border border-transparent'}`}
+                          ? 'bg-white/[0.08] text-white/78 border border-white/[0.12]'
+                          : 'hover:bg-white/[0.055] border border-transparent text-white/50'}`}
             onClick={(e) => handleMethodSelect(activeSlot, 0, e)}
           >
-            <span className="w-6 text-center">❌</span>
-            <span className="text-white/50">未选择</span>
+            <span className="w-6 text-center text-white/42">×</span>
+            <span>未选择</span>
           </button>
 
           {availableMethods.map((method: BuildingProductionMethod) => {
@@ -446,10 +458,10 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
               <button
                 key={method.id}
                 disabled={isLocked}
-                className={`w-full text-left px-2 py-1.5 rounded-lg text-sm transition-all
+                className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-all
                             ${isSelected
-                              ? 'bg-blue-500/20 text-blue-400 border border-blue-400/30'
-                              : 'hover:bg-white/[0.08] border border-transparent'}
+                              ? 'bg-white/[0.08] border border-[var(--accent)]/35'
+                              : 'hover:bg-white/[0.055] border border-transparent'}
                             ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                 onClick={(e) => !isLocked && handleMethodSelect(activeSlot, method.id, e)}
               >
@@ -462,6 +474,156 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
       document.body
     );
   };
+
+  const renderSlotButtons = (compactMode = false) => (
+    buildingConfig.slots.map((slot: BuildingSlotType, slotIndex: number) => {
+      const currentMethodId = currentMethods[slotIndex] || 0;
+      const currentMethod = currentMethodId > 0
+        ? (getMethodById(currentMethodId) as BuildingProductionMethod | undefined)
+        : undefined;
+      const colors = GLASS_SLOT_COLORS[slotIndex % GLASS_SLOT_COLORS.length];
+      const isActive = activeSlot === slotIndex;
+      const hasMethod = currentMethodId > 0 && currentMethod;
+      const sizeClass = compactMode
+        ? 'h-8 w-8 rounded-lg text-base'
+        : 'h-10 w-10 rounded-xl text-lg';
+
+      return (
+        <div key={slotIndex} className="relative">
+          <button
+            ref={el => buttonRefs.current[slotIndex] = el}
+            className={`
+              ${sizeClass} flex items-center justify-center
+              transition-all duration-200 hover:scale-105
+              backdrop-blur-sm border
+              ${isActive
+                ? `${colors.bg} ${colors.active} ${compactMode ? '' : colors.glow} scale-105`
+                : `bg-white/[0.08] ${colors.border} hover:bg-white/[0.12]`}
+              ${!hasMethod ? 'opacity-50' : ''}
+            `}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSlotClick(slotIndex, e);
+            }}
+            onMouseEnter={() => setShowTooltip(slotIndex)}
+            onMouseLeave={() => setShowTooltip(null)}
+            title={`${slot.name}${currentMethod ? `: ${currentMethod.name}` : ''}`}
+          >
+            {hasMethod ? getMethodIcon(currentMethod, slot) : (slot.icon || '⚙️')}
+          </button>
+
+          {showTooltip === slotIndex && !isActive && (
+            <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap max-w-[200px]">
+              <div className="bg-gradient-to-br from-white/[0.15] to-white/[0.08] backdrop-blur-xl border border-white/[0.15] rounded-lg px-2.5 py-1.5 text-xs shadow-lg">
+                <div className="font-medium flex items-center gap-1 text-white">
+                  <span>{slot.icon}</span>
+                  <span>{slot.name}</span>
+                </div>
+                {currentMethod ? (
+                  <div className="text-blue-400 mt-0.5">{currentMethod.name}</div>
+                ) : (
+                  <div className="text-white/50 mt-0.5">未选择</div>
+                )}
+                {slot.description && (
+                  <div className="text-white/40 mt-0.5 text-[10px]">{slot.description}</div>
+                )}
+              </div>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-white/[0.15]" />
+            </div>
+          )}
+        </div>
+      );
+    })
+  );
+
+  if (compact) {
+    const selectedCount = currentMethods.filter(Boolean).length;
+
+    return (
+      <div className="mt-1 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {renderSlotButtons(true)}
+          </div>
+          <span className="shrink-0 text-[10px] tabular-nums text-white/35">
+            {selectedCount}/{buildingConfig.slots.length} 槽
+          </span>
+        </div>
+
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {buildingConfig.slots.map((slot: BuildingSlotType, slotIndex: number) => {
+            const currentMethodId = currentMethods[slotIndex] || 0;
+            if (!currentMethodId) return null;
+            const method = getMethodById(currentMethodId) as BuildingProductionMethod | null;
+            if (!method) return null;
+
+            return (
+              <span
+                key={`compact-active-${slotIndex}`}
+                className="inline-flex max-w-full items-center gap-1 rounded border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] text-white/58"
+              >
+                <span className="text-white/38">{slot.name}</span>
+                <span className="text-white/22">·</span>
+                <span className="truncate text-white/76">{method.name}</span>
+              </span>
+            );
+          })}
+        </div>
+
+        <div className="rounded-md border border-white/[0.07] bg-black/[0.13] px-2.5 py-2">
+          <div className="mb-1.5 text-[10px] font-medium tracking-[0.08em] text-white/42">
+            最终投入产出
+          </div>
+          <div className="flex min-w-0 items-center gap-1.5 flex-wrap">
+            {finalRecipeInputs.length === 0 ? (
+              <span className="text-[10px] text-white/42">无需原料</span>
+            ) : (
+              finalRecipeInputs.map((effect, index) => renderGoodsEntry(effect, `compact-final-input-${index}`, true))
+            )}
+
+            {(finalRecipeInputs.length > 0 || finalRecipeOutputs.length > 0) && (
+              <span className="text-sm text-sky-300/75">→</span>
+            )}
+
+            {finalRecipeOutputs.length > 0 ? (
+              finalRecipeOutputs.map((effect, index) => renderGoodsEntry(effect, `compact-final-output-${index}`, true))
+            ) : (
+              <span className="text-[10px] text-white/42">无产出</span>
+            )}
+          </div>
+
+          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+            {finalRecipeMeta.map((effect, index) => (
+              <span
+                key={`compact-final-meta-${index}`}
+                className={`rounded border px-1.5 py-0.5 text-[10px] tabular-nums ${
+                  effect.isPositive
+                    ? 'border-white/[0.08] bg-white/[0.035] text-white/52'
+                    : 'border-rose-400/15 bg-rose-400/[0.045] text-rose-200/75'
+                }`}
+              >
+                {effect.label} {effect.value}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {renderDropdownMenu()}
+
+        {activeSlot !== null && createPortal(
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveSlot(null);
+              setDropdownPos(null);
+            }}
+          />,
+          document.body
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mt-3">
@@ -539,11 +701,11 @@ export const ProductionMethodsPanel: React.FC<ProductionMethodsPanelProps> = ({
               return (
                 <span
                   key={`active-${slotIndex}`}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#c8ab72]/30 bg-[rgba(217,186,126,0.08)] px-1.5 py-0.5 text-[10px] text-[rgba(245,232,204,0.82)]"
+                  className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.035] px-1.5 py-0.5 text-[10px] text-white/62"
                 >
                   <span>{slot.icon}</span>
                   <span>{slot.name}</span>
-                  <span className="text-[rgba(245,232,204,0.46)]">·</span>
+                  <span className="text-white/24">·</span>
                   <span>{method.name}</span>
                 </span>
               );

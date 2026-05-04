@@ -21,19 +21,18 @@ import { createBuyOrder, createSellOrder, getOrderBookView, cancelOrder, getActi
 import { getBaseMaterials, getUpgradeMaterials, getBuildingConstructionConfig } from '@/data/buildingMaterials';
 import { getCompanyConstructionQueue } from '../construction/ConstructionTick';
 import { getCompanyRetailGoodsNeeds } from '../economy/RetailSystem';
+import { getInputReservation } from './InputProtection';
 
 // 订单价格调整配置
+// Why: 原 12 tick / 5% 节奏太慢，且 30% 地板与新放开的 PriceEngine 0.25× 不一致，
+//      导致积压库存的卖单几乎永远停留在 30% 基价，无法跌到清仓价区间。
+// How: 提高频率（12→6 tick）、加大单次幅度（5%→8%）、对齐新地板（30%→15%）。
 const ORDER_PRICE_ADJUST_CONFIG = {
-  // 订单存在多少tick后开始调整价格
-  adjustAfterTicks: 12,
-  // 每次调整的价格比例
-  adjustPercent: 0.05,  // 5%
-  // 最大调整次数（防止价格无限调整）
+  adjustAfterTicks: 6,
+  adjustPercent: 0.08,
   maxAdjustments: 10,
-  // 卖单最低价格（相对于基础价）
-  minSellPriceRatio: 0.3,  // 30%
-  // 买单最高价格（相对于基础价）
-  maxBuyPriceRatio: 2.0,   // 200%
+  minSellPriceRatio: 0.15,
+  maxBuyPriceRatio: 2.0,
 };
 
 // 价格策略
@@ -285,13 +284,12 @@ function executeAutoSell(
     // 如果是生产所需原材料，检查是否有多余库存
     const dailyNeed = productionInputNeeds.get(goodsId) || 0;
     if (dailyNeed > 0) {
-      // 保留1天生产用量（从3天降到1天，更积极卖出）
-      const reserveForProduction = dailyNeed * 1;
+      // 保留 5 天生产用量，避免把刚买进的电力/原料又挂出去卖
+      const reserveForProduction = dailyNeed * 5;
       const excessInventory = inventory - reserveForProduction;
-      
-      // 多余库存>10 或者 库存超过1000绝对值时可以卖（降低门槛）
-      if (excessInventory - retailReserve > 10 || inventory > 1000) {
-        // 有多余库存，加入可销售列表
+
+      // 投入物只在显著过剩（>预留×1.5）时才考虑卖出
+      if (excessInventory - retailReserve > 10 && inventory > reserveForProduction * 1.5) {
         outputGoods.add(goodsId);
       }
       continue; // 已处理，跳过下面的通用逻辑
@@ -311,26 +309,28 @@ function executeAutoSell(
     // 保留建造队列需要的材料
     const constructionReserved = reservedForConstruction.get(goodsId) || 0;
     
-    // 保留生产所需的原材料（1天用量，更积极卖出）
+    // 保留生产所需的原材料（5 天用量），防止刚买进的投入物被错误转卖
     const dailyProductionNeed = productionInputNeeds.get(goodsId) || 0;
-    const productionReserve = dailyProductionNeed * 1;
+    const productionReserve = dailyProductionNeed * 5;
 
     // 保留自有零售店当前缺口
     const retailReserve = retailGoodsNeeds.get(goodsId) || 0;
-    
+
     // 计算总需保留量
     const totalReserve = reserved + constructionReserved + productionReserve + retailReserve;
-    
+
     // 计算真正可卖的数量
     let available = inventory - totalReserve;
-    
+
     // 【关键修复】如果库存很大（>1000），强制可卖一部分
-    // 但必须保证建造材料不被卖掉
+    // 但必须保证建造材料不被卖掉，且投入物未严重过剩时不强制卖
     if (inventory > 1000 && available < inventory * 0.5) {
-      // 计算硬性保留后的上限
-      const maxSellable = Math.max(0, inventory - totalReserve);
-      // 取50%和建造保留后上限的较小值
-      available = Math.min(Math.floor(inventory * 0.5), maxSellable);
+      const inputReserve = getInputReservation(world, playerId, goodsId);
+      // 投入物且库存 ≤ 预留×2 → 不强制卖
+      if (!(inputReserve > 0 && inventory <= inputReserve * 2)) {
+        const maxSellable = Math.max(0, inventory - totalReserve);
+        available = Math.min(Math.floor(inventory * 0.5), maxSellable);
+      }
     }
     
     // 如果玩家自己有买单，且可用量很少，跳过
@@ -372,15 +372,16 @@ function executeAutoSell(
     }
     
     // 库存压力降价：库存越接近积压上限，卖价越低，促成交
-    // Why: 长周期模拟显示矿业 AI 库存涨数百万仍守在市价附近无法成交
-    // How: 库存>1万时按比例下调 5-30%，但不低于基础价 20% 的硬地板
-    if (inventory > 10000) {
-      const pressureRatio = Math.min(1, (inventory - 10000) / 90000);
-      sellPrice *= 1 - 0.30 * pressureRatio;
+    // Why: 原触发线 10000 对中小品类永不触发；矿业 AI 库存涨数百万仍守在市价附近无法成交。
+    // How: 触发线下调到 1000 让中小品类也能感知，最大降幅扩到 40%。
+    if (inventory > 1000) {
+      const pressureRatio = Math.min(1, (inventory - 1000) / 9000);
+      sellPrice *= 1 - 0.40 * pressureRatio;
     }
 
-    // 确保价格不低于基础价的20%
-    sellPrice = Math.max(sellPrice, basePrice * 0.2);
+    // 价格地板放宽至基础价的 10%，让积压库存能真正出清
+    // Why: 原 20% 地板叠加 PriceEngine 0.45× / AI 吃单 0.5× 锁死下行通道
+    sellPrice = Math.max(sellPrice, basePrice * 0.1);
     
     // 检查是否已有足够的卖单（放宽到10个，且只检查普通挂单）
     const existingSellOrders = countExistingOrders(world, playerId, goodsId, 'sell');
@@ -479,23 +480,24 @@ function executeTakeBuyOrders(
     // 保留建造队列需要的材料
     const constructionReserve = reservedForConstruction.get(goodsId) || 0;
     
-    // 保留生产所需的1天用量（从3天降到1天，更积极卖出）
+    // 保留生产所需 5 天用量，防止把刚买进的投入物又挂出去卖
     const dailyNeed = productionInputNeeds.get(goodsId) || 0;
-    const productionReserve = dailyNeed * 1;
+    const productionReserve = dailyNeed * 5;
 
     // 保留自有零售店当前缺口
     const retailReserve = retailGoodsNeeds.get(goodsId) || 0;
-    
+
     // 总可用 = 库存 - 已预留 - 建造保留 - 生产保留
     let available = inventory - reserved - constructionReserve - productionReserve - retailReserve;
-    
+
     // 【关键修复】如果库存很大（>5000），强制可卖一部分
-    // 但必须保证建造材料不被卖掉
+    // 但投入物未严重过剩（≤预留×2）时不强制卖
     if (inventory > 5000 && available < inventory * 0.3) {
-      // 计算硬性保留后的上限
-      const maxSellable = Math.max(0, inventory - reserved - constructionReserve - productionReserve - retailReserve);
-      // 取30%和建造保留后上限的较小值
-      available = Math.min(Math.floor(inventory * 0.3), maxSellable);
+      const inputReserve = getInputReservation(world, playerId, goodsId);
+      if (!(inputReserve > 0 && inventory <= inputReserve * 2)) {
+        const maxSellable = Math.max(0, inventory - reserved - constructionReserve - productionReserve - retailReserve);
+        available = Math.min(Math.floor(inventory * 0.3), maxSellable);
+      }
     }
     
     // 如果玩家自己有买单，且可用量不多，跳过
@@ -521,12 +523,12 @@ function executeTakeBuyOrders(
       if (buyOrder.companyId === playerId) continue;
       
       // 检查价格是否可接受（至少基准价的50%，从80%降低到50%更积极）
-      if (buyOrder.price < basePrice * 0.5) {
+      if (buyOrder.price < basePrice * 0.3) {
         break; // 买单是降序的，后面的价格更低，不用继续了
       }
       
       // 计算可卖数量（不超过可用库存和买单需求量）
-      const sellQuantity = Math.min(available, buyOrder.remaining, 1000);
+      const sellQuantity = Math.min(available, buyOrder.remaining);
       
       if (sellQuantity < 1) continue;
       

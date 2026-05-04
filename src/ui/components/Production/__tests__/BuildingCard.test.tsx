@@ -21,6 +21,8 @@ vi.mock('@/data/buildings', () => ({
       energyCost: 100,
       maxLevel: 5,
       upgradeCosts: [0, 0, 0, 0, 0, 0],
+      capacityMultipliers: [1, 1.2, 1.4, 1.6, 1.8, 2],
+      efficiencyMultipliers: [1, 1.1, 1.2, 1.3, 1.4, 1.5],
     },
   ],
   isRetailBuilding: () => false,
@@ -81,6 +83,7 @@ function createWorld(isActive: 0 | 1) {
       isActive: new Uint8Array([isActive]),
       owners: new Uint16Array([0]),
       inputBuffers: new Float32Array(8),
+      outputBuffers: new Float32Array(4),
     },
     goods: {
       prices: new Float32Array([0, 100]),
@@ -108,7 +111,8 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥-8/日');
+    // compact 模式下利润和"/日"分属不同元素
+    expect(html).toContain('¥-8');
   });
 
   it('keeps showing positive estimated profit when the building is active', () => {
@@ -126,6 +130,6 @@ describe('BuildingCard', () => {
       })
     );
 
-    expect(html).toContain('¥992/日');
+    expect(html).toContain('¥992');
   });
 });

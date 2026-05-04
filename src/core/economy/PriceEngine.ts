@@ -21,6 +21,7 @@ import {
 } from '../constants';
 import { getVWAP, get24hVolume } from '../market/MatchingEngine';
 import { getPriceCache } from '../market/PriceCache';
+import { getOrderBookIndex } from '../market/OrderBookIndex';
 import { updateWorldDemands, CONSUMER_TIERS, DemandModifiers } from './DemandCurve';
 import { applyMarketSubstitution } from './SubstitutionSystem';
 import { perfMonitor } from '../performance/PerformanceMonitor';
@@ -28,10 +29,27 @@ import { getDemandPressure, syncDemandPressureFromDemand } from './MarketStats';
 
 // 使用constants.ts中定义的统一平滑系数 SUPPLY_DEMAND_SMOOTHING
 
-// 收紧极端区间：原 [0.3, 5.0] 在长期供需失衡下会把价格锁死在地板/天花板上。
-// [0.45, 3.5] 仍允许 ±250% 波动，但留出 AI 调价空间。
+// 极端区间：放开下行通道以解决系统性库存积压。
+// Why: 0.45× 地板与卖单/AI 吃单底（0.2× / 0.5×）共同锁死过剩商品，无法跌到清仓价。
+// How: 下限 0.45→0.25，让真正过剩的商品有机会以 25% 基价出清；上限保持 3.5× 不变。
 const EXTREME_SHORTAGE_PRICE_RATIO = 3.5;
-const EXTREME_SURPLUS_PRICE_RATIO = 0.45;
+const EXTREME_SURPLUS_PRICE_RATIO = 0.25;
+
+/**
+ * 在已排序的订单索引数组中找第一个仍 isActive 且 remainings>0 的订单价格。
+ * 用于绕过 OrderBookIndex 残留的失活订单（幽灵价格）。
+ */
+function pickBestActivePrice(world: GameWorld, indices: Uint32Array): number | null {
+  const o = world.orders;
+  for (let k = 0; k < indices.length; k++) {
+    const idx = indices[k];
+    if (o.isActive[idx] && o.remainings[idx] > 0) {
+      const p = o.prices[idx];
+      if (p > 0) return p;
+    }
+  }
+  return null;
+}
 
 function calculateMarketPriceBounds(
   baseValue: number,
@@ -159,10 +177,57 @@ for (let i = 0; i < ACTUAL_GOODS_COUNT; i++) {
   if (volume24h === 0) {
     g.supplies[i] *= (1 - SUPPLY_DEMAND_SMOOTHING);
     if (baseValue > 0 && currentPrice > 0) {
-      const noTradeRate = MEAN_REVERSION_RATE * NO_TRADE_REVERSION_MULTIPLIER;
-      const targetChange = (baseValue - currentPrice) / currentPrice * noTradeRate;
       const tickCap = NO_TRADE_MAX_MONTHLY_CHANGE / 30;
-      const cappedChange = Math.max(-tickCap, Math.min(tickCap, targetChange));
+
+      // OrderBook 锚定：未成交但已有挂单时，挂单本身就是市场对均衡价的报价
+      // Why: 仅靠 supply/demand 比值会把"无人接单的高价卖单"误判为短缺，把价格推到 3.5× 上限
+      //      而真实经济学含义是：卖一价 = 市场愿意成交的上限；买一价 = 下限
+      // How: 有 bid+ask → 取 mid 作目标；只有 ask → 钳制不超过 ask；只有 bid → 钳制不低于 bid
+      // 跳过失活订单（isActive=0）以避免 OrderBookIndex 残留的"幽灵价格"锁住价格通道
+      const orderBookIndex = getOrderBookIndex();
+      const bestBid = pickBestActivePrice(world, orderBookIndex.getAllBuyOrders(i));
+      const bestAsk = pickBestActivePrice(world, orderBookIndex.getAllSellOrders(i));
+
+      let targetChange: number;
+      let orderBookFloor = -Infinity;
+      let orderBookCeil = Infinity;
+
+      if (bestBid !== null && bestAsk !== null && bestBid > 0 && bestAsk > 0) {
+        // 双边挂单：均衡价 = (bid + ask) / 2
+        const midPrice = (bestBid + bestAsk) / 2;
+        targetChange = (midPrice - currentPrice) / currentPrice;
+        orderBookFloor = bestBid;
+        orderBookCeil = bestAsk;
+      } else if (bestAsk !== null && bestAsk > 0) {
+        // 只有卖单：均衡价不可能高于卖一（无人接单证明市场不愿出此价）
+        targetChange = (bestAsk - currentPrice) / currentPrice;
+        orderBookCeil = bestAsk;
+      } else if (bestBid !== null && bestBid > 0) {
+        // 只有买单：均衡价不可能低于买一（无人卖出证明市场不愿低于此价）
+        targetChange = (bestBid - currentPrice) / currentPrice;
+        orderBookFloor = bestBid;
+      } else {
+        // 无任何挂单 → 走原 supply/demand 回归逻辑
+        const safeSupply = Math.max(supply, 0.001);
+        const safeDemand = Math.max(demand, 0.001);
+        const ratio = Math.min(MAX_SUPPLY_DEMAND_RATIO, safeDemand / safeSupply);
+        if (ratio > 1.05) {
+          targetChange = Math.min(tickCap, Math.log10(ratio) * tickCap);
+        } else if (ratio < 0.95) {
+          targetChange = -Math.min(tickCap, Math.log10(1 / Math.max(ratio, 0.001)) * tickCap);
+        } else {
+          const noTradeRate = MEAN_REVERSION_RATE * NO_TRADE_REVERSION_MULTIPLIER;
+          targetChange = (baseValue - currentPrice) / currentPrice * noTradeRate;
+        }
+      }
+
+      const { minPrice, maxPrice } = calculateMarketPriceBounds(baseValue, demand, supply);
+      const targetPrice = currentPrice * (1 + targetChange);
+      let boundedTarget = Math.max(minPrice, Math.min(maxPrice, targetPrice));
+      // 应用 OrderBook 边界（优先级高于 baseValue 边界，因为挂单是真实市场信号）
+      boundedTarget = Math.max(orderBookFloor, Math.min(orderBookCeil, boundedTarget));
+      const boundedChange = (boundedTarget - currentPrice) / currentPrice;
+      const cappedChange = Math.max(-tickCap, Math.min(tickCap, boundedChange));
       g.prices[i] = currentPrice * (1 + cappedChange);
     }
     continue;

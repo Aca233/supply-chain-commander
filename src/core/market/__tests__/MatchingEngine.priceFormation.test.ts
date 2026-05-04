@@ -12,7 +12,7 @@ describe('MatchingEngine price formation', () => {
     resetOrderBookIndex();
   });
 
-  it('uses the bid-ask midpoint instead of whichever stale order arrived first', () => {
+  it('fills a new sell order at the resting buy price', () => {
     const world = createGameWorld();
     world.goods.count = 80;
     world.goods.prices[GoodsId.FOOD] = 100;
@@ -29,7 +29,28 @@ describe('MatchingEngine price formation', () => {
     const result = matchAllOrders(world);
 
     expect(result.trades).toHaveLength(1);
-    expect(result.trades[0].price).toBe(100);
-    expect(result.matchedValue).toBe(1000);
+    expect(result.trades[0].price).toBe(120);
+    expect(result.matchedValue).toBe(1200);
+  });
+
+  it('fills a new buy order at the resting sell price', () => {
+    const world = createGameWorld();
+    world.goods.count = 80;
+    world.goods.prices[GoodsId.FOOD] = 100;
+    world.goods.baseValues[GoodsId.FOOD] = 100;
+    world.companies.count = 2;
+    world.companies.cash[0] = 10_000;
+    world.companies.cash[1] = 10_000;
+    setInventory(world, 1, GoodsId.FOOD, 10);
+
+    createSellOrder(world, 1, GoodsId.FOOD, 10, 80);
+    world.tick = 10;
+    createBuyOrder(world, 0, GoodsId.FOOD, 10, 120);
+
+    const result = matchAllOrders(world);
+
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].price).toBe(80);
+    expect(result.matchedValue).toBe(800);
   });
 });

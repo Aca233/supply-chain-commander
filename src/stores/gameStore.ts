@@ -22,7 +22,7 @@ import {
 } from '@/core/news';
 import { initializeWorld, addBuilding, getBuildingSlotMethodsArray, setBuildingSlotMethod } from '@/core/world/WorldInitializer';
 import { GameLoop, createGameLoop, TickResult, PerformanceReport } from '@/core/loop/GameLoop';
-import { createBuyOrder, createSellOrder, createSellOrderWithReason, cancelOrder, getOrderBookView, OrderBookView, OrderResult } from '@/core/market/OrderBook';
+import { createBuyOrder, createSellOrderWithReason, cancelOrder, getNormalizedOrderPrice, getOrderBookView, OrderBookView } from '@/core/market/OrderBook';
 import { soundManager } from '@/core/sound';
 import { getMarketStats, MarketStats } from '@/core/market/MatchingEngine';
 import { getPriceTrend, PriceTrend, getPriceSummary, PriceSummary } from '@/core/economy/PriceEngine';
@@ -112,7 +112,7 @@ import {
   ControlStrategy,
   ControlRight,
 } from '@/core/finance/OwnershipControl';
-import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
+import { ALL_GOODS, GoodsDefinition, isServiceGoods } from '@/data/goods';
 import { ALL_BUILDINGS, BuildingTypeDefinition, isRetailBuilding } from '@/data/buildings';
 import { getBaseMaterials, getBuildTime } from '@/data/buildingMaterials';
 import {
@@ -306,28 +306,28 @@ export interface BuildingLaborView {
 interface GameState {
   // 核心（world和gameLoop通过getter函数访问，不在immer state中）
   initialized: boolean;
-  
+
   // 游戏状态
   tick: number;
   paused: boolean;
   speed: 1 | 2 | 4 | 8;
   gameDate: string;
-  
+
   // 玩家数据
   playerCash: number;
   playerAssets: number;
   playerBuildings: number;
   playerFinancialSnapshot: PlayerFinancialSnapshot;
-  
+
   // UI状态
   ui: UIState;
-  
+
   // 最近tick结果
   lastTickResult: TickResult | null;
-  
+
   // 性能
   performance: PerformanceReport | null;
-  
+
   // 历史数据（最近100个tick）
   financialHistory: HistoryDataPoint[];
 }
@@ -339,19 +339,19 @@ interface GameActions {
   // 初始化
   initGame: () => void;
   loadGame: (saveId: string) => boolean;
-  
+
   // 游戏控制
   startGame: () => void;
   pauseGame: () => void;
   resumeGame: () => void;
   setSpeed: (speed: 1 | 2 | 4 | 8) => void;
   manualTick: () => void;
-  
+
   // 交易
   placeBuyOrder: (goodsId: number, quantity: number, price: number) => boolean;
   placeSellOrder: (goodsId: number, quantity: number, price: number) => boolean;
   cancelPlayerOrder: (orderIdx: number) => boolean;
-  
+
   // 建筑
   buildBuilding: (buildingTypeId: number, slotMethods?: number[]) => number | null;
   upgradeBuilding: (buildingId: number) => boolean;
@@ -362,7 +362,7 @@ interface GameActions {
   getBuildingLaborView: (buildingId: number) => BuildingLaborView | null;
   setBuildingLaborWageMultiplier: (buildingId: number, role: LaborRoleKey, multiplier: number) => boolean;
   demolishBuilding: (buildingId: number) => boolean;
-  
+
   // 贷款
   applyLoan: (amount: number, loanType: LoanType, collateralType?: 'inventory' | 'building' | 'none') => { approved: boolean; loanId?: number; reason?: string };
   prepayPlayerLoan: (loanId: number) => { success: boolean; penalty?: number; reason?: string };
@@ -376,7 +376,7 @@ interface GameActions {
     termDays: number;
     monthlyPayment: number;
   }>;
-  
+
   // UI
   setSelectedGoods: (goodsId: number | null) => void;
   setSelectedBuilding: (buildingId: number | null) => void;
@@ -388,14 +388,14 @@ interface GameActions {
   setTheme: (theme: 'light' | 'dark') => void;
   addNotification: (type: Notification['type'], message: string) => void;
   dismissNotification: (id: number) => void;
-  
+
   // 生产方式槽位
   getBuildingSlotConfig: (buildingTypeId: number) => UiBuildingSlotConfig | null;
   getBuildingCurrentMethods: (buildingId: number) => number[];
   getAvailableMethodsForSlot: (buildingTypeId: number, slotIndex: number, buildingLevel: number) => UiProductionMethod[];
   changeBuildingSlotMethod: (buildingId: number, slotIndex: number, methodId: number) => { success: boolean; reason?: string };
   getMethodInfo: (methodId: number) => UiMethodInfo | null;
-  
+
   // 数据获取
   getWorld: () => GameWorld | null;
   getTotalMoneySupply: () => { companyCash: number; householdCash: number; bankDeposits: number; total: number };
@@ -411,14 +411,14 @@ interface GameActions {
   getAllBuildingTypes: () => BuildingTypeDefinition[];
   getFinancialHistory: () => HistoryDataPoint[];
   getInventoryQuality: (goodsId: number) => { name: string; priceMultiplier: number; color: string };
-  
+
   // 零售系统
   getPlayerRetailStores: () => number[];
   getRetailStoreDetails: (retailId: number) => ReturnType<typeof getRetailStoreDetails> | null;
   getRetailMarketOverview: () => ReturnType<typeof getRetailMarketOverview> | null;
   setRetailPrice: (retailId: number, goodsId: number, price: number) => boolean;
   setRetailMarkup: (retailId: number, goodsId: number, markup: number) => boolean;
-  
+
   // 股票市场
   getStockMarketState: () => StockMarketState | null;
   getStockInfo: (companyId: number) => Stock | null;
@@ -431,14 +431,14 @@ interface GameActions {
   updateBankruptcyStrategy: (patch: Partial<BankruptcyStrategySettings>) => void;
   placeBankruptcyBid: (eventId: string, assetId: string, amount: number, source?: 'manual' | 'strategy') => boolean;
   confirmBankruptcyPurchase: (eventId: string, assetId: string) => boolean;
-  
+
   // 收购系统
   getCompanyValuation: (companyId: number) => { bookValue: number; marketValue: number; enterpriseValue: number; fairValue: number } | null;
   analyzeAcquisition: (targetId: number) => ReturnType<typeof analyzeAcquisitionFeasibility> | null;
   initiateAcquisitionOffer: (targetId: number, targetSharePercent: number, offerPrice: number) => boolean;
   initiateAssetBuy: (sellerId: number, assetType: 'building' | 'inventory', assetIds: number[], price: number) => boolean;
   getPlayerAcquisitionOffers: () => AcquisitionOffer[];
-  
+
   // ============ 统一公司数据 (新增) ============
   getCompanyProfile: (companyId: number) => CompanyProfile | null;
   getAllCompanyProfiles: () => CompanyProfile[];
@@ -447,7 +447,7 @@ interface GameActions {
   getPlayerControlledProfiles: () => CompanyProfile[];
   getPlayerPortfolio: () => { totalValue: number; totalCost: number; totalGain: number; gainPercent: number; holdingCount: number };
   getCompanyMarketStats: () => { rising: number; falling: number; unchanged: number; totalVolume: number; totalMarketCap: number };
-  
+
   // ============ 控制权相关 (新增) ============
   getPlayerControlLevel: (companyId: number) => ControlLevel;
   getPlayerControlledCompanyIds: () => number[];
@@ -455,11 +455,11 @@ interface GameActions {
   setControlledStrategy: (companyId: number, strategy: ControlStrategy) => boolean;
   requestCompanyDividend: (companyId: number, amount: number) => { success: boolean; playerReceived?: number; reason?: string };
   transferAssets: (fromId: number, toId: number, assetType: 'building' | 'inventory', assetIds: number[]) => { success: boolean; reason?: string };
-  
+
   // ============ 收藏管理 (新增) ============
   toggleFavoriteCompany: (companyId: number) => void;
   getFavoriteCompanies: () => number[];
-  
+
   // 性能监控
   getPerformanceSnapshot: () => PerformanceSnapshot | null;
   getPerformanceSnapshots: (count: number) => PerformanceSnapshot[];
@@ -467,7 +467,7 @@ interface GameActions {
   getMemoryData: () => MemoryData;
   exportPerformanceJSON: (options?: Partial<ExportOptions>) => void;
   exportPerformanceCSV: (options?: Partial<ExportOptions>) => void;
-  
+
   // ============ 建造队列系统 (新增) ============
   getConstructionQueue: () => Array<{
     taskId: number;
@@ -501,7 +501,7 @@ interface GameActions {
   resumeConstruction: (taskId: number) => boolean;
   cancelPlayerConstruction: (taskId: number) => boolean;
   cancelPlayerDemolition: (taskId: number) => boolean;
-  
+
   // ============ 新闻系统 (新增) ============
   getNewsHistory: () => MonthlyNewsReport[];
   getLatestNews: () => MonthlyNewsReport | null;
@@ -511,7 +511,7 @@ interface GameActions {
   hideNewsDialog: () => void;
   markCurrentNewsRead: () => void;
   navigateToNews: () => void;
-  
+
   // ============ 月度价格追踪 (新增) ============
   getMonthlyPriceData: (monthKey?: string) => MonthlyPriceReport | null;
   getCurrentMonthPriceData: () => MonthlyPriceReport | null;
@@ -624,7 +624,7 @@ export const useGameStore = create<GameState & GameActions>()(
     lastTickResult: null,
     performance: null,
     financialHistory: [],
-    
+
     // ==================== 初始化 ====================
     initGame: () => {
       const world = initializeWorld();
@@ -641,20 +641,20 @@ export const useGameStore = create<GameState & GameActions>()(
       let pendingMaintenanceCost = 0;
       let pendingLaborCost = 0;
       let pendingEnergyCost = 0;
-      
+
       // 【重要】在创建GameLoop之前重置新闻系统，因为GameLoop会初始化并捕获快照
       fullResetNewsStore();  // 清除localStorage中的旧新闻
       resetNewsSystem();     // 重置生成器状态
       resetMonthlyStats();   // 重置月度快照
       resetEventTracker();   // 重置事件追踪
-      
+
       // 创建游戏循环（这会调用 initNewsSystem 捕获初始快照）
       const gameLoop = createGameLoop(world);
-      
+
       // 保存到外部引用（不被immer冻结）
       worldRef = world;
       gameLoopRef = gameLoop;
-      
+
       // 加载新闻历史（现在是空的）并注册新闻回调
       loadNewsHistory();
       onNewsGenerated((report) => {
@@ -665,11 +665,11 @@ export const useGameStore = create<GameState & GameActions>()(
           state.ui.newsDialogOpenSource = 'auto-generated';
           state.ui.newsVersion += 1;  // 触发新闻页面刷新
         });
-        
+
         // 添加通知
         get().addNotification('info', `📰 ${report.headline.title}`);
       });
-      
+
       // 设置tick回调（性能优化版本）
       gameLoop.onTick((result) => {
         const currentTick = result.tick;
@@ -678,7 +678,7 @@ export const useGameStore = create<GameState & GameActions>()(
         const playerOperatingCosts = worldRef
           ? calculateCompanyOperatingCostPerTick(worldRef, 0)
           : { maintenance: 0, labor: 0, energy: 0, total: 0, cashExpense: 0, nonCashExpense: 0 };
-        
+
         let tradeRevenue = 0;
         let tradeCost = 0;
         const trades = result.matching.trades || [];
@@ -690,7 +690,7 @@ export const useGameStore = create<GameState & GameActions>()(
             tradeCost += trade.value;
           }
         }
-        
+
         pendingTradeRevenue += tradeRevenue;
         pendingTradeCost += tradeCost;
         pendingRetailRevenue += result.retailResult.playerRevenue || 0;
@@ -698,26 +698,26 @@ export const useGameStore = create<GameState & GameActions>()(
         pendingMaintenanceCost += playerOperatingCosts.maintenance;
         pendingLaborCost += playerOperatingCosts.labor;
         pendingEnergyCost += playerOperatingCosts.energy;
-        
+
         // 始终更新tick（轻量级）
         set((state) => {
           state.tick = currentTick;
           state.lastTickResult = result;
-          
+
           // 仅在需要时更新其他UI状态（减少渲染开销）
           if (shouldUpdateUI) {
             lastUIUpdateTick = currentTick;
             state.gameDate = formatGameDate(currentTick);
-            
+
             // 更新玩家数据（从外部引用读取）
             if (worldRef) {
               syncPlayerFinancialState(state, worldRef, currentTick);
               state.playerBuildings = refreshPlayerBuildingCount(worldRef, currentTick);
             }
-            
+
             state.performance = gameLoop.getPerformanceReport();
           }
-          
+
           // 财务历史数据更新（降低频率）
           if (shouldUpdateHistory && worldRef) {
             // 计算生产价值（估算：基于玩家建筑的产出）
@@ -726,22 +726,22 @@ export const useGameStore = create<GameState & GameActions>()(
             const laborCost = pendingLaborCost;
             const energyCost = pendingEnergyCost;
             const retailRevenue = pendingRetailRevenue;
-            
+
             // 综合收入和支出
             const totalRevenue = pendingTradeRevenue + retailRevenue;
             const totalCost = pendingTradeCost + pendingCashOperatingCost;
-            
+
             const currentCash = worldRef.companies.cash[0];
             const cashChange = currentCash - lastRecordedPlayerCash;
-            
+
             // 如果现金变化与计算的利润不符，调整收入或支出
             const calculatedProfit = totalRevenue - totalCost;
             const unmatchedChange = cashChange - calculatedProfit;
-            
+
             let adjustedRevenue = totalRevenue;
             let adjustedCost = totalCost;
             const assetBreakdown = calculateCompanyAssetBreakdown(worldRef, 0);
-            
+
             if (unmatchedChange > 0) {
               // 有未记录的收入
               adjustedRevenue += unmatchedChange;
@@ -749,7 +749,7 @@ export const useGameStore = create<GameState & GameActions>()(
               // 有未记录的支出
               adjustedCost += Math.abs(unmatchedChange);
             }
-            
+
             const historyPoint: HistoryDataPoint = {
               tick: currentTick,
               revenue: adjustedRevenue,
@@ -763,16 +763,16 @@ export const useGameStore = create<GameState & GameActions>()(
               laborCost,
               energyCost,
             };
-            
+
             state.financialHistory.push(historyPoint);
-            
+
             // 保留最近100个数据点
             if (state.financialHistory.length > 100) {
               state.financialHistory = state.financialHistory.slice(-100);
             }
 
             syncPlayerFinancialState(state, worldRef, currentTick);
-            
+
             lastRecordedPlayerCash = currentCash;
             pendingTradeRevenue = 0;
             pendingTradeCost = 0;
@@ -828,7 +828,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
       return true;
     },
-    
+
     // ==================== 游戏控制 ====================
     startGame: () => {
       if (gameLoopRef) {
@@ -838,7 +838,7 @@ export const useGameStore = create<GameState & GameActions>()(
         });
       }
     },
-    
+
     pauseGame: () => {
       if (gameLoopRef) {
         gameLoopRef.pause();
@@ -847,7 +847,7 @@ export const useGameStore = create<GameState & GameActions>()(
         });
       }
     },
-    
+
     resumeGame: () => {
       if (gameLoopRef) {
         gameLoopRef.resume();
@@ -856,7 +856,7 @@ export const useGameStore = create<GameState & GameActions>()(
         });
       }
     },
-    
+
     setSpeed: (speed) => {
       if (gameLoopRef) {
         gameLoopRef.setSpeed(speed);
@@ -865,24 +865,28 @@ export const useGameStore = create<GameState & GameActions>()(
         });
       }
     },
-    
+
     manualTick: () => {
       if (gameLoopRef) {
         gameLoopRef.manualTick();
       }
     },
-    
+
     // ==================== 交易 ====================
     placeBuyOrder: (goodsId, quantity, price) => {
       if (!worldRef) return false;
-      
+
+      const actualPrice = getNormalizedOrderPrice(worldRef, goodsId, 'buy', price);
       const orderId = createBuyOrder(worldRef, 0, goodsId, quantity, price);
       if (orderId !== null) {
         set((state) => {
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
         soundManager.playOrderPlace();
-        get().addNotification('success', `买单已提交: ${quantity}单位 @ ${formatCurrency(price)}`);
+        const priceNote = Math.abs(actualPrice - price) > 0.001
+          ? `（输入价 ${formatCurrency(price)} 已调整）`
+          : '';
+        get().addNotification('success', `买单已提交: ${quantity}单位 @ ${formatCurrency(actualPrice)}${priceNote}`);
         return true;
       } else {
         soundManager.playTradeFail();
@@ -890,15 +894,19 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
     },
-    
+
     placeSellOrder: (goodsId, quantity, price) => {
       if (!worldRef) return false;
-      
+
       const result = createSellOrderWithReason(worldRef, 0, goodsId, quantity, price);
       if (result.success) {
         const actualQty = result.actualQuantity ?? quantity;
+        const actualPrice = result.actualPrice ?? getNormalizedOrderPrice(worldRef, goodsId, 'sell', price);
         soundManager.playOrderPlace();
-        get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ${formatCurrency(price)}`);
+        const priceNote = Math.abs(actualPrice - price) > 0.001
+          ? `（输入价 ${formatCurrency(price)} 已调整）`
+          : '';
+        get().addNotification('success', `卖单已提交: ${actualQty.toFixed(0)}单位 @ ${formatCurrency(actualPrice)}${priceNote}`);
         return true;
       } else {
         soundManager.playTradeFail();
@@ -906,10 +914,10 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
     },
-    
+
     cancelPlayerOrder: (orderIdx) => {
       if (!worldRef) return false;
-      
+
       const success = cancelOrder(worldRef, orderIdx);
       if (success) {
         set((state) => {
@@ -920,31 +928,31 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return success;
     },
-    
+
     // ==================== 建筑 ====================
     buildBuilding: (buildingTypeId, slotMethods) => {
       if (!worldRef) return null;
-      
+
       try {
         const building = ALL_BUILDINGS.find(b => b.id === buildingTypeId);
         if (!building) {
           get().addNotification('error', '未知的建筑类型');
           return null;
         }
-        
+
         // 获取建造材料需求
         const requiredMaterials = getBaseMaterials(buildingTypeId);
-        
+
         // 计算材料缺口和成本
         const playerCompanyId = 0;
         let totalMaterialCost = 0;
         const materialsToBuy: Array<{ goodsId: number; amount: number; price: number }> = [];
-        
+
         for (const mat of requiredMaterials) {
           const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
           const available = worldRef.companies.inventories[inventoryIdx] || 0;
           const missing = Math.max(0, mat.amount - available);
-          
+
           if (missing > 0) {
             const marketPrice = worldRef.goods.prices[mat.goodsId] || 100;
             const buyPrice = marketPrice * 1.1; // 10%溢价
@@ -952,20 +960,27 @@ export const useGameStore = create<GameState & GameActions>()(
             materialsToBuy.push({ goodsId: mat.goodsId, amount: missing, price: buyPrice });
           }
         }
-        
-        // 计算总费用
-        const totalCost = building.buildCost + totalMaterialCost;
-        
+
+        // 建筑材料已经显式进入市场，现金只用于采购缺口材料；
+        // buildCost 保留为资产估值/投资门槛，避免建造费与材料费双扣。
+        const totalCost = totalMaterialCost;
+
         // 检查资金
         if (worldRef.companies.cash[0] < totalCost) {
           soundManager.playTradeFail();
-          get().addNotification('error', `资金不足！需要 ${formatCurrency(totalCost)}`);
+          get().addNotification('error', `资金不足！采购建材需要 ${formatCurrency(totalCost)}`);
           return null;
         }
-        
-        // 扣除建造费用
-        worldRef.companies.cash[0] -= building.buildCost;
-        
+
+        // 添加到建造队列
+        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, slotMethods);
+
+        if (!result.success) {
+          soundManager.playTradeFail();
+          get().addNotification('error', `建造失败：${result.error || '未知错误'}`);
+          return null;
+        }
+
         // 为缺少的材料挂买单
         for (const mat of materialsToBuy) {
           const orderId = createBuyOrder(worldRef, 0, mat.goodsId, mat.amount, mat.price);
@@ -974,31 +989,20 @@ export const useGameStore = create<GameState & GameActions>()(
             get().addNotification('info', `已挂单采购 ${mat.amount.toFixed(0)} ${goods?.name || '材料'}`);
           }
         }
-        
-        // 添加到建造队列
-        const result = startConstructionTask(worldRef, playerCompanyId, buildingTypeId, slotMethods);
-        
-        if (!result.success) {
-          // 退还建造费用
-          worldRef.companies.cash[0] += building.buildCost;
-          soundManager.playTradeFail();
-          get().addNotification('error', `建造失败：${result.error || '未知错误'}`);
-          return null;
-        }
-        
+
         set((state) => {
           // 强制触发 tick 更新以刷新建造队列UI
           state.tick = state.tick + 0.001;
           syncPlayerFinancialState(state, worldRef, state.tick);
         });
-        
+
         soundManager.playBuildComplete();
         if (materialsToBuy.length > 0) {
           get().addNotification('success', `建筑已加入建造队列！已自动采购 ${materialsToBuy.length} 种材料`);
         } else {
           get().addNotification('success', '建筑已加入建造队列！');
         }
-        
+
         // 返回队列索引作为临时ID（建筑完成后会有真正的ID）
         return result.queueIdx ?? -1;
       } catch (e) {
@@ -1008,50 +1012,49 @@ export const useGameStore = create<GameState & GameActions>()(
         return null;
       }
     },
-    
+
     upgradeBuilding: (buildingId) => {
       if (!worldRef) return false;
-      
+
       // 检查建筑所有权
       if (worldRef.buildings.owners[buildingId] !== 0) {
         get().addNotification('error', '无法升级不属于你的建筑');
         return false;
       }
-      
+
       const currentLevel = worldRef.buildings.levels[buildingId];
       const typeId = worldRef.buildings.types[buildingId];
       const building = ALL_BUILDINGS.find(b => b.id === typeId);
-      
+
       if (!building) {
         get().addNotification('error', '建筑类型无效');
         return false;
       }
-      
+
       if (currentLevel >= building.maxLevel) {
         get().addNotification('warning', '建筑已达最高等级');
         return false;
       }
-      
+
       const targetLevel = currentLevel + 1;
-      const upgradeCost = building.upgradeCosts[currentLevel] || building.buildCost * 0.5;
-      
+
       // 获取升级材料需求（建造材料的50%）
       const baseMaterials = getBaseMaterials(typeId);
       const upgradeMaterials = baseMaterials.map(mat => ({
         goodsId: mat.goodsId,
         amount: Math.ceil(mat.amount * 0.5) // 升级只需50%材料
       }));
-      
+
       // 计算材料缺口和成本
       const playerCompanyId = 0;
       let totalMaterialCost = 0;
       const materialsToBuy: Array<{ goodsId: number; amount: number; price: number }> = [];
-      
+
       for (const mat of upgradeMaterials) {
         const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
         const available = worldRef.companies.inventories[inventoryIdx] || 0;
         const missing = Math.max(0, mat.amount - available);
-        
+
         if (missing > 0) {
           const marketPrice = worldRef.goods.prices[mat.goodsId] || 100;
           const buyPrice = marketPrice * 1.1; // 10%溢价
@@ -1059,19 +1062,25 @@ export const useGameStore = create<GameState & GameActions>()(
           materialsToBuy.push({ goodsId: mat.goodsId, amount: missing, price: buyPrice });
         }
       }
-      
-      // 计算总费用
-      const totalCost = upgradeCost + totalMaterialCost;
+
+      // 升级材料已经显式采购，upgradeCost 只保留为升级估值/门槛。
+      const totalCost = totalMaterialCost;
       const playerCash = worldRef.companies.cash[0];
-      
+
       if (playerCash < totalCost) {
-        get().addNotification('error', `资金不足，升级需要 ${formatCurrency(totalCost)}`);
+        get().addNotification('error', `资金不足，采购升级材料需要 ${formatCurrency(totalCost)}`);
         return false;
       }
-      
-      // 扣除升级费用
-      worldRef.companies.cash[0] -= upgradeCost;
-      
+
+      // 添加到建造队列（升级任务）
+      const result = startUpgradeTask(worldRef, playerCompanyId, buildingId, targetLevel);
+
+      if (!result.success) {
+        soundManager.playTradeFail();
+        get().addNotification('error', `升级失败：${result.error || '未知错误'}`);
+        return false;
+      }
+
       // 为缺少的材料挂买单
       for (const mat of materialsToBuy) {
         const orderId = createBuyOrder(worldRef, 0, mat.goodsId, mat.amount, mat.price);
@@ -1080,24 +1089,13 @@ export const useGameStore = create<GameState & GameActions>()(
           get().addNotification('info', `已挂单采购 ${mat.amount.toFixed(0)} ${goods?.name || '材料'}`);
         }
       }
-      
-      // 添加到建造队列（升级任务）
-      const result = startUpgradeTask(worldRef, playerCompanyId, buildingId, targetLevel);
-      
-      if (!result.success) {
-        // 退还升级费用
-        worldRef.companies.cash[0] += upgradeCost;
-        soundManager.playTradeFail();
-        get().addNotification('error', `升级失败：${result.error || '未知错误'}`);
-        return false;
-      }
-      
+
       set((state) => {
         // 强制触发 tick 更新以刷新建造队列UI
         state.tick = state.tick + 0.001;
         syncPlayerFinancialState(state, worldRef, state.tick);
       });
-      
+
       soundManager.playUpgrade();
       if (materialsToBuy.length > 0) {
         get().addNotification('success', `${building.name} 已加入升级队列！已自动采购 ${materialsToBuy.length} 种材料`);
@@ -1106,29 +1104,29 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return true;
     },
-    
+
     toggleBuildingActive: (buildingId) => {
       if (!worldRef) return false;
-      
+
       // 检查建筑所有权
       if (worldRef.buildings.owners[buildingId] !== 0) {
         get().addNotification('error', '无法控制不属于你的建筑');
         return false;
       }
-      
+
       const isActive = worldRef.buildings.isActive[buildingId];
       // isActive 是 Uint8Array，用 1 和 0 表示激活状态
       worldRef.buildings.isActive[buildingId] = isActive ? 0 : 1;
-      
+
       if (isActive) {
         get().addNotification('info', '建筑已暂停生产');
       } else {
         get().addNotification('success', '建筑已恢复生产');
       }
-      
+
       return true;
     },
-    
+
 
     getBuildingProductionControl: (buildingId: number) => {
       if (!worldRef) return null;
@@ -1267,42 +1265,42 @@ export const useGameStore = create<GameState & GameActions>()(
       });
       return true;
     },
-    
+
     demolishBuilding: (buildingId) => {
       if (!worldRef) return false;
-      
+
       // 检查建筑所有权
       if (worldRef.buildings.owners[buildingId] !== 0) {
         get().addNotification('error', '无法拆除不属于你的建筑');
         return false;
       }
-      
+
       // 添加到拆除队列
       const result = startDemolitionTask(worldRef, 0, buildingId);
-      
+
       if (!result.success) {
         soundManager.playTradeFail();
         get().addNotification('error', `拆除失败：${result.error || '未知错误'}`);
         return false;
       }
-      
+
       set((state) => {
         // 强制触发 tick 更新以刷新UI
         state.tick = state.tick + 0.001;
       });
-      
+
       soundManager.playOrderPlace();
       get().addNotification('success', '建筑已加入拆除队列！');
-      
+
       return true;
     },
-    
+
     // ==================== 贷款 ====================
     applyLoan: (amount, loanType, collateralType = 'none') => {
       if (!worldRef) return { approved: false, reason: '游戏未初始化' };
-      
+
       const result = applyForLoan(worldRef, 0, amount, loanType, collateralType);
-      
+
       if (result.approved) {
         set((state) => {
           syncPlayerFinancialState(state, worldRef, state.tick);
@@ -1313,15 +1311,15 @@ export const useGameStore = create<GameState & GameActions>()(
         soundManager.playTradeFail();
         get().addNotification('error', `贷款申请失败：${result.reason}`);
       }
-      
+
       return result;
     },
-    
+
     prepayPlayerLoan: (loanId) => {
       if (!worldRef) return { success: false, reason: '游戏未初始化' };
-      
+
       const result = prepayLoan(worldRef, loanId);
-      
+
       if (result.success) {
         set((state) => {
           syncPlayerFinancialState(state, worldRef, state.tick);
@@ -1332,63 +1330,63 @@ export const useGameStore = create<GameState & GameActions>()(
         soundManager.playTradeFail();
         get().addNotification('error', `还款失败：${result.reason}`);
       }
-      
+
       return result;
     },
-    
+
     getPlayerLoans: () => {
       if (!worldRef) return [];
       return getCompanyLoans(0);
     },
-    
+
     getPlayerCreditProfile: () => {
       if (!worldRef) return null;
       return getCreditProfile(0);
     },
-    
+
     getPlayerLoanOptions: () => {
       if (!worldRef) return [];
       return getAvailableLoanOptions(worldRef, 0);
     },
-    
+
     // ==================== UI ====================
     setSelectedGoods: (goodsId) => {
       set((state) => {
         state.ui.selectedGoodsId = goodsId;
       });
     },
-    
+
     setSelectedBuilding: (buildingId) => {
       set((state) => {
         state.ui.selectedBuildingId = buildingId;
       });
     },
-    
+
     setPendingBuildTypeId: (typeId) => {
       set((state) => {
         state.ui.pendingBuildTypeId = typeId;
       });
     },
-    
+
     navigateToBuildBuilding: (buildingTypeId) => {
       set((state) => {
         state.ui.pendingBuildTypeId = buildingTypeId;
         state.ui.currentPage = 'production';
       });
     },
-    
+
     setCurrentPage: (page) => {
       set((state) => {
         state.ui.currentPage = page;
       });
     },
-    
+
     toggleSidebar: () => {
       set((state) => {
         state.ui.sidebarCollapsed = !state.ui.sidebarCollapsed;
       });
     },
-    
+
     toggleTheme: () => {
       set((state) => {
         const newTheme = state.ui.theme === 'dark' ? 'light' : 'dark';
@@ -1404,7 +1402,7 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       });
     },
-    
+
     setTheme: (theme) => {
       set((state) => {
         state.ui.theme = theme;
@@ -1418,7 +1416,7 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       });
     },
-    
+
     addNotification: (type, message) => {
       const id = ++notificationId;
       set((state) => {
@@ -1428,25 +1426,25 @@ export const useGameStore = create<GameState & GameActions>()(
           message,
           timestamp: Date.now(),
         });
-        
+
         // 最多保留10条
         if (state.ui.notifications.length > 10) {
           state.ui.notifications.shift();
         }
       });
-      
+
       // 5秒后自动消失
       setTimeout(() => {
         get().dismissNotification(id);
       }, 5000);
     },
-    
+
     dismissNotification: (id) => {
       set((state) => {
         state.ui.notifications = state.ui.notifications.filter(n => n.id !== id);
       });
     },
-    
+
     // ==================== 生产方式槽位 ====================
     getBuildingSlotConfig: (buildingTypeId) => {
       const newConfig = getBuildingConfig(buildingTypeId);
@@ -1463,23 +1461,23 @@ export const useGameStore = create<GameState & GameActions>()(
         }),
       };
     },
-    
+
     getBuildingCurrentMethods: (buildingId) => {
       if (!worldRef) return [];
-      
+
       // 直接从worldRef读取，避免模块缓存问题
       const b = worldRef.buildings;
       const slotOffset = buildingId * MAX_SLOTS;
       const buildingTypeId = b.types[buildingId];
       const slotCount = getBuildingSlotCount(buildingTypeId);
-      
+
       const methods: number[] = [];
       for (let i = 0; i < slotCount; i++) {
         methods.push(b.slotMethods[slotOffset + i]);
       }
       return methods;
     },
-    
+
     getAvailableMethodsForSlot: (buildingTypeId, slotIndex, buildingLevel) => {
       const newConfig = getBuildingConfig(buildingTypeId);
       if (!newConfig || slotIndex >= newConfig.slots.length) return [];
@@ -1504,22 +1502,22 @@ export const useGameStore = create<GameState & GameActions>()(
           description: m.description,
         }));
     },
-    
+
     changeBuildingSlotMethod: (buildingId, slotIndex, methodId) => {
       if (!worldRef) return { success: false, reason: '游戏未初始化' };
-      
+
       const b = worldRef.buildings;
-      
+
       // 检查建筑是否存在
       if (buildingId >= b.count) {
         return { success: false, reason: '建筑不存在' };
       }
-      
+
       // 检查是否是玩家建筑
       if (b.owners[buildingId] !== 0) {
         return { success: false, reason: '无法修改非玩家建筑的生产方式' };
       }
-      
+
       const buildingTypeId = b.types[buildingId];
       const buildingLevel = b.levels[buildingId];
 
@@ -1578,7 +1576,7 @@ export const useGameStore = create<GameState & GameActions>()(
       get().addNotification('success', `已切换到「${newMethod.name}」，花费 ${formatCurrency(switchCost)}`);
       return { success: true };
     },
-    
+
     getMethodInfo: (methodId): UiMethodInfo | null => {
       const method = getMethodById(methodId);
       if (!method) return null;
@@ -1591,7 +1589,7 @@ export const useGameStore = create<GameState & GameActions>()(
         switchCooldown: method.switchCooldown,
       };
     },
-    
+
     // ==================== 数据获取 ====================
     getWorld: () => worldRef,
 
@@ -1613,9 +1611,9 @@ export const useGameStore = create<GameState & GameActions>()(
 
     getPlayerInventory: () => {
       if (!worldRef) return [];
-      
+
       const inventory: { goodsId: number; name: string; quantity: number; value: number }[] = [];
-      
+
       for (let i = 0; i < worldRef.goods.count; i++) {
         const quantity = worldRef.companies.inventories[0 * GOODS_COUNT + i];
         if (quantity > 0) {
@@ -1627,45 +1625,45 @@ export const useGameStore = create<GameState & GameActions>()(
           });
         }
       }
-      
+
       return inventory.sort((a, b) => b.value - a.value);
     },
-    
+
     getOrderBook: (goodsId) => {
       if (!worldRef) return null;
       return getOrderBookView(worldRef, goodsId);
     },
-    
+
     getMarketStats: (goodsId) => {
       if (!worldRef) return null;
       return getMarketStats(worldRef, goodsId);
     },
-    
+
     getPriceTrend: (goodsId) => {
       if (!worldRef) return null;
       return getPriceTrend(worldRef, goodsId);
     },
-    
+
     getPriceSummary: () => {
       if (!worldRef) return null;
       return getPriceSummary(worldRef);
     },
-    
+
     getBuildingStatus: (buildingId) => {
       if (!worldRef) return null;
       return getBuildingProductionStatus(worldRef, buildingId);
     },
-    
+
     getBuildingStatusWithMethods: (buildingId) => {
       if (!worldRef) return null;
       return getBuildingProductionStatusWithMethods(worldRef, buildingId);
     },
-    
+
     getPlayerBuildings: () => {
       if (!worldRef) return [];
-      
+
       const buildings: { id: number; name: string; level: number; status: BuildingProductionStatus | null; slotMethods: number[]; isRetail?: boolean }[] = [];
-      
+
       for (let i = 0; i < worldRef.buildings.count; i++) {
         if (worldRef.buildings.owners[i] === 0) {
           const typeId = worldRef.buildings.types[i];
@@ -1681,25 +1679,25 @@ export const useGameStore = create<GameState & GameActions>()(
           });
         }
       }
-      
+
       return buildings;
     },
-    
+
     getAllGoods: () => ALL_GOODS,
-    
+
     getAllBuildingTypes: () => ALL_BUILDINGS,
-    
+
     getFinancialHistory: () => {
       const state = get();
       return state.financialHistory;
     },
-    
+
     getInventoryQuality: (goodsId: number) => {
       if (!worldRef) return { name: '标准', priceMultiplier: 1.0, color: '#60a5fa' };
-      
+
       const name = getInventoryQualityName(worldRef, 0, goodsId);
       const priceMultiplier = getInventoryQualityPriceMultiplier(worldRef, 0, goodsId);
-      
+
       // 根据名称获取颜色
       const colors: Record<string, string> = {
         '劣质': '#9ca3af',
@@ -1708,57 +1706,57 @@ export const useGameStore = create<GameState & GameActions>()(
         '优质': '#a78bfa',
         '奢华': '#fbbf24',
       };
-      
+
       return {
         name,
         priceMultiplier,
         color: colors[name] || '#60a5fa',
       };
     },
-    
+
     // ==================== 零售系统 ====================
-    
+
     getPlayerRetailStores: () => {
       if (!worldRef) return [];
       return getPlayerRetailStores(worldRef, 0);
     },
-    
+
     getRetailStoreDetails: (retailId: number) => {
       if (!worldRef) return null;
       return getRetailStoreDetails(worldRef, retailId);
     },
-    
+
     getRetailMarketOverview: () => {
       if (!worldRef) return null;
       return getRetailMarketOverview(worldRef);
     },
-    
+
     setRetailPrice: (retailId: number, goodsId: number, price: number) => {
       if (!worldRef) return false;
       return setRetailPrice(worldRef, retailId, goodsId, price);
     },
-    
+
     setRetailMarkup: (retailId: number, goodsId: number, markup: number) => {
       if (!worldRef) return false;
       return setRetailMarkup(worldRef, retailId, goodsId, markup);
     },
-    
+
     // ==================== 股票市场 ====================
     getStockMarketState: () => {
       return getMarketState();
     },
-    
+
     getStockInfo: (companyId: number) => {
       return getStock(companyId);
     },
-    
+
     getPlayerHoldings: () => {
       return getHoldings(0);
     },
-    
+
     buyStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => {
       if (!worldRef) return false;
-      
+
       const orderId = buyStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
       if (orderId !== null) {
         set((state) => {
@@ -1774,10 +1772,10 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
     },
-    
+
     sellStockOrder: (stockCompanyId: number, quantity: number, orderType: 'market' | 'limit', limitPrice?: number) => {
       if (!worldRef) return false;
-      
+
       const orderId = sellStock(worldRef, 0, stockCompanyId, quantity, orderType, limitPrice);
       if (orderId !== null) {
         const stock = getStock(stockCompanyId);
@@ -1790,7 +1788,7 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
     },
-    
+
     playerIPO: (offeringShares: number, offeringPrice: number) => {
       if (!worldRef) {
         return {
@@ -1808,7 +1806,7 @@ export const useGameStore = create<GameState & GameActions>()(
           message: 'IPO失败：世界未初始化',
         };
       }
-      
+
       const result = initiateIPO(worldRef, 0, offeringShares, offeringPrice);
       if (result.success) {
         set((state) => {
@@ -1864,21 +1862,21 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return success;
     },
-    
+
     // ==================== 收购系统 ====================
     getCompanyValuation: (companyId: number) => {
       if (!worldRef) return null;
       return evaluateCompanyValue(worldRef, companyId);
     },
-    
+
     analyzeAcquisition: (targetId: number) => {
       if (!worldRef) return null;
       return analyzeAcquisitionFeasibility(worldRef, 0, targetId);
     },
-    
+
     initiateAcquisitionOffer: (targetId: number, targetSharePercent: number, offerPrice: number) => {
       if (!worldRef) return false;
-      
+
       const result = initiateAcquisition(worldRef, 0, targetId, 'friendly', targetSharePercent, offerPrice);
       if (result.success) {
         set((state) => {
@@ -1893,10 +1891,10 @@ export const useGameStore = create<GameState & GameActions>()(
         return false;
       }
     },
-    
+
     initiateAssetBuy: (sellerId: number, assetType: 'building' | 'inventory', assetIds: number[], price: number) => {
       if (!worldRef) return false;
-      
+
       const result = initiateAssetPurchase(worldRef, 0, sellerId, assetType, assetIds, price);
       if (result.success && result.transactionId) {
         // 自动确认交易（简化流程）
@@ -1915,60 +1913,60 @@ export const useGameStore = create<GameState & GameActions>()(
       get().addNotification('error', `资产购买失败：${result.reason || '交易失败'}`);
       return false;
     },
-    
+
     getPlayerAcquisitionOffers: () => {
       return getOffersByCompany(0);
     },
-    
+
     // ==================== 统一公司数据 (新增) ====================
     getCompanyProfile: (companyId: number) => {
       if (!worldRef) return null;
       return getCompanyProfile(worldRef, companyId);
     },
-    
+
     getAllCompanyProfiles: () => {
       if (!worldRef) return [];
       return getAllCompanyProfiles(worldRef);
     },
-    
+
     getAICompanyProfiles: () => {
       if (!worldRef) return [];
       return getAICompanyProfiles(worldRef);
     },
-    
+
     getPlayerHoldingProfiles: () => {
       if (!worldRef) return [];
       return getPlayerHoldingProfiles(worldRef);
     },
-    
+
     getPlayerControlledProfiles: () => {
       if (!worldRef) return [];
       return getPlayerControlledProfiles(worldRef);
     },
-    
+
     getPlayerPortfolio: () => {
       if (!worldRef) return { totalValue: 0, totalCost: 0, totalGain: 0, gainPercent: 0, holdingCount: 0 };
       return calculatePlayerPortfolio(worldRef);
     },
-    
+
     getCompanyMarketStats: () => {
       if (!worldRef) return { rising: 0, falling: 0, unchanged: 0, totalVolume: 0, totalMarketCap: 0 };
       return calculateCompanyMarketStats(worldRef);
     },
-    
+
     // ==================== 控制权相关 (新增) ====================
     getPlayerControlLevel: (companyId: number) => {
       return getPlayerControlLevel(companyId);
     },
-    
+
     getPlayerControlledCompanyIds: () => {
       return getPlayerControlledCompanyIds();
     },
-    
+
     hasPlayerControlRight: (companyId: number, right: ControlRight) => {
       return hasControlRight(0, companyId, right);
     },
-    
+
     setControlledStrategy: (companyId: number, strategy: ControlStrategy) => {
       if (!worldRef) return false;
       const success = setControlledCompanyStrategy(worldRef, companyId, strategy);
@@ -1977,7 +1975,7 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return success;
     },
-    
+
     requestCompanyDividend: (companyId: number, amount: number) => {
       if (!worldRef) return { success: false, reason: '游戏未初始化' };
       const result = requestDividend(worldRef, companyId, amount);
@@ -1990,7 +1988,7 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return result;
     },
-    
+
     transferAssets: (fromId: number, toId: number, assetType: 'building' | 'inventory', assetIds: number[]) => {
       if (!worldRef) return { success: false, reason: '游戏未初始化' };
       const result = initiateAssetTransfer(worldRef, fromId, toId, assetType, assetIds);
@@ -2005,7 +2003,7 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return result;
     },
-    
+
     // ==================== 收藏管理 (新增) ====================
     toggleFavoriteCompany: (companyId: number) => {
       set((state) => {
@@ -2017,48 +2015,48 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       });
     },
-    
+
     getFavoriteCompanies: () => {
       return get().ui.favoriteCompanies;
     },
-    
+
     // ==================== 性能监控 ====================
     getPerformanceSnapshot: () => {
       return perfMonitor.getSnapshot();
     },
-    
+
     getPerformanceSnapshots: (count: number) => {
       return perfMonitor.getSnapshots(count);
     },
-    
+
     getFPSData: () => {
       return perfMonitor.getFPS();
     },
-    
+
     getMemoryData: () => {
       return perfMonitor.getMemoryStats();
     },
-    
+
     exportPerformanceJSON: (options?: Partial<ExportOptions>) => {
       downloadPerformanceJSON(options);
     },
-    
+
     exportPerformanceCSV: (options?: Partial<ExportOptions>) => {
       downloadPerformanceCSV(options);
     },
-    
+
     // ==================== 建造队列系统 ====================
     getConstructionQueue: () => {
       if (!worldRef) return [];
-      
+
       const rawQueue = getCompanyConstructionQueue(worldRef, 0);
       const playerCompanyId = 0;
-      
+
       // 转换为UI期望的格式，包含材料信息
       return rawQueue.map(item => {
         // 获取建造所需材料
         const requiredMaterials = getBaseMaterials(item.buildingTypeId);
-        
+
         // 计算每种材料的当前库存和需求量
         const materialsStatus = requiredMaterials.map(mat => {
           const inventoryIdx = playerCompanyId * GOODS_COUNT + mat.goodsId;
@@ -2072,10 +2070,10 @@ export const useGameStore = create<GameState & GameActions>()(
             isSufficient: currentAmount >= mat.amount,
           };
         });
-        
+
         // 检查是否所有材料都充足
         const allMaterialsReady = materialsStatus.every(m => m.isSufficient);
-        
+
         return {
           taskId: item.queueIdx,
           queueIdx: item.queueIdx,
@@ -2094,12 +2092,12 @@ export const useGameStore = create<GameState & GameActions>()(
         };
       });
     },
-    
+
     getDemolitionQueue: () => {
       if (!worldRef) return [];
-      
+
       const rawQueue = getCompanyDemolitionQueue(worldRef, 0);
-      
+
       // 转换为UI期望的格式
       return rawQueue.map(item => ({
         taskId: item.queueIdx,
@@ -2116,22 +2114,22 @@ export const useGameStore = create<GameState & GameActions>()(
         recoveredMaterials: [],
       }));
     },
-    
+
     pauseConstruction: (_taskId: number) => {
       // 当前系统不支持暂停，返回false
       get().addNotification('warning', '当前版本不支持暂停建造');
       return false;
     },
-    
+
     resumeConstruction: (_taskId: number) => {
       // 当前系统不支持恢复，返回false
       get().addNotification('warning', '当前版本不支持恢复建造');
       return false;
     },
-    
+
     cancelPlayerConstruction: (taskId: number) => {
       if (!worldRef) return false;
-      
+
       const result = cancelConstructionTask(worldRef, taskId);
       if (result.success) {
         set((state) => {
@@ -2143,10 +2141,10 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return false;
     },
-    
+
     cancelPlayerDemolition: (taskId: number) => {
       if (!worldRef) return false;
-      
+
       const result = cancelDemolitionTask(worldRef, taskId);
       if (result.success) {
         soundManager.playOrderCancel();
@@ -2155,24 +2153,24 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return false;
     },
-    
+
     // ==================== 新闻系统 ====================
     getNewsHistory: () => {
       return getAllNews();
     },
-    
+
     getLatestNews: () => {
       return getLatestNewsFromStore();
     },
-    
+
     getNewsCount: () => {
       return getNewsCount();
     },
-    
+
     hasUnreadNews: () => {
       return checkUnreadNews();
     },
-    
+
     showNewsPopup: (news: MonthlyNewsReport, source: 'auto-generated' | 'manual' = 'manual') => {
       set((state) => {
         state.ui.pendingNews = news;
@@ -2180,7 +2178,7 @@ export const useGameStore = create<GameState & GameActions>()(
         state.ui.newsDialogOpenSource = source;
       });
     },
-    
+
     hideNewsDialog: () => {
       set((state) => {
         state.ui.showNewsDialog = false;
@@ -2188,14 +2186,14 @@ export const useGameStore = create<GameState & GameActions>()(
         // 保留pendingNews以便继续查看
       });
     },
-    
+
     markCurrentNewsRead: () => {
       const state = get();
       if (state.ui.pendingNews) {
         markNewsRead(state.ui.pendingNews.id);
       }
     },
-    
+
     navigateToNews: () => {
       set((state) => {
         state.ui.currentPage = 'news';
@@ -2203,7 +2201,7 @@ export const useGameStore = create<GameState & GameActions>()(
         state.ui.newsDialogOpenSource = 'manual';
       });
     },
-    
+
     // ==================== 月度价格追踪 ====================
     getMonthlyPriceData: (monthKey?: string) => {
       const tracker = getMonthlyPriceTracker();
@@ -2212,18 +2210,18 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return tracker.getLatestReport();
     },
-    
+
     getCurrentMonthPriceData: () => {
       if (!worldRef) return null;
       const tracker = getMonthlyPriceTracker();
       return tracker.getCurrentMonthData(worldRef);
     },
-    
+
     getAllMonthlyReports: () => {
       const tracker = getMonthlyPriceTracker();
       return tracker.getAllReports();
     },
-    
+
     getAvailableMonths: () => {
       const tracker = getMonthlyPriceTracker();
       const months = tracker.getAvailableMonths();
@@ -2239,70 +2237,70 @@ export const useGameStore = create<GameState & GameActions>()(
       }
       return months;
     },
-    
+
     getMultiMonthComparison: (monthKeys: string[]) => {
       const tracker = getMonthlyPriceTracker();
       return tracker.getMultiMonthComparison(monthKeys);
     },
-    
+
     exportPriceDataCSV: (options?: Partial<PriceExportOptions>) => {
       if (!worldRef) {
         get().addNotification('error', '游戏未初始化');
         return;
       }
-      
+
       const tracker = getMonthlyPriceTracker();
       const report = tracker.getCurrentMonthData(worldRef);
-      
+
       if (!report) {
         get().addNotification('error', '无可用数据');
         return;
       }
-      
+
       PriceDataExporter.downloadCurrentReportCSV(report, options);
       get().addNotification('success', '月度价格数据已导出 (CSV)');
     },
-    
+
     exportPriceDataJSON: (options?: Partial<PriceExportOptions>) => {
       if (!worldRef) {
         get().addNotification('error', '游戏未初始化');
         return;
       }
-      
+
       const tracker = getMonthlyPriceTracker();
       const report = tracker.getCurrentMonthData(worldRef);
-      
+
       if (!report) {
         get().addNotification('error', '无可用数据');
         return;
       }
-      
+
       PriceDataExporter.downloadCurrentReportJSON(report, options);
       get().addNotification('success', '月度价格数据已导出 (JSON)');
     },
-    
+
     exportMonthComparisonCSV: (monthKeys: string[], options?: Partial<PriceExportOptions>) => {
       const tracker = getMonthlyPriceTracker();
       const comparison = tracker.getMultiMonthComparison(monthKeys);
-      
+
       if (!comparison) {
         get().addNotification('error', '无法生成对比报告，需要至少2个月份数据');
         return;
       }
-      
+
       PriceDataExporter.downloadComparisonCSV(comparison, options);
       get().addNotification('success', '多月份对比数据已导出 (CSV)');
     },
-    
+
     exportMonthComparisonJSON: (monthKeys: string[], options?: Partial<PriceExportOptions>) => {
       const tracker = getMonthlyPriceTracker();
       const comparison = tracker.getMultiMonthComparison(monthKeys);
-      
+
       if (!comparison) {
         get().addNotification('error', '无法生成对比报告，需要至少2个月份数据');
         return;
       }
-      
+
       PriceDataExporter.downloadComparisonJSON(comparison, options);
       get().addNotification('success', '多月份对比数据已导出 (JSON)');
     },

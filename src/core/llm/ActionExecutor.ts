@@ -127,12 +127,12 @@ function executeBuildBuilding(store: ReturnType<typeof useGameStore.getState>, a
   if (result !== null) {
     return { 
       success: true, 
-      message: `已开始建造 ${buildingDef.name}，建造费用 ¥${buildingDef.buildCost.toLocaleString()}` 
+      message: `已开始建造 ${buildingDef.name}，资产估值 ¥${buildingDef.buildCost.toLocaleString()}` 
     };
   } else {
     return { 
       success: false, 
-      message: `建造 ${buildingDef.name} 失败，可能资金不足或达到建筑上限` 
+      message: `建造 ${buildingDef.name} 失败，可能采购资金不足、材料不足或达到建筑上限` 
     };
   }
 }

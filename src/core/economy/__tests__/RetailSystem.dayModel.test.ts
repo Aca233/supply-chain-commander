@@ -5,7 +5,7 @@ import { GoodsId } from '@/data/goods';
 
 import { GOODS_COUNT } from '../../constants';
 import { initializeWorld } from '../../world/WorldInitializer';
-import { getRetailStoreDetails, updateRetailSystem } from '../RetailSystem';
+import { getCompanyRetailGoodsNeeds, getRetailStoreDetails, updateRetailSystem } from '../RetailSystem';
 
 const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -69,5 +69,65 @@ describe('RetailSystem day-based cadence', () => {
 
     expect(result.priceAdjustments).toBeGreaterThan(0);
     expect(world.retail.markups[priceIdx]).toBeLessThan(startingMarkup);
+  });
+
+  it('scales representative store customer capacity for the national day model', () => {
+    const world = initializeWorld();
+
+    const retailId = Array.from({ length: world.retail.count }, (_, id) => id).find(id => {
+      const buildingType = world.buildings.types[world.retail.buildingIds[id]];
+      const config = getRetailConfig(buildingType);
+      return config?.allowedGoodsIds.includes(GoodsId.PROCESSED_FOOD);
+    });
+    expect(retailId).toBeDefined();
+
+    for (let id = 0; id < world.retail.count; id++) {
+      world.buildings.isActive[world.retail.buildingIds[id]] = id === retailId ? 1 : 0;
+    }
+
+    const idx = retailId! * GOODS_COUNT + GoodsId.PROCESSED_FOOD;
+    world.retail.inventoryCapacities[idx] = 5_000;
+    world.retail.inventories[idx] = 5_000;
+    world.retail.retailPrices[idx] = 20;
+    world.retail.purchaseCosts[idx] = 12;
+    world.retail.markups[idx] = 0.2;
+    world.goods.demands[GoodsId.PROCESSED_FOOD] = 2_000;
+    world.households.cash[0] = 1_000_000_000;
+    world.tick = 1;
+
+    const result = updateRetailSystem(world);
+
+    expect(result.totalSales).toBeGreaterThan(1_000);
+  });
+
+  it('scales representative store inventory capacity for the national day model', () => {
+    const world = initializeWorld();
+    const retailId = 0;
+    const buildingType = world.buildings.types[world.retail.buildingIds[retailId]];
+    const config = getRetailConfig(buildingType)!;
+    const goodsId = config.allowedGoodsIds[0];
+    const idx = retailId * GOODS_COUNT + goodsId;
+
+    expect(world.retail.inventoryCapacities[idx]).toBeGreaterThan(config.inventoryCapacity);
+  });
+
+  it('uses demand to size restock targets when recent daily sales were reset', () => {
+    const world = initializeWorld();
+    const retailId = 0;
+    const ownerId = world.retail.owners[retailId];
+    const buildingType = world.buildings.types[world.retail.buildingIds[retailId]];
+    const config = getRetailConfig(buildingType)!;
+    const goodsId = config.allowedGoodsIds[0];
+    const idx = retailId * GOODS_COUNT + goodsId;
+
+    world.retail.inventoryCapacities[idx] = 5_000;
+    world.retail.inventories[idx] = 0;
+    world.retail.dailySales[idx] = 0;
+    world.goods.demands[goodsId] = 2_000;
+    world.buildings.isActive[world.retail.buildingIds[retailId]] = 1;
+
+    const needs = getCompanyRetailGoodsNeeds(world, ownerId);
+
+    expect(needs.get(goodsId)).toBeGreaterThan(1_000);
   });
 });

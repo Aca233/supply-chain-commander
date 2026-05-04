@@ -9,8 +9,11 @@ import { GOODS_COUNT, MAX_CONCURRENT_CONSTRUCTIONS, MAX_CONCURRENT_DEMOLITIONS }
 import { getBuildingConstructionConfig, MaterialRequirement, getBaseMaterials, getBuildTime } from '../../data/buildingMaterials';
 import { ALL_BUILDINGS, BUILDINGS_BY_ID, BuildingTypeDefinition, isRetailBuilding } from '../../data/buildings';
 import { drainMarketSupply } from '../economy/MarketStats';
+import { releaseBuildingWorkforce } from '../labor/LaborSystem';
 import { registerRetailStore } from '../economy/RetailSystem';
 import { initializeBuildingProductionControl } from '../production/ProductionControl';
+import { invalidateRecipeCache } from '../production/ProductionEngine';
+import { invalidateWarehouseCache } from '../economy/WarehouseSystem';
 import { getDefaultSlotMethods } from '../production/ProductionMethods';
 import { resolveLegacyOutputModeToSlotMethods } from '../production/legacyOutputModeBridge';
 
@@ -273,6 +276,8 @@ function processConstructionTick(world: GameWorld): {
                 }
                 initializeBuildingProductionControl(world, newBuildingId);
               }
+              invalidateRecipeCache(newBuildingId);
+              invalidateWarehouseCache();
 
               // 【性能优化】更新公司建筑计数
               world.companies.buildingCounts[companyId]++;
@@ -388,9 +393,10 @@ function processDemolitionTick(world: GameWorld): {
           const demolishTime = config ? Math.max(1, Math.floor(getBuildTime(buildingTypeId) / 2)) : 1;
           demolition.estimatedEndTicks[queueIdx] = world.tick + demolishTime;
           
-          // 停止建筑运营
+          // 停止建筑运营并释放劳动力
           buildingsData.isActive[buildingId] = 0;
-          
+          releaseBuildingWorkforce(world, buildingId);
+
           activeCount++;
         }
       }
@@ -450,6 +456,7 @@ function processDemolitionTick(world: GameWorld): {
           // 标记建筑为已拆除（将所有者设为0xFFFF表示无效）
           buildingsData.owners[buildingId] = 0xFFFF;
           buildingsData.isActive[buildingId] = 0;
+          releaseBuildingWorkforce(world, buildingId);
           demolishedBuildings.push(buildingId);
           
           // 标记拆除完成
@@ -547,19 +554,9 @@ export function cancelConstruction(world: GameWorld, queueIdx: number): {
     }
   }
   
-  // 计算现金退款（已支付的部分按80%退还）
-  const progress = construction.progress[queueIdx];
-  const buildingTypeId = construction.buildingTypeIds[queueIdx];
-  const buildingDef = ALL_BUILDINGS.find((b: BuildingTypeDefinition) => b.id === buildingTypeId);
-  const baseCost = buildingDef?.buildCost || 0;
-  
-  const paidAmount = baseCost * progress;
-  const refundRate = 0.8; // 80%退款率
-  const refundedCash = paidAmount * refundRate;
-  
-  if (refundedCash > 0) {
-    companies.cash[companyId] += refundedCash;
-  }
+  // 玩家建造不再预付 buildCost；现金只通过建材买单冻结/结算。
+  // 因此取消队列只能释放预留材料，不能按进度凭空退还现金。
+  const refundedCash = 0;
   
   // 标记为已取消
   construction.statuses[queueIdx] = ConstructionStatus.CANCELLED;

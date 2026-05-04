@@ -7,6 +7,7 @@
 import { GameWorld, addInventory } from '../world/GameWorld';
 import { ALL_BUILDINGS, BUILDINGS_BY_ID } from '@/data/buildings';
 import { drainMarketSupply, recordMarketSupply } from '../economy/MarketStats';
+import { addInventoryWithCapacityCheck, hasAnyWarehouse } from '../economy/WarehouseSystem';
 import {
   MAX_INPUTS,
   MAX_OUTPUTS,
@@ -44,6 +45,10 @@ export function invalidateRecipeCache(buildingId?: number): void {
 }
 
 function getBuildingRecipe(world: GameWorld, buildingId: number): ComputedRecipe {
+  if (buildingId < 0 || buildingId >= world.buildings.count) {
+    return getRecipeForBuilding(-1, []);
+  }
+
   let recipe = recipeCache.get(buildingId);
   if (!recipe) {
     const buildingTypeId = world.buildings.types[buildingId];
@@ -154,12 +159,16 @@ function processBuildingProduction(
 
   result.qualityBonus = 0;
 
-  // 产出
+  // 产出（有仓库的公司带容量检查，无仓库的公司无限制）
+  const ownerHasWarehouse = hasAnyWarehouse(world, owner);
   const outputOffset = buildingId * MAX_OUTPUTS;
   for (let j = 0; j < recipe.outputs.length; j++) {
     const goodsId = recipe.outputs[j].goodsId;
     const amount = recipe.outputs[j].amount * actualOutput;
     b.outputBuffers[outputOffset + j] += amount;
+
+    // 生产产出始终入库——仓库容量仅影响采购，不阻断生产
+    // 超容部分由仓储费用的拥挤附加费提供经济惩罚
     addInventory(world, owner, goodsId, amount);
     recordMarketSupply(world, goodsId, amount);
     updateInventoryQuality(world, owner, goodsId, amount, result.qualityBonus);
@@ -170,8 +179,12 @@ function processBuildingProduction(
   return result;
 }
 
+// 收紧 oversupply 控制（解决库存积压）：
+// Why: 原 threshold=2.0 / fullSuspendSeverityThreshold=12 太宽松，
+//      建筑在 supply/demand 已 1.3× 时仍全效生产，库存堆到天文数字才会停产。
+// How: threshold 2.0→1.3 早降速；fullSuspendSeverityThreshold 12→3 让真正过剩的品类尽早停产。
 const OVERSUPPLY_CONFIG = {
-  threshold: 2.0,
+  threshold: 1.3,
   zeroDemandSupplyFloor: 50,
   zeroDemandInventoryCoverage: 4.0,
   inventoryCoverageWindow: 30,
@@ -181,7 +194,7 @@ const OVERSUPPLY_CONFIG = {
   recoveryRate: 0.05,
   structuralSuspendCooldownTicks: 32,
   structuralSuspendEfficiencyThreshold: 0.2,
-  fullSuspendSeverityThreshold: 12,
+  fullSuspendSeverityThreshold: 3,
   fullSuspendMaxActiveProducers: 2,
   reactivationEfficiency: 0.3,
   reactivationDemandPressureFloor: 15,

@@ -8,7 +8,7 @@ import { initializeWorld } from '../../world/WorldInitializer';
 import { resetPriceCache } from '../../market/PriceCache';
 
 describe('PriceEngine market-responsive bounds', () => {
-  it('does not move prices from supply-demand pressure when there are no trades', () => {
+  it('raises prices from shortage pressure even when there are no trades', () => {
     resetPriceCache();
 
     const world = initializeWorld();
@@ -22,10 +22,10 @@ describe('PriceEngine market-responsive bounds', () => {
 
     updateAllPrices(world);
 
-    expect(world.goods.prices[goodsId]).toBe(basePrice);
+    expect(world.goods.prices[goodsId]).toBeGreaterThan(basePrice);
   });
 
-  it('does not let trades older than one day keep moving prices', () => {
+  it('ignores stale trade VWAP but still responds to current shortage pressure', () => {
     resetPriceCache();
 
     const world = initializeWorld();
@@ -44,7 +44,8 @@ describe('PriceEngine market-responsive bounds', () => {
 
     updateAllPrices(world);
 
-    expect(world.goods.prices[goodsId]).toBe(basePrice);
+    expect(world.goods.prices[goodsId]).toBeGreaterThan(basePrice);
+    expect(world.goods.prices[goodsId]).toBeLessThan(basePrice * 1.01);
   });
 
   it('allows severe shortages to price above the old 3x hard cap', () => {

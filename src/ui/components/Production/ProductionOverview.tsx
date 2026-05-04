@@ -14,6 +14,7 @@ import {
 } from './BuildingFinancialEstimate';
 import { formatCurrency } from '@/ui/utils/format';
 import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
+import { calculateBuildingDailyPayrollCost } from '@/core/labor/LaborSystem';
 
 // 设计系统组件
 import { Card, Badge, StatWidget, Tabs, TabsList, TabsTrigger } from '@/ui/design-system';
@@ -89,13 +90,16 @@ export const ProductionOverview: React.FC = () => {
         }
         
         if (buildingDef) {
-          const buildingDailyCost = calculateBuildingDefinitionOperatingCostPerTick(buildingDef).cashExpense;
-          dailyCost += buildingDailyCost;
-          dailyRevenue += calculateBuildingFinancialEstimate({
+          const operatingCost = calculateBuildingDefinitionOperatingCostPerTick(buildingDef);
+          const buildingDailyCost = operatingCost.cashExpense - operatingCost.labor;
+          const estimate = calculateBuildingFinancialEstimate({
             isActive: Boolean(isActive),
             dailyCost: buildingDailyCost,
+            laborCost: isActive ? calculateBuildingDailyPayrollCost(world, i) : 0,
             outputs: outputEstimates,
-          }).dailyRevenue;
+          });
+          dailyCost += estimate.dailyCost;
+          dailyRevenue += estimate.dailyRevenue;
         }
       }
     }

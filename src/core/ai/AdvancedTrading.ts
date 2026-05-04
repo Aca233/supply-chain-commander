@@ -913,13 +913,14 @@ export function executeTakeBuyOrders(
       // 跳过自己的买单
       if (buyOrder.companyId === companyId) continue;
       
-      // 检查价格是否可接受（至少基准价的50%）
-      if (buyOrder.price < basePrice * 0.5) {
+      // 检查价格是否可接受（至少基准价的30%）
+      // Why: 原 50% 阈值会让积压库存遇到合理低价买单也拒绝成交
+      if (buyOrder.price < basePrice * 0.3) {
         break; // 买单是降序的，后面的价格更低，不用继续了
       }
       
       // 计算可卖数量（不超过可用库存和买单需求量）
-      const sellQuantity = Math.min(available, buyOrder.remaining, 500);
+      const sellQuantity = Math.min(available, buyOrder.remaining);
       
       if (sellQuantity < 1) continue;
       
@@ -988,7 +989,7 @@ export function executeTakeSellOrders(
       
       // 计算可买数量
       const maxAffordable = Math.floor(cash * 0.3 / sellOrder.price);
-      const buyQuantity = Math.min(shortage, sellOrder.remaining, maxAffordable, 500);
+      const buyQuantity = Math.min(shortage, sellOrder.remaining, maxAffordable);
       
       if (buyQuantity < 1) continue;
       

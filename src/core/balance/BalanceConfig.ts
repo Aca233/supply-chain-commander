@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { type AnchorConfig, DEFAULT_ANCHOR_CONFIG as MARKET_ANCHOR_DEFAULT } from '@/core/economy/MarketAnchor';
 
 import {
   AI_BATCH_SIZE,
@@ -103,6 +104,9 @@ export interface ConstructionConfig {
   cashRecoveryRate: number;        // 现金回收率
 }
 
+// AnchorConfig 从 MarketAnchor 导入，保持单一定义
+export type { AnchorConfig } from '@/core/economy/MarketAnchor';
+
 /** 完整配置 */
 export interface BalanceConfiguration {
   price: PriceConfig;
@@ -111,6 +115,7 @@ export interface BalanceConfiguration {
   economy: EconomyConfig;
   retail: RetailConfig;
   construction: ConstructionConfig;
+  anchor: AnchorConfig;
 }
 
 /** 预设配置 */
@@ -160,6 +165,8 @@ const DEFAULT_RETAIL_CONFIG: RetailConfig = {
   maxTurnoverDays: RETAIL_MAX_TURNOVER_DAYS,
 };
 
+const DEFAULT_ANCHOR_CONFIG: AnchorConfig = { ...MARKET_ANCHOR_DEFAULT };
+
 const DEFAULT_CONSTRUCTION_CONFIG: ConstructionConfig = {
   maxQueue: MAX_CONSTRUCTION_QUEUE,
   maxConcurrent: MAX_CONCURRENT_CONSTRUCTIONS,
@@ -177,6 +184,7 @@ const DEFAULT_CONFIG: BalanceConfiguration = {
   economy: DEFAULT_ECONOMY_CONFIG,
   retail: DEFAULT_RETAIL_CONFIG,
   construction: DEFAULT_CONSTRUCTION_CONFIG,
+  anchor: DEFAULT_ANCHOR_CONFIG,
 };
 
 // ==================== 预设配置 ====================
@@ -195,7 +203,7 @@ const PRESETS: Record<PresetName, Partial<BalanceConfiguration>> = {
       minPriceRatio: 0.5,
     },
   },
-  
+
   // 波动市场 - 增加不确定性
   volatile: {
     price: {
@@ -205,6 +213,11 @@ const PRESETS: Record<PresetName, Partial<BalanceConfiguration>> = {
       supplyDemandSmoothing: 0.2,
       maxPriceRatio: 8.0,
       minPriceRatio: 0.1,
+    },
+    anchor: {
+      ...DEFAULT_ANCHOR_CONFIG,
+      electricityPrice: 0.68,
+      tierMarkup: [1.5, 1.4, 1.5, 1.8] as [number, number, number, number],
     },
   },
   
@@ -345,6 +358,7 @@ export const useBalanceStore = create<BalanceState & BalanceActions>()(
           economy: { ...DEFAULT_ECONOMY_CONFIG, ...presetConfig.economy },
           retail: { ...DEFAULT_RETAIL_CONFIG, ...presetConfig.retail },
           construction: { ...DEFAULT_CONSTRUCTION_CONFIG, ...presetConfig.construction },
+          anchor: { ...DEFAULT_ANCHOR_CONFIG, ...presetConfig.anchor },
         };
         state.activePreset = preset;
         state.isDirty = preset !== 'default';
@@ -389,6 +403,9 @@ export const useBalanceStore = create<BalanceState & BalanceActions>()(
             break;
           case 'construction':
             state.config.construction = { ...DEFAULT_CONSTRUCTION_CONFIG };
+            break;
+          case 'anchor':
+            state.config.anchor = { ...DEFAULT_ANCHOR_CONFIG };
             break;
         }
         state.isDirty = true;
@@ -471,6 +488,7 @@ export const useBalanceStore = create<BalanceState & BalanceActions>()(
         economy: { ...DEFAULT_ECONOMY_CONFIG, ...presetConfig.economy },
         retail: { ...DEFAULT_RETAIL_CONFIG, ...presetConfig.retail },
         construction: { ...DEFAULT_CONSTRUCTION_CONFIG, ...presetConfig.construction },
+        anchor: { ...DEFAULT_ANCHOR_CONFIG, ...presetConfig.anchor },
       };
     },
   }))
@@ -541,7 +559,14 @@ export const CONSTRUCTION_CONFIG_META: ConfigFieldMeta[] = [
   { key: 'cashRecoveryRate', label: '现金回收率', description: '拆除时现金的回收比例', min: 0.1, max: 0.5, step: 0.05, format: 'percent' },
 ];
 
+export const ANCHOR_CONFIG_META: ConfigFieldMeta[] = [
+  { key: 'electricityPrice', label: '锚定电价', description: '全局价值基准，调整后所有商品理论成本联动', min: 0.1, max: 5.0, step: 0.01, format: 'currency', unit: '元/kWh' },
+  { key: 'fixedCostWeight', label: '固定成本权重', description: '建筑维护/能耗在成本中的占比权重', min: 0.1, max: 2.0, step: 0.1, format: 'number', unit: 'x' },
+  { key: 'wageMultiplier', label: '工资倍率', description: '劳动力成本缩放，影响劳动密集型产业', min: 0.2, max: 3.0, step: 0.1, format: 'number', unit: 'x' },
+];
+
 export const CONFIG_CATEGORIES = [
+  { key: 'anchor' as const, label: '市场锚定', icon: '⚡', meta: ANCHOR_CONFIG_META },
   { key: 'price' as const, label: '价格系统', icon: '📈', meta: PRICE_CONFIG_META },
   { key: 'ai' as const, label: 'AI行为', icon: '🤖', meta: AI_CONFIG_META },
   { key: 'player' as const, label: '玩家设置', icon: '👤', meta: PLAYER_CONFIG_META },

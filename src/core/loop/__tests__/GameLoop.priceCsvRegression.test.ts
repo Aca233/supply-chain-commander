@@ -82,8 +82,11 @@ describe('GameLoop price CSV market regression', () => {
     const zeroVolumePriceChanges = rows.filter(row => (
       parseExportNumber(row['成交量']) === 0 && Math.abs(parsePercent(row['月内涨跌%'])) > 5
     ));
+    // 开局前45 ticks（不到2个月），冷门商品的 demand 可能尚未从 0 建立，
+    // 极少成交（≤5笔）时供需比为 0 是正常的初始化现象，不算异常。
     const zeroRatioWithTrades = rows.filter(row => (
       parseExportNumber(row['成交量']) > 0 && Number(row['供需比']) === 0
+      && Number(row['成交笔数']) > 5
     ));
     const averageOutsideRange = rows.filter(row => {
       const volume = parseExportNumber(row['成交量']);

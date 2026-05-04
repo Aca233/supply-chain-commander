@@ -10,7 +10,9 @@
 
 import { GameWorld, createGameWorld, setInventory } from './GameWorld';
 import { ALL_GOODS, GoodsId } from '@/data/goods';
-import { ALL_BUILDINGS, isRetailBuilding, BuildingId } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding, isWarehouseBuilding, BuildingId } from '@/data/buildings';
+import { applyAnchorToWorld } from '@/core/economy/MarketAnchor';
+import { useBalanceStore } from '@/core/balance/BalanceConfig';
 import {
   BASE_INTEREST_RATE,
   GOODS_COUNT,
@@ -98,12 +100,18 @@ export function initializeWorld(): GameWorld {
   resetGlobalProductionTracker();
   
   initializeGoods(world);
+
+  // 市场锚定：用电力本位推导理论成本价，覆盖 baseValues/prices/priceHistory
+  const anchorConfig = useBalanceStore.getState().config.anchor;
+  applyAnchorToWorld(world, anchorConfig);
+
   initializePlayerCompany(world);
   initializeAICompanies(world);
   initializeMarketState(world);
   resetOrderPool();
   generateInitialMarketOrders(world);
   initializeRetailStores(world);
+  initializeWarehouseBuildings(world);
 
   seedBootstrapLiquidity(world);
 
@@ -307,7 +315,7 @@ function initializeAICompanies(world: GameWorld): void {
     
     // 创建建筑（统一配置已预解析为 slotMethods）
     const tracker = getGlobalProductionTracker();
-    
+
     for (const buildingConfig of ai.initialBuildings) {
       for (let count = 0; count < buildingConfig.count; count++) {
         try {
@@ -321,8 +329,9 @@ function initializeAICompanies(world: GameWorld): void {
         }
       }
     }
+
   }
-  
+
   console.log(`[初始化] 创建了 ${productionCompanies.length} 家生产类AI公司，共 ${world.buildings.count} 个建筑`);
 }
 
@@ -659,6 +668,112 @@ function initializeRetailStores(world: GameWorld): void {
   }
 
   console.log(`[初始化] 创建了 ${world.retail.count} 家零售店（玩家 1 家 + AI ${aiRetailCount} 家）`);
+}
+
+// ==================== 仓储系统初始化 ====================
+
+/**
+ * 为所有公司分配初始仓库建筑
+ * 必须在 generateInitialMarketOrders 之后调用：
+ * 初始库存可能超过仓库容量，若在订单生成前分配仓库，
+ * 仓储容量检查会阻断所有初始订单的匹配。
+ */
+function initializeWarehouseBuildings(world: GameWorld): void {
+  const c = world.companies;
+
+  // 玩家：小型仓库
+  addWarehouseBuilding(world, 0, BuildingId.SMALL_WAREHOUSE);
+
+  // AI公司：根据行业选择仓库类型
+  const productionCompanies = AI_COMPANIES;
+  for (let i = 0; i < productionCompanies.length; i++) {
+    const ai = productionCompanies[i];
+    const companyId = i + 1; // AI公司ID从1开始
+    if (companyId >= c.count) continue;
+
+    const warehouseTypeId = pickWarehouseForCategory(ai.category, ai.initialBuildings.length);
+    addWarehouseBuilding(world, companyId, warehouseTypeId);
+  }
+
+  console.log(`[初始化] 为 ${Math.min(productionCompanies.length + 1, c.count)} 家公司分配了仓库建筑`);
+}
+
+/**
+ * 根据公司行业类型和规模选择最合适的仓库类型
+ */
+function pickWarehouseForCategory(
+  category: string,
+  buildingCount: number,
+): number {
+  switch (category) {
+    case 'agriculture':
+      // 农业公司：冷链仓库（保鲜需求）
+      return BuildingId.COLD_STORAGE;
+    case 'extraction':
+      // 采掘公司：散货堆场（原料大宗）
+      return BuildingId.BULK_YARD;
+    case 'manufacturing':
+      // 制造类：根据规模选择
+      if (buildingCount > 4) return BuildingId.LARGE_WAREHOUSE;
+      return BuildingId.SMALL_WAREHOUSE;
+    case 'diversified':
+      // 多元化集团：大型仓库
+      return BuildingId.LARGE_WAREHOUSE;
+    default:
+      // 加工、医药、奢侈品、能源等：小型仓库
+      return BuildingId.SMALL_WAREHOUSE;
+  }
+}
+
+/**
+ * 添加仓库建筑
+ * 设置默认 slotMethods 使劳动力系统正确识别仓库岗位需求
+ */
+function addWarehouseBuilding(
+  world: GameWorld,
+  companyId: number,
+  buildingTypeId: number,
+): number {
+  const b = world.buildings;
+
+  if (b.count >= b.maxCount) {
+    console.warn('建筑数量已达上限，无法添加仓库');
+    return -1;
+  }
+
+  if (!isWarehouseBuilding(buildingTypeId)) {
+    console.warn(`建筑类型 ${buildingTypeId} 不是仓库建筑`);
+    return -1;
+  }
+
+  const buildingId = b.count;
+  b.count++;
+
+  b.types[buildingId] = buildingTypeId;
+  b.owners[buildingId] = companyId;
+  b.levels[buildingId] = 1;
+  b.efficiencies[buildingId] = 1.0;
+  b.progress[buildingId] = 0;
+  b.isActive[buildingId] = 1;
+
+  // 设置默认仓储运营方法（让劳动力系统识别岗位需求）
+  const defaultMethods = getDefaultSlotMethods(buildingTypeId);
+  const slotOffset = buildingId * MAX_SLOTS;
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    b.slotMethods[slotOffset + i] = i < defaultMethods.length ? defaultMethods[i] : 0;
+  }
+
+  for (let i = 0; i < 8; i++) {
+    b.inputBuffers[buildingId * 8 + i] = 0;
+  }
+  for (let i = 0; i < 4; i++) {
+    b.outputBuffers[buildingId * 4 + i] = 0;
+  }
+
+  initializeBuildingProductionControl(world, buildingId);
+  world.companies.buildingCounts[companyId]++;
+
+  return buildingId;
 }
 
 /**

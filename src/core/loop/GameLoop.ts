@@ -13,10 +13,10 @@ import { updateAllProduction, autoFeedBuildings, initRecipeCache } from '../prod
 import { initializeBuildingProductionMethods } from '../production/ProductionMethods';
 import {
   accrueDailyPayroll,
-  addMonthlyLaborGrowth,
   adjustAIWageMultipliers,
   payMonthlyPayroll,
   processBuildingLaborMarket,
+  reconcileLaborCounts,
   updateMarketWages,
 } from '../labor/LaborSystem';
 import { matchAllOrders, MatchingResult } from '../market/MatchingEngine';
@@ -27,6 +27,7 @@ import { updateAllPrices, simulateConsumerDemand, PriceUpdateResult } from '../e
 import { autoPostSellOrders, autoPostBuyOrders, executeAIStockTrading, adjustAllAIOrderPrices, runStrategicMaterialCheck, buildForColdGoods, forceBuildzeroSupplyGoods } from '../ai/AIDecisionEngine';
 import { initializeBankingSystem, updateBankingSystem, getBankingState } from '../finance/BankingSystem';
 import { applyOperatingCosts } from '../finance/OperatingCosts';
+import { refreshWarehouseCache } from '../economy/WarehouseSystem';
 import { initializeStockMarket, updateStockMarket } from '../finance/StockMarket';
 import { initializeAcquisitionSystem, updateAcquisitionSystem } from '../finance/AcquisitionSystem';
 import { bankruptcyResolution } from '../finance/BankruptcyResolution';
@@ -62,6 +63,11 @@ import { futuresMarket } from '../finance/FuturesMarket';
 import { tradingFeeManager } from '../market/TradingFees';
 import { executeConsumerPurchases, MarketConsumptionSummary, CONSUMER_MARKET_CONFIG } from '../economy/ConsumerMarket';
 import { executePlayerAutoTrade } from '../ai/PlayerAutoTrader';
+import {
+  calculateLaborSupplyFromPop,
+  syncLaborSupplyFromPop,
+  updateTierEffectiveIncomes,
+} from '../population/PopulationSystem';
 import { updateRetailSystem, RetailTickResult, processWholesaleSupply, WholesaleResult } from '../economy/RetailSystem';
 import { processServiceConsumption, resetDailyServiceStats, ServiceConsumptionResult } from '../economy/ServiceConsumption';
 import { processConstructionAndDemolitionTick, ConstructionTickResult } from '../construction/ConstructionTick';
@@ -165,6 +171,7 @@ export class GameLoop {
   private state: GameLoopState;
   private tickCallback?: (result: TickResult) => void;
   private timerId?: number;
+  private visibilityHandler?: () => void;
   private lastPerfReport: TickPerformanceReport | null = null;
   private aiWorkerInitialized: boolean = false;
   private lastRateLogTick = -1;
@@ -276,12 +283,25 @@ export class GameLoop {
    */
   start(): void {
     if (this.state.running) return;
-    
+
     this.state.running = true;
     this.state.paused = false;
     // 注意: world对象可能被Zustand冻结，不直接修改world.paused
     this.state.lastTickTime = performance.now();
-    
+
+    // 注册标签页可见性监听：回前台时重置时基，避免后台 setTimeout 节流积压被一次性补帧
+    // Why: 浏览器后台标签 setTimeout 最低节流到 ~1s，切回时 elapsed 可能数十秒
+    //      原 while 循环会瞬间补跑数百 tick 导致界面卡死
+    if (!this.visibilityHandler && typeof document !== 'undefined') {
+      this.visibilityHandler = () => {
+        if (!document.hidden && this.state.running && !this.state.paused) {
+          this.state.lastTickTime = performance.now();
+          this.state.accumulator = 0;
+        }
+      };
+      document.addEventListener('visibilitychange', this.visibilityHandler);
+    }
+
     this.scheduleNextTick();
   }
   
@@ -320,10 +340,15 @@ export class GameLoop {
     this.state.running = false;
     this.state.paused = true;
     // 注意: world对象可能被Zustand冻结，不直接修改world.paused
-    
+
     if (this.timerId) {
       clearTimeout(this.timerId);
       this.timerId = undefined;
+    }
+
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = undefined;
     }
   }
   
@@ -354,26 +379,40 @@ export class GameLoop {
   
   /**
    * 调度下一个tick
+   *
+   * Catch-up 限制：单次补帧最多 5 个 tick，超出部分丢弃。
+   * Why: 浏览器后台标签 setTimeout 节流到 ~1s，切回时 elapsed 可能 30s+，
+   *      原 while 循环会瞬间补跑数百 tick 导致 UI 冻结数秒
+   * How: elapsed 封顶 + processed 计数封顶双重保险，溢出时清零 accumulator
    */
   private scheduleNextTick(): void {
     if (!this.state.running || this.state.paused) return;
-    
+
     const now = performance.now();
     const elapsed = now - this.state.lastTickTime;
-    this.state.accumulator += elapsed;
-    this.state.lastTickTime = now;
-    
     const targetInterval = this.state.tickInterval / this.state.speed;
-    
-    // 处理累积的tick
-    while (this.state.accumulator >= targetInterval) {
+
+    const MAX_CATCHUP_TICKS = 5;
+    const cappedElapsed = Math.min(elapsed, targetInterval * MAX_CATCHUP_TICKS);
+    this.state.accumulator += cappedElapsed;
+    this.state.lastTickTime = now;
+
+    // 处理累积的tick（双重封顶：累计时间 + 处理次数）
+    let processed = 0;
+    while (this.state.accumulator >= targetInterval && processed < MAX_CATCHUP_TICKS) {
       this.processTick();
       this.state.accumulator -= targetInterval;
+      processed++;
     }
-    
+
+    // 仍有溢出（罕见，例如单 tick 耗时超过 targetInterval）→ 丢弃避免雪球
+    if (this.state.accumulator > targetInterval * MAX_CATCHUP_TICKS) {
+      this.state.accumulator = targetInterval;
+    }
+
     // 计算下一次调度延迟
     const nextDelay = Math.max(1, targetInterval - this.state.accumulator);
-    
+
     this.timerId = window.setTimeout(() => {
       this.scheduleNextTick();
     }, nextDelay);
@@ -396,7 +435,10 @@ export class GameLoop {
     tickAllPools();
     
     // ==================== 阶段1: 生产前准备 ====================
-    
+
+    // 0. 刷新仓储缓存（一次遍历替代每建筑重复遍历）
+    refreshWarehouseCache(this.world);
+
     // 1. 自动补充建筑输入
     const endAutoFeed = perfMonitor.startMeasure('autoFeed');
     autoFeedBuildings(this.world);
@@ -593,7 +635,26 @@ export class GameLoop {
     accrueDailyPayroll(this.world);
     if (currentTick % TICKS_PER_MONTH === 0) {
       payMonthlyPayroll(this.world);
-      addMonthlyLaborGrowth(this.world);
+
+      // Pop ↔ Labor 双向同步（每月）
+      // 1. Pop → Labor：从人口结构推算劳动力供给，替代固定增长
+      const newSupply = calculateLaborSupplyFromPop(this.world.population);
+      syncLaborSupplyFromPop(
+        this.world.labor.totalSupply,
+        this.world.labor.employed,
+        this.world.labor.unemployed,
+        newSupply,
+      );
+
+      // 2. Labor → Pop：根据就业和工资反馈各层级有效收入
+      updateTierEffectiveIncomes(
+        this.world.population,
+        this.world.labor.totalSupply,
+        this.world.labor.employed,
+        this.world.labor.marketWages,
+      );
+
+      reconcileLaborCounts(this.world);
     }
     applyOperatingCosts(this.world);
     

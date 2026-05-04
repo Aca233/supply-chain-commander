@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOODS_COUNT } from '@/core/constants';
+import { GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { getOrderBookView, resetOrderPool } from '@/core/market/OrderBook';
 import { getBuildingRecipeFromInstance, initProductionCache } from '@/core/production/ProductionEngine';
 import { getBuildingProductionVariants, initializeBuildingProductionMethods } from '@/core/production/ProductionMethods';
 import { createGameWorld } from '@/core/world/GameWorld';
+import { getBaseMaterials } from '@/data/buildingMaterials';
 import { ALL_GOODS, GoodsId } from '@/data/goods';
-import { BuildingId } from '@/data/buildings';
+import { BUILDINGS_BY_ID, BuildingId } from '@/data/buildings';
 
-import { autoPostBuyOrders, autoPostSellOrders } from '../AIDecisionEngine';
+import { autoPostBuyOrders, autoPostSellOrders, executeDecision } from '../AIDecisionEngine';
 import { addBuilding } from '../../world/WorldInitializer';
 
 describe('AIDecisionEngine regressions', () => {
@@ -35,7 +36,7 @@ describe('AIDecisionEngine regressions', () => {
     expect(sellOrders[0].price).toBeGreaterThanOrEqual(ALL_GOODS[goodsId].basePrice * 0.5);
   });
 
-  it('caps producer sell orders so one AI listing cannot dump millions of tons at once', () => {
+  it('lets producer sell orders scale with available inventory instead of a fixed per-order cap', () => {
     resetOrderPool();
     initializeBuildingProductionMethods();
     initProductionCache();
@@ -61,7 +62,7 @@ describe('AIDecisionEngine regressions', () => {
 
     expect(created).toBeGreaterThan(0);
     expect(sellOrders.length).toBeGreaterThan(0);
-    expect(sellOrders[0].remaining).toBeLessThanOrEqual(100_000);
+    expect(sellOrders[0].remaining).toBeGreaterThan(100_000);
   });
 
   it('does not keep buying steel when a parts factory already has a full steel buffer but is blocked by plastic', () => {
@@ -108,5 +109,113 @@ describe('AIDecisionEngine regressions', () => {
     expect(created).toBeGreaterThan(0);
     expect(steelBuyOrders).toHaveLength(0);
     expect(plasticBuyOrders.length).toBeGreaterThan(0);
+  });
+
+  it('lets electricity buy orders scale with industrial daily demand', () => {
+    resetOrderPool();
+    initializeBuildingProductionMethods();
+    initProductionCache();
+
+    const world = createGameWorld();
+    const companyId = 1;
+    world.goods.count = ALL_GOODS.length;
+    world.companies.count = 2;
+    world.companies.isAI[companyId] = true;
+    world.companies.cash[companyId] = 10_000_000;
+    world.goods.prices[GoodsId.ELECTRICITY] = ALL_GOODS[GoodsId.ELECTRICITY].basePrice;
+    world.goods.baseValues[GoodsId.ELECTRICITY] = ALL_GOODS[GoodsId.ELECTRICITY].basePrice;
+    world.goods.supplies[GoodsId.ELECTRICITY] = 100_000;
+
+    const buildingId = addBuilding(world, companyId, BuildingId.STEEL_MILL);
+    const recipe = getBuildingRecipeFromInstance(world, buildingId);
+    const electricityInput = recipe.inputs.find(input => input.goodsId === GoodsId.ELECTRICITY);
+    expect(electricityInput).toBeDefined();
+
+    const created = autoPostBuyOrders(world);
+    const electricityBuyOrders = getOrderBookView(world, GoodsId.ELECTRICITY).buyOrders
+      .filter(order => order.companyId === companyId);
+    const expectedTenDayNeed = (electricityInput!.amount * TICKS_PER_DAY / recipe.ticksRequired) * 10;
+
+    expect(created).toBeGreaterThan(0);
+    expect(electricityBuyOrders.length).toBeGreaterThan(0);
+    expect(electricityBuyOrders[0].remaining).toBeCloseTo(expectedTenDayNeed);
+  });
+
+  it('lets non-energy input buy orders scale with industrial daily demand', () => {
+    resetOrderPool();
+    initializeBuildingProductionMethods();
+    initProductionCache();
+
+    const world = createGameWorld();
+    const companyId = 1;
+    world.goods.count = ALL_GOODS.length;
+    world.companies.count = 2;
+    world.companies.isAI[companyId] = true;
+    world.companies.cash[companyId] = 10_000_000;
+
+    const buildingId = addBuilding(world, companyId, BuildingId.STEEL_MILL);
+    const recipe = getBuildingRecipeFromInstance(world, buildingId);
+    const materialInput = recipe.inputs.find(input => input.goodsId !== GoodsId.ELECTRICITY);
+    expect(materialInput).toBeDefined();
+
+    world.goods.prices[materialInput!.goodsId] = ALL_GOODS[materialInput!.goodsId].basePrice;
+    world.goods.baseValues[materialInput!.goodsId] = ALL_GOODS[materialInput!.goodsId].basePrice;
+    world.goods.supplies[materialInput!.goodsId] = 100_000;
+
+    const created = autoPostBuyOrders(world);
+    const materialBuyOrders = getOrderBookView(world, materialInput!.goodsId).buyOrders
+      .filter(order => order.companyId === companyId);
+    const expectedTenDayNeed = (materialInput!.amount * TICKS_PER_DAY / recipe.ticksRequired) * 10;
+
+    expect(expectedTenDayNeed).toBeGreaterThan(500);
+    expect(created).toBeGreaterThan(0);
+    expect(materialBuyOrders.length).toBeGreaterThan(0);
+    expect(materialBuyOrders[0].remaining).toBeCloseTo(expectedTenDayNeed);
+  });
+
+  it('does not subtract building valuation again when AI completes a material-backed build', () => {
+    resetOrderPool();
+    initializeBuildingProductionMethods();
+    initProductionCache();
+
+    const world = createGameWorld();
+    const companyId = 1;
+    const building = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
+    world.goods.count = ALL_GOODS.length;
+    world.companies.count = 2;
+    world.companies.isAI[companyId] = true;
+    world.companies.cash[companyId] = building.buildCost + 1_000;
+
+    for (const mat of getBaseMaterials(BuildingId.IRON_MINE)) {
+      world.companies.inventories[companyId * GOODS_COUNT + mat.goodsId] = mat.amount;
+    }
+
+    const cashBefore = world.companies.cash[companyId];
+    const success = executeDecision(world, {
+      type: 'investment',
+      companyId,
+      action: 'build',
+      params: {
+        buildingTypeId: BuildingId.IRON_MINE,
+        cost: building.buildCost,
+      },
+      priority: 1,
+      expectedProfit: 0,
+      confidence: 1,
+    });
+
+    let frozenBuyOrderCash = 0;
+    for (let i = 0; i < world.orders.maxOrders; i++) {
+      if (world.orders.isActive[i] && world.orders.companyIds[i] === companyId && world.orders.types[i] === 0) {
+        frozenBuyOrderCash += world.orders.remainings[i] * world.orders.prices[i];
+      }
+    }
+    const cashSpent = cashBefore - world.companies.cash[companyId];
+
+    expect(success).toBe(true);
+    expect(cashSpent).toBeCloseTo(frozenBuyOrderCash, 2);
+    expect(cashSpent).toBeLessThan(building.buildCost);
+    expect(world.buildings.count).toBe(1);
+    expect(world.buildings.owners[0]).toBe(companyId);
   });
 });

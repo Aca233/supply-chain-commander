@@ -5,9 +5,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { useGameStore, type LaborRoleKey } from '@/stores/gameStore';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding, isWarehouseBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
+import { MAX_INPUTS, MAX_OUTPUTS } from '@/core/constants';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { ResourceBar } from './ResourceBar';
 import { ProductionMethodsPanel } from './ProductionMethodsPanel';
@@ -17,7 +18,12 @@ import {
   calculateBuildingFinancialEstimate,
 } from './BuildingFinancialEstimate';
 import { calculateBuildingDefinitionOperatingCostPerTick } from '@/core/finance/OperatingCostModel';
+import { calculateBuildingDailyPayrollCost } from '@/core/labor/LaborSystem';
 import { getBuildingConstructionConfig, isHazardousBuilding, MaterialRequirement } from '@/data/buildingMaterials';
+import {
+  getCompanyStorageStatus,
+  getWarehouseBuildingCapacity,
+} from '@/core/economy/WarehouseSystem';
 
 // 设计系统组件
 import {
@@ -76,6 +82,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     const efficiency = world.buildings.efficiencies[buildingIndex];
     const isActive = world.buildings.isActive[buildingIndex];
     const isRetail = isRetailBuilding(typeId);
+    const isWarehouse = isWarehouseBuilding(typeId);
 
     const inputs: Array<{
       goodsId: number;
@@ -91,7 +98,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     if (production && production.inputs && !isRetail) {
       for (let j = 0; j < production.inputs.length; j++) {
         const input = production.inputs[j];
-        const current = world.buildings.inputBuffers[buildingIndex * 8 + j];
+        const current = world.buildings.inputBuffers[buildingIndex * MAX_INPUTS + j];
         const required = input.amount;
         const percentage = Math.min(1, current / required);
         const goods = ALL_GOODS.find((g) => g.id === input.goodsId);
@@ -121,7 +128,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
         const output = production.outputs[j];
         const goods = ALL_GOODS.find((g) => g.id === output.goodsId);
         const dailyAmount = calculateBuildingDailyAmount(output.amount, ticksRequired, efficiency);
-        const buffer = world.buildings.outputBuffers[buildingIndex * 8 + j];
+        const buffer = world.buildings.outputBuffers[buildingIndex * MAX_OUTPUTS + j];
         const price = world.goods.prices[output.goodsId] || (goods?.basePrice || 0);
 
         outputs.push({
@@ -134,12 +141,17 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       }
     }
 
-    const dailyCost = buildingDef
-      ? calculateBuildingDefinitionOperatingCostPerTick(buildingDef).cashExpense
+    const operatingCost = buildingDef
+      ? calculateBuildingDefinitionOperatingCostPerTick(buildingDef)
+      : null;
+    const dailyCost = operatingCost
+      ? operatingCost.cashExpense - operatingCost.labor
       : 0;
+    const laborCost = isActive ? calculateBuildingDailyPayrollCost(world, buildingIndex) : 0;
     const financialEstimate = calculateBuildingFinancialEstimate({
       isActive: Boolean(isActive),
       dailyCost,
+      laborCost,
       outputs,
     });
 
@@ -159,12 +171,38 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
     else if (efficiency < 0.8) status = 'warning';
 
     // 获取生产配置名称
-    let productionName = isRetail ? '零售' : '无配方';
+    let productionName = isRetail ? '零售' : isWarehouse ? '仓储' : '无配方';
     if (production.outputs.length > 0) {
       const outputGoods = ALL_GOODS.find(g => g.id === production.outputs[0].goodsId);
       productionName = `生产${outputGoods?.name || '商品'}`;
     } else if (buildingDef) {
       productionName = buildingDef.name;
+    }
+
+    // 仓库专属数据
+    let warehouseData: {
+      buildingCapacity: number;
+      storageCostPerUnit: number;
+      spoilageReduction: number;
+      allowedCategories: string[];
+      companyUsage: number;
+      companyCapacity: number;
+      companyUtilization: number;
+    } | null = null;
+
+    if (isWarehouse && buildingDef?.warehouseConfig) {
+      const wc = buildingDef.warehouseConfig;
+      const companyId = world.buildings.owners[buildingIndex];
+      const storageStatus = getCompanyStorageStatus(world, companyId);
+      warehouseData = {
+        buildingCapacity: getWarehouseBuildingCapacity(typeId, level),
+        storageCostPerUnit: wc.storageCostPerUnit,
+        spoilageReduction: wc.spoilageReduction,
+        allowedCategories: wc.allowedGoodsCategories,
+        companyUsage: storageStatus.usage,
+        companyCapacity: storageStatus.capacity,
+        companyUtilization: storageStatus.utilization,
+      };
     }
 
     return {
@@ -176,6 +214,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       efficiency,
       isActive,
       isRetail,
+      isWarehouse,
       productionName,
       inputs,
       outputs,
@@ -192,6 +231,7 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
       nextCapacity,
       nextEfficiency,
       buildingDef,
+      warehouseData,
     };
   }, [world, buildingIndex, playerCash, tick]);
 
@@ -355,6 +395,69 @@ export const BuildingDetailPanel: React.FC<BuildingDetailPanelProps> = ({
             </div>
           </div>
         </Card>
+
+        {/* 仓储信息 */}
+        {buildingData.isWarehouse && buildingData.warehouseData && (
+          <Card variant="elevated" padding="md">
+            <h4 className="text-xs font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
+              📦 仓储信息
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-muted)]">本建筑容量</span>
+                <span className="text-[var(--text-primary)] font-medium tabular-nums">
+                  {buildingData.warehouseData.buildingCapacity.toLocaleString()} 单位
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-muted)]">仓储费率</span>
+                <span className="text-[var(--text-primary)] tabular-nums">
+                  ¥{buildingData.warehouseData.storageCostPerUnit}/单位/天
+                </span>
+              </div>
+              {buildingData.warehouseData.spoilageReduction > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">损耗降低</span>
+                  <span className="text-[var(--success)] font-medium tabular-nums">
+                    -{(buildingData.warehouseData.spoilageReduction * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+              {buildingData.warehouseData.allowedCategories.length > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">限定品类</span>
+                  <span className="text-[var(--warning)] font-medium">
+                    {buildingData.warehouseData.allowedCategories.map(c => {
+                      const names: Record<string, string> = { raw: '原料', basic: '基础品', intermediate: '中间品', final: '成品' };
+                      return names[c] || c;
+                    }).join('、')}
+                  </span>
+                </div>
+              )}
+              <div className="pt-2 border-t border-[var(--border-muted)]">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-[var(--text-secondary)] font-medium">公司总库存</span>
+                  <span className="text-[var(--text-primary)] tabular-nums">
+                    {buildingData.warehouseData.companyUsage.toFixed(0)} / {buildingData.warehouseData.companyCapacity.toFixed(0)}
+                  </span>
+                </div>
+                <ProgressBar
+                  value={buildingData.warehouseData.companyUtilization * 100}
+                  max={100}
+                  size="sm"
+                  color={
+                    buildingData.warehouseData.companyUtilization >= 0.95 ? 'error'
+                    : buildingData.warehouseData.companyUtilization >= 0.85 ? 'warning'
+                    : 'success'
+                  }
+                />
+                <div className="text-[10px] text-[var(--text-muted)] mt-1">
+                  使用率 {(buildingData.warehouseData.companyUtilization * 100).toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* 产量控制 */}
         {productionControl && (

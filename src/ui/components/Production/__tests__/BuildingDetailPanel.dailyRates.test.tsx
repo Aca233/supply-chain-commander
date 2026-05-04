@@ -26,6 +26,7 @@ vi.mock('@/data/buildings', () => ({
     },
   ],
   isRetailBuilding: () => false,
+  isWarehouseBuilding: () => false,
 }));
 
 vi.mock('@/core/production/ProductionEngine', () => ({

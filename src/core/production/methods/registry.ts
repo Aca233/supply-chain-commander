@@ -6,7 +6,6 @@
 
 import {
   EMPTY_WORKFORCE_DEMAND,
-  addWorkforceDemand,
   cloneWorkforceDemand,
   type WorkforceDemand,
 } from '@/core/labor/LaborSystem';
@@ -19,6 +18,7 @@ import {
   RecipeDelta,
   getMethodIdBase,
 } from './types';
+import { GoodsId } from '@/data/goods';
 
 export const buildingConfigs: Map<number, BuildingMethodConfig> = new Map();
 export const methodsById: Map<number, BuildingProductionMethod> = new Map();
@@ -108,6 +108,14 @@ function createEmptyRecipe(): ComputedRecipe {
   };
 }
 
+function cloneWorkforceDelta(demand: WorkforceDemand): WorkforceDemand {
+  return {
+    basic: Number.isFinite(demand.basic) ? demand.basic : 0,
+    technical: Number.isFinite(demand.technical) ? demand.technical : 0,
+    management: Number.isFinite(demand.management) ? demand.management : 0,
+  };
+}
+
 /**
  * 计算建筑选定 method 后的实际配方（线性求和）
  */
@@ -136,9 +144,22 @@ export function computeRecipe(
     for (const d of method.outputDelta) {
       outputMap.set(d.goodsId, (outputMap.get(d.goodsId) ?? 0) + d.amount);
     }
-    workforce = addWorkforceDemand(workforce, method.workforceDelta);
+    workforce = {
+      basic: workforce.basic + method.workforceDelta.basic,
+      technical: workforce.technical + method.workforceDelta.technical,
+      management: workforce.management + method.workforceDelta.management,
+    };
     energy += method.energyDelta;
     ticksRequired = Math.max(ticksRequired, method.ticksRequired);
+  }
+
+  const energyRequired = Math.max(0, energy);
+  const producesElectricity = (outputMap.get(GoodsId.ELECTRICITY) ?? 0) > 0;
+  if (energyRequired > 0 && !producesElectricity) {
+    inputMap.set(
+      GoodsId.ELECTRICITY,
+      (inputMap.get(GoodsId.ELECTRICITY) ?? 0) + energyRequired,
+    );
   }
 
   return {
@@ -148,8 +169,8 @@ export function computeRecipe(
     outputs: [...outputMap.entries()]
       .filter(([, amount]) => amount > 0)
       .map(([goodsId, amount]) => ({ goodsId, amount })),
-    workforceRequired: workforce,
-    energyRequired: Math.max(0, energy),
+    workforceRequired: cloneWorkforceDemand(workforce),
+    energyRequired,
     ticksRequired: Math.max(TICKS_PER_DAY, ticksRequired),
   };
 }
@@ -196,7 +217,7 @@ export function createMethod(
     slotId,
     inputDelta: options.inputDelta ?? [],
     outputDelta: options.outputDelta ?? [],
-    workforceDelta: cloneWorkforceDemand(options.workforceDelta ?? EMPTY_WORKFORCE_DEMAND),
+    workforceDelta: cloneWorkforceDelta(options.workforceDelta ?? EMPTY_WORKFORCE_DEMAND),
     energyDelta: options.energyDelta ?? 0,
     ticksRequired: options.ticksRequired ?? TICKS_PER_DAY,
     requiredLevel: options.requiredLevel ?? 1,

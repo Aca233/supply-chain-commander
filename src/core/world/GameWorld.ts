@@ -23,6 +23,9 @@ import {
   TICKS_PER_YEAR,
 } from '../constants';
 
+import { createPopulationSystem, type PopulationSystemData } from '../population/PopulationSystem';
+export type { PopulationSystemData };
+
 // ==================== 类型定义 ====================
 
 /** 商品系统数据 */
@@ -297,6 +300,9 @@ export interface GameWorld {
 
   // 劳动力市场
   labor: LaborSystemData;
+
+  // 人口系统（Pop ↔ Labor 桥梁）
+  population: PopulationSystemData;
 
   // 建造/拆除系统
   construction: ConstructionQueueSystem;
@@ -593,6 +599,28 @@ export function createLaborSystem(): LaborSystemData {
 }
 
 /**
+ * 默认人口层级数据（与 DemandCurve.ts CONSUMER_TIERS 保持同步）。
+ * 放在此处避免 GameWorld → DemandCurve 的循环依赖。
+ */
+const DEFAULT_POP_TIER_DATA: ReadonlyArray<{
+  population: number;
+  baseIncome: number;
+  incomeVariance: number;
+  savingsRate: number;
+  pricePreference: number;
+  qualityPreference: number;
+}> = [
+  { population: 260_000_000, baseIncome: 1500,  incomeVariance: 0.12, savingsRate: 0.01, pricePreference: 0.97, qualityPreference: 0.03 },
+  { population: 280_000_000, baseIncome: 2500,  incomeVariance: 0.15, savingsRate: 0.03, pricePreference: 0.93, qualityPreference: 0.07 },
+  { population: 290_000_000, baseIncome: 4000,  incomeVariance: 0.18, savingsRate: 0.06, pricePreference: 0.85, qualityPreference: 0.15 },
+  { population: 250_000_000, baseIncome: 6500,  incomeVariance: 0.22, savingsRate: 0.10, pricePreference: 0.72, qualityPreference: 0.28 },
+  { population: 150_000_000, baseIncome: 10000, incomeVariance: 0.26, savingsRate: 0.16, pricePreference: 0.58, qualityPreference: 0.42 },
+  { population: 90_000_000,  baseIncome: 16000, incomeVariance: 0.30, savingsRate: 0.22, pricePreference: 0.42, qualityPreference: 0.58 },
+  { population: 50_000_000,  baseIncome: 30000, incomeVariance: 0.36, savingsRate: 0.30, pricePreference: 0.25, qualityPreference: 0.75 },
+  { population: 30_000_000,  baseIncome: 80000, incomeVariance: 0.45, savingsRate: 0.42, pricePreference: 0.08, qualityPreference: 0.92 },
+];
+
+/**
  * 创建完整的游戏世界
  */
 export function createGameWorld(): GameWorld {
@@ -609,6 +637,7 @@ export function createGameWorld(): GameWorld {
     retail: createRetailSystem(),
     households: createHouseholdSystem(),
     labor: createLaborSystem(),
+    population: createPopulationSystem(DEFAULT_POP_TIER_DATA),
 
     // 建造/拆除系统
     construction: createConstructionQueueSystem(),

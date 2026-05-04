@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ALL_BUILDINGS, isRetailBuilding } from '@/data/buildings';
+import { ALL_BUILDINGS, isRetailBuilding, isWarehouseBuilding } from '@/data/buildings';
 import { ALL_GOODS } from '@/data/goods';
 import { BuildingIcon, GoodsIcon } from '@/ui/components/Icons';
 import { useGameStore } from '@/stores/gameStore';
@@ -106,12 +106,12 @@ export const BuildModal: React.FC<BuildModalProps> = ({
       const missing = Math.max(0, mat.amount - available);
       const sufficient = available >= mat.amount;
       const marketPrice = world.goods.prices[mat.goodsId] || (goods?.basePrice || 100);
-      const purchaseCost = missing * marketPrice * 1.05;
+      const purchaseCost = missing * marketPrice * 1.1;
       
       if (!sufficient) {
         allSufficient = false;
         totalPurchaseCost += purchaseCost;
-        missingMaterials.push({ goodsId: mat.goodsId, amount: missing, price: marketPrice * 1.05 });
+        missingMaterials.push({ goodsId: mat.goodsId, amount: missing, price: marketPrice * 1.1 });
       }
 
       details.push({
@@ -129,6 +129,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
   }, [world, requiredMaterials]);
 
   const isRetail = isRetailBuilding(buildingTypeId);
+  const isWarehouse = isWarehouseBuilding(buildingTypeId);
   
   const [selectedMethodId, setSelectedMethodId] = useState<number>(() => {
     if (isRetail) return 0;
@@ -140,11 +141,10 @@ export const BuildModal: React.FC<BuildModalProps> = ({
 
   if (!building) return null;
 
-  const canAffordCash = playerCash >= building.buildCost;
   const canAffordMaterials = materialCheck.sufficient;
-  const totalCostWithPurchase = building.buildCost + materialCheck.totalPurchaseCost;
+  const totalCostWithPurchase = materialCheck.totalPurchaseCost;
   const canAffordWithPurchase = playerCash >= totalCostWithPurchase;
-  const canBuild = canAffordCash && (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || variants.length > 0);
+  const canBuild = (canAffordMaterials || (autoPurchase && canAffordWithPurchase)) && (isRetail || isWarehouse || variants.length > 0);
 
   const handleConfirm = () => {
     if (!canBuild) return;
@@ -174,6 +174,8 @@ export const BuildModal: React.FC<BuildModalProps> = ({
       newEnergy: { ids: [34], name: '新能源', variant: 'success' },
       pharma: { ids: [35, 36], name: '医药', variant: 'primary' },
       luxury: { ids: [37, 38], name: '奢侈品', variant: 'warning' },
+      retail: { ids: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49], name: '零售', variant: 'info' },
+      warehouse: { ids: [50, 51, 52, 53, 54], name: '仓储物流', variant: 'primary' },
     };
     
     for (const industry of Object.values(industries)) {
@@ -209,7 +211,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
           {/* 成本信息 */}
           <div className="grid grid-cols-2 gap-4">
             <Card variant="default" status="success" padding="md">
-              <p className="text-xs text-[var(--success)] mb-1">建造费用</p>
+              <p className="text-xs text-[var(--success)] mb-1">资产估值</p>
               <p className="text-2xl font-bold text-[var(--success)] tabular-nums">
                 {formatMoney(building.buildCost)}
               </p>
@@ -298,7 +300,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                           {formatMoney(materialCheck.totalPurchaseCost)}
                         </span>
                       </div>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-1">* 以市价+5%购买</p>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1">* 以市价+10%购买</p>
                     </div>
                   )}
                 </Card>
@@ -490,6 +492,40 @@ export const BuildModal: React.FC<BuildModalProps> = ({
                 </div>
               </div>
             </Card>
+          ) : isWarehouse && building.warehouseConfig ? (
+            <Card variant="default" status="info" padding="md">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">📦</span>
+                <span className="text-sm font-medium text-[var(--info)]">仓储功能</span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">存储容量</span>
+                  <span className="text-[var(--text-primary)] font-medium">{building.warehouseConfig.storageCapacity.toLocaleString()} 单位</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">仓储费率</span>
+                  <span className="text-[var(--text-primary)] font-medium">¥{building.warehouseConfig.storageCostPerUnit}/单位/天</span>
+                </div>
+                {building.warehouseConfig.spoilageReduction > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--text-muted)]">损耗降低</span>
+                    <span className="text-[var(--success)] font-medium">-{(building.warehouseConfig.spoilageReduction * 100).toFixed(0)}%</span>
+                  </div>
+                )}
+                {building.warehouseConfig.allowedGoodsCategories.length > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--text-muted)]">限定品类</span>
+                    <span className="text-[var(--warning)] font-medium">
+                      {building.warehouseConfig.allowedGoodsCategories.map(c => {
+                        const names: Record<string, string> = { raw: '原料', basic: '基础品', intermediate: '中间品', final: '成品' };
+                        return names[c] || c;
+                      }).join('、')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Card>
           ) : (
             <Card variant="elevated" padding="lg" className="text-center">
               <span className="text-2xl mb-2 block">📭</span>
@@ -500,14 +536,16 @@ export const BuildModal: React.FC<BuildModalProps> = ({
 
         <DialogFooter>
           <div className="flex items-center gap-2">
-            {!materialCheck.sufficient && autoPurchase ? (
+            {materialCheck.sufficient ? (
+              <Badge variant="success">无需现金预付</Badge>
+            ) : autoPurchase ? (
               <Badge variant={canAffordWithPurchase ? 'success' : 'error'}>
-                总费用: {formatMoney(totalCostWithPurchase)}
+                {canAffordWithPurchase
+                  ? `采购预留: ${formatMoney(totalCostWithPurchase)}`
+                  : `采购差 ${formatMoney(totalCostWithPurchase - playerCash)}`}
               </Badge>
             ) : (
-              <Badge variant={canAffordCash ? 'success' : 'error'}>
-                {canAffordCash ? '资金充足' : `差 ${formatMoney(building.buildCost - playerCash)}`}
-              </Badge>
+              <Badge variant="error">缺少建材</Badge>
             )}
             {requiredMaterials.length > 0 && (
               <Badge variant={canAffordMaterials ? 'success' : autoPurchase && canAffordWithPurchase ? 'info' : 'error'}>

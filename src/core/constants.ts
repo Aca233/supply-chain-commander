@@ -1,7 +1,7 @@
 /**
  * 游戏核心常量定义
  * 这些常量用于SoA数据结构的大小分配和游戏规则配置
- * 精简版本：80种商品、50种建筑、60种配方
+ * 精简版本：80种商品、55种建筑、60种配方
  */
 
 // ==================== 数据规模常量 ====================
@@ -42,8 +42,8 @@ export const POPS_GROUPS = 8;
 /** 消费品种类数（实际约45种，根据goods.ts中isConsumerGood统计） */
 export const CONSUMER_GOODS_COUNT = 45;
 
-/** 建筑类型数量（50种建筑，含 10 种零售业态） */
-export const BUILDING_TYPES_COUNT = 50;
+/** 建筑类型数量（55种建筑，含 10 种零售业态 + 5 种仓储） */
+export const BUILDING_TYPES_COUNT = 55;
 
 /** 配方数量（60个配方，精简版产业链） */
 export const RECIPE_COUNT = 60;
@@ -240,6 +240,12 @@ export const RETAIL_PRICE_ADJUST_INTERVAL = TICKS_PER_DAY;
 /** 最大库存周转天数（超过则降价） */
 export const RETAIL_MAX_TURNOVER_DAYS = 30;
 
+/** 代表性零售店客流缩放：每个游戏内门店代表一组现实网点/渠道 */
+export const RETAIL_CUSTOMER_CAPACITY_SCALE = 100;
+
+/** 代表性零售店库存缩放：与客流缩放保持同一量级，避免货架成为日模型瓶颈 */
+export const RETAIL_INVENTORY_CAPACITY_SCALE = RETAIL_CUSTOMER_CAPACITY_SCALE;
+
 // ==================== 成交记录常量 ====================
 
 /** 最大成交记录数（环形缓冲区大小，增大以保留更多历史记录） */
@@ -282,6 +288,33 @@ export const MAX_RESERVED_MATERIALS = 10000;
 
 /** 最大回收材料条目数 */
 export const MAX_RECOVERED_MATERIALS = 10000;
+
+// ==================== 仓储系统常量 ====================
+
+/** 仓库建筑类型起始ID */
+export const WAREHOUSE_BUILDING_START_ID = 50;
+
+/** 仓库建筑类型数量（5种） */
+export const WAREHOUSE_BUILDING_COUNT = 5;
+
+/** 每家公司的基础存储容量（无仓库时的默认存储空间）
+ * 需足够容纳AI公司的初始库存（约20000-40000单位），仓库建筑提供额外扩展 */
+export const BASE_STORAGE_CAPACITY = 50000;
+
+/** 仓库每升一级的额外容量比例 */
+export const WAREHOUSE_LEVEL_BONUS = 0.3;
+
+/** 溢出商品折价抛售比例（相对于市场价） */
+export const STORAGE_OVERFLOW_PENALTY = 0.5;
+
+/** 存储使用率告警阈值 */
+export const STORAGE_WARNING_THRESHOLD = 0.85;
+
+/** 基础仓储费率（每单位每天，无仓库时使用此费率） */
+export const BASE_STORAGE_COST_PER_UNIT = 0.03;
+
+/** 拥挤惩罚系数（使用率超过告警阈值后的费率递增倍数） */
+export const STORAGE_CONGESTION_MULTIPLIER = 5;
 
 // ==================== 性能目标常量 ====================
 

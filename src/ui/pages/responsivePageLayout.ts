@@ -1,3 +1,17 @@
+export interface ProductionLayoutFlags {
+  isMobile: boolean;
+  isTablet: boolean;
+  isNarrowDesktop: boolean;
+}
+
+export function shouldUseOverlayProductionLayout({
+  isMobile,
+  isTablet,
+  isNarrowDesktop,
+}: ProductionLayoutFlags): boolean {
+  return isMobile || isTablet || isNarrowDesktop;
+}
+
 export interface FinanceLayoutFlags {
   isTablet: boolean;
   isNarrowDesktop: boolean;

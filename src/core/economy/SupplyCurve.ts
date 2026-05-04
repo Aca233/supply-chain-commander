@@ -6,10 +6,12 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { BUILDINGS_BY_ID } from '@/data/buildings';
 import { GOODS_COUNT } from '@/core/constants';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
-import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
+import {
+  calculateBuildingOutputUnitEconomics,
+  calculateBuildingProductionEconomics,
+} from './ProductionEconomics';
 
 /**
  * 成本结构
@@ -58,11 +60,11 @@ export function calculateCostStructure(
   buildingId: number,
   quantity: number
 ): CostStructure {
-  const buildingTypeId = world.buildings.types[buildingId];
+  const economics = calculateBuildingProductionEconomics(world, buildingId);
   const production = getBuildingRecipeFromInstance(world, buildingId);
-  const buildingDef = BUILDINGS_BY_ID.get(buildingTypeId);
-  
-  if (!production || !buildingDef) {
+  const safeQuantity = Math.max(0, Number.isFinite(quantity) ? quantity : 0);
+
+  if (!production) {
     return {
       fixedCost: 0,
       variableCost: 0,
@@ -74,48 +76,18 @@ export function calculateCostStructure(
       energyCost: 0,
     };
   }
-  
-  // 固定成本：建筑维护费（不随产量变化）
-  const fixedCost = 100; // 基础固定成本
-  
-  // 劳动力成本（半固定，随产量有一定变化）
-  const workforceRequiredTotal = getTotalWorkforceDemand(production.workforceRequired) || 10;
-  const laborCost = workforceRequiredTotal * 0.1 * Math.sqrt(quantity);
-  
-  // 原材料成本（完全可变）
-  let materialCost = 0;
-  const inputs = production.inputs || [];
-  for (const input of inputs) {
-    const price = world.goods.prices[input.goodsId];
-    materialCost += price * input.amount * quantity;
-  }
-  
-  // 能源成本（可变）
-  const energyPrice = world.goods.prices[66] || 0.5; // 电力价格 (GoodsId.ELECTRICITY)
-  const energyRequired = buildingDef.powerConsumption || 10;
-  const energyCost = energyRequired * energyPrice * 0.001 * quantity;
-  
-  // 可变成本 = 原材料 + 能源 + 劳动力可变部分
-  const variableCost = materialCost + energyCost + laborCost;
-  
-  // 总成本
+
+  // 这里的 quantity 表示“配方日批次数”的倍率。维护与工资按日固定成本处理；
+  // 原料和能耗随批次数变化，避免重复使用旧的 sqrt(quantity) 工资估算。
+  const fixedCost = economics.maintenanceCost + economics.wageCost;
+  const materialCost = economics.inputCost * safeQuantity;
+  const energyCost = economics.energyCost * safeQuantity;
+  const laborCost = economics.wageCost;
+  const variableCost = materialCost + energyCost;
   const totalCost = fixedCost + variableCost;
-  
-  // 平均成本（当产量大于0时）
-  const averageCost = quantity > 0 ? totalCost / quantity : 0;
-  
-  // 边际成本计算（基于成本函数的导数）
-  // 使用简化的边际成本模型：MC = 材料单位成本 * (1 + 0.1 * Q / capacity)
-  // 这模拟了产能接近上限时边际成本上升
-  const capacity = 100; // 标准产能
-  const baseMaterialCostPerUnit = inputs.reduce((sum, input) => {
-    return sum + world.goods.prices[input.goodsId] * input.amount;
-  }, 0);
-  
-  const marginalCost = baseMaterialCostPerUnit * (1 + 0.1 * quantity / capacity)
-    + energyRequired * energyPrice * 0.001
-    + workforceRequiredTotal * 0.05 / Math.max(1, Math.sqrt(quantity));
-  
+  const averageCost = safeQuantity > 0 ? totalCost / safeQuantity : 0;
+  const marginalCost = economics.inputCost + economics.energyCost;
+
   return {
     fixedCost,
     variableCost,
@@ -148,47 +120,26 @@ export function getMarginalCostParams(
   if (production.outputs.length === 0) {
     return { a: 10, b: -0.05, c: 0.0005, minQuantity: 0, maxQuantity: 200 };
   }
-  
-  // 计算基础材料成本
-  const inputs = production.inputs || [];
-  const baseMaterialCost = inputs.reduce((sum, input) => {
-    return sum + world.goods.prices[input.goodsId] * input.amount;
-  }, 0);
-  
-  // 获取建筑效率
+
+  const primaryOutput = production.outputs[0];
+  const unitEconomics = calculateBuildingOutputUnitEconomics(world, buildingId, primaryOutput.goodsId);
   const efficiency = world.buildings.efficiencies[buildingId] || 1.0;
-  const level = world.buildings.levels[buildingId];
-  
-  // 边际成本曲线：MC = a + b*Q + c*Q^2
-  // a: 基础边际成本（考虑效率）
-  // b: 初始规模经济系数（负值，效率高时规模经济更明显）
-  // c: 边际成本递增系数（效率高时上升更慢）
-  
-  // 基础边际成本 = 材料成本 + 固定边际成本（人工、能源等）
-  const fixedMarginalCost = Math.max(1, baseMaterialCost * 0.1);
-  const a = (baseMaterialCost + fixedMarginalCost) / efficiency;
-  
-  // 规模经济系数：等级和效率越高，规模经济效应越强
-  const scaleEconomyFactor = 0.02 + level * 0.01 + (efficiency - 1) * 0.02;
-  const b = -scaleEconomyFactor * a;
-  
-  // 边际成本递增率：效率越高，产能瓶颈越不明显
-  const congestionFactor = 0.0002 / efficiency;
-  const c = congestionFactor * a;
-  
-  // 产能限制：大幅提升基础产能
-  // 基础产能200，每级+50%，效率也影响产能
-  const baseCapacity = 200;
-  const maxQuantity = Math.floor(baseCapacity * (1 + 0.5 * level) * efficiency);
-  
-  // 最低产量：低于此产量不经济
-  const minQuantity = Math.max(1, Math.floor(maxQuantity * 0.05));
-  
+  const level = Math.max(1, world.buildings.levels[buildingId] || 1);
+  const levelCapacityMultiplier = 1 + (level - 1) * 0.25;
+  const maxQuantity = Math.max(0, unitEconomics.outputAmount * efficiency * levelCapacityMultiplier);
+  const breakEven = Number.isFinite(unitEconomics.breakEvenPrice)
+    ? Math.max(0.01, unitEconomics.breakEvenPrice)
+    : 10;
+  const capacity = Math.max(1, maxQuantity);
+  const a = breakEven * 0.95;
+  const b = -(breakEven * 0.05) / capacity;
+  const c = (breakEven * 0.10) / (capacity * capacity);
+
   return {
-    a: Math.max(0.1, a),
+    a,
     b,
-    c: Math.max(0.00001, c),
-    minQuantity,
+    c,
+    minQuantity: 0,
     maxQuantity,
   };
 }
@@ -213,56 +164,34 @@ export function calculateOptimalQuantity(
   buildingId: number,
   outputGoodsId: number
 ): SupplyDecision {
-  const mcParams = getMarginalCostParams(world, buildingId);
+  const unitEconomics = calculateBuildingOutputUnitEconomics(world, buildingId, outputGoodsId);
+  if (unitEconomics.outputAmount <= 0 || !Number.isFinite(unitEconomics.breakEvenPrice)) {
+    return {
+      optimalQuantity: 0,
+      expectedProfit: 0,
+      breakEvenPrice: Number.POSITIVE_INFINITY,
+      marginalCostAtOptimal: Number.POSITIVE_INFINITY,
+      profitMargin: 0,
+    };
+  }
+
   const marketPrice = world.goods.prices[outputGoodsId];
-  
-  // 求解 MC = P
-  // a + b*Q + c*Q^2 = P
-  // c*Q^2 + b*Q + (a - P) = 0
-  // 使用求根公式
-  
-  const { a, b, c, minQuantity, maxQuantity } = mcParams;
-  
-  let optimalQuantity: number;
-  
-  if (Math.abs(c) < 0.0001) {
-    // 线性边际成本：Q = (P - a) / b
-    optimalQuantity = b !== 0 ? (marketPrice - a) / b : maxQuantity;
-  } else {
-    // 二次边际成本：使用求根公式
-    const discriminant = b * b - 4 * c * (a - marketPrice);
-    
-    if (discriminant < 0) {
-      // 无实数解，市场价格低于最低边际成本
-      optimalQuantity = 0;
-    } else {
-      // 取较大的正根
-      const q1 = (-b + Math.sqrt(discriminant)) / (2 * c);
-      const q2 = (-b - Math.sqrt(discriminant)) / (2 * c);
-      optimalQuantity = Math.max(q1, q2, 0);
-    }
+  const mcParams = getMarginalCostParams(world, buildingId);
+  const breakEvenPrice = unitEconomics.breakEvenPrice;
+  const maxQuantity = mcParams.maxQuantity;
+
+  let optimalQuantity = 0;
+  if (marketPrice > breakEvenPrice * 0.65) {
+    const profitSignal = (marketPrice - breakEvenPrice) / Math.max(1, breakEvenPrice);
+    const utilization = Math.max(0, Math.min(1, 0.55 + profitSignal * 0.75));
+    optimalQuantity = maxQuantity * utilization;
   }
-  
-  // 限制在产能范围内
-  optimalQuantity = Math.max(minQuantity, Math.min(maxQuantity, optimalQuantity));
-  
-  // 如果价格低于平均可变成本，停止生产
+
   const marginalCostAtOptimal = calculateMarginalCost(mcParams, optimalQuantity);
-  if (marketPrice < marginalCostAtOptimal * 0.5) {
-    optimalQuantity = 0;
-  }
-  
-  // 计算预期利润
-  const costStructure = calculateCostStructure(world, buildingId, optimalQuantity);
+  const expectedProfit = (marketPrice - breakEvenPrice) * optimalQuantity;
   const revenue = marketPrice * optimalQuantity;
-  const expectedProfit = revenue - costStructure.totalCost;
-  
-  // 盈亏平衡价格（平均成本）
-  const breakEvenPrice = costStructure.averageCost;
-  
-  // 利润率
   const profitMargin = revenue > 0 ? expectedProfit / revenue : 0;
-  
+
   return {
     optimalQuantity,
     expectedProfit,

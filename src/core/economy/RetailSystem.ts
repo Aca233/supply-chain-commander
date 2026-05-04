@@ -39,6 +39,8 @@ import {
   RETAIL_MAX_TURNOVER_DAYS,
   TICKS_PER_DAY,
   RETAIL_BUY_ORDER_EXPIRY,
+  RETAIL_CUSTOMER_CAPACITY_SCALE,
+  RETAIL_INVENTORY_CAPACITY_SCALE,
 } from '../constants';
 import { recordTrade, TradeOrderRef } from '../market/TradeLedger';
 
@@ -355,7 +357,8 @@ export function registerRetailStore(
     const basePrice = goods?.basePrice || 100;
     
     // 设置库存容量
-    retail.inventoryCapacities[idx] = retailConfig.inventoryCapacity * capacityMultiplier;
+    retail.inventoryCapacities[idx] =
+      retailConfig.inventoryCapacity * capacityMultiplier * RETAIL_INVENTORY_CAPACITY_SCALE;
     
     // 初始加价率取范围中值
     retail.markups[idx] = (retailConfig.markupRange[0] + retailConfig.markupRange[1]) / 2;
@@ -639,8 +642,26 @@ function getRetailTargetStock(world: GameWorld, retailId: number, goodsId: numbe
     Math.max(RETAIL_DISPLAY_STOCK_MIN, Math.min(RETAIL_DISPLAY_STOCK_MAX, capacity * 0.1)),
   );
   const salesDrivenTarget = recentDailySales * RETAIL_TARGET_COVER_DAYS;
+  const dailyDemand = (world.goods.demands[goodsId] || 0) * RETAIL_MAX_CUSTOMER_RATE;
+  let operationalStoresForGoods = 0;
+  for (let id = 0; id < world.retail.count; id++) {
+    if (!isRetailStoreOperational(world, id)) continue;
+    const buildingId = world.retail.buildingIds[id];
+    const buildingType = world.buildings.types[buildingId] as number;
+    const config = getRetailConfig(buildingType);
+    if (config?.allowedGoodsIds.includes(goodsId)) {
+      operationalStoresForGoods++;
+    }
+  }
+  const demandDrivenTarget =
+    operationalStoresForGoods > 0
+      ? (dailyDemand / operationalStoresForGoods) * RETAIL_TARGET_COVER_DAYS
+      : 0;
 
-  return Math.min(capacity * RETAIL_TARGET_STOCK_LEVEL, Math.max(displayFloor, salesDrivenTarget));
+  return Math.min(
+    capacity * RETAIL_TARGET_STOCK_LEVEL,
+    Math.max(displayFloor, salesDrivenTarget, demandDrivenTarget),
+  );
 }
 
 /**
@@ -1404,7 +1425,7 @@ function processPopConsumption(world: GameWorld): PopConsumptionResult {
     const buildingId = retail.buildingIds[retailId];
     const buildingType = world.buildings.types[buildingId];
     const cfg = getRetailConfig(buildingType);
-    cap = cfg?.customerCapacity ?? 50;
+    cap = (cfg?.customerCapacity ?? 50) * RETAIL_CUSTOMER_CAPACITY_SCALE;
     storeCapacityCache.set(retailId, cap);
     return cap;
   }

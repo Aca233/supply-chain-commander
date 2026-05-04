@@ -67,11 +67,6 @@ beforeEach(() => {
   initProductionCache();
 });
 
-const DEMANDLESS_GUARDED_GOODS = new Set<number>([
-  GoodsId.ELECTRICITY,
-  GoodsId.FUEL,
-]);
-
 function aggregateDeployedFlows(): DeployedFlows {
   const supply = new Map<number, number>();
   const productionDemand = new Map<number, number>();
@@ -181,22 +176,6 @@ describe('supply-chain graph self-consistency', () => {
 });
 
 describe('AI 部署后的产能/原料需求平衡', () => {
-  const KNOWN_IMBALANCED = new Set<number>([
-    GoodsId.HERBS,
-    GoodsId.GRAIN,
-    GoodsId.ELECTRICITY,
-    GoodsId.FUEL,
-    GoodsId.GENERIC_DRUG,
-    GoodsId.OTC_DRUG,
-    GoodsId.MEDICAL_SUPPLIES,
-    GoodsId.GOLD,
-    GoodsId.DIAMOND,
-    GoodsId.CAR_PARTS,
-    GoodsId.SILK,
-    GoodsId.RARE_EARTH,
-    GoodsId.PHARMA_BASE,
-  ]);
-
   it('每个商品至少有一个 AI 公司在生产或消费它（不存在“悬空商品”）', () => {
     const { supply, productionDemand } = aggregateDeployedFlows();
     const orphanGoods: string[] = [];
@@ -216,7 +195,7 @@ describe('AI 部署后的产能/原料需求平衡', () => {
     ).toEqual([]);
   });
 
-  it('健康商品的部署供需比落在宽松健康区间 [0.05, 50]（极端不健康项已豁免）', () => {
+  it('部署中有产有耗的商品供需比落在工资版健康区间 [0.45, 25]', () => {
     const { supply, productionDemand } = aggregateDeployedFlows();
     const violations: Array<{
       good: string;
@@ -227,12 +206,11 @@ describe('AI 部署后的产能/原料需求平衡', () => {
 
     for (const def of ALL_GOODS) {
       if (def.isService) continue;
-      if (KNOWN_IMBALANCED.has(def.id)) continue;
       const s = supply.get(def.id) ?? 0;
       const d = productionDemand.get(def.id) ?? 0;
       if (s <= 0 || d <= 0) continue;
       const ratio = s / d;
-      if (ratio < 0.05 || ratio > 50) {
+      if (ratio < 0.45 || ratio > 25) {
         violations.push({
           good: `${def.name}#${def.id}`,
           supply: Number(s.toFixed(2)),
@@ -244,7 +222,7 @@ describe('AI 部署后的产能/原料需求平衡', () => {
 
     expect(
       violations,
-      `下列商品的产能/产线需求比超出 [0.05, 50] 健康区间：\n` +
+      `下列商品的产能/产线需求比超出 [0.45, 25] 工资版健康区间：\n` +
         violations.map((v) => `  ${v.good}: supply=${v.supply}, demand=${v.demand}, ratio=${v.ratio}`).join('\n'),
     ).toEqual([]);
   });
@@ -269,46 +247,12 @@ describe('AI 部署后的产能/原料需求平衡', () => {
   });
 });
 
-describe('已知失衡商品的回归基线', () => {
-  it('每个已知失衡商品都至少有一处供给来源（彻底零产出会让市场无法自愈）', () => {
-    const { supply } = aggregateDeployedFlows();
-    const guarded: number[] = [
-      GoodsId.HERBS,
-      GoodsId.GRAIN,
-      GoodsId.ELECTRICITY,
-      GoodsId.FUEL,
-      GoodsId.GENERIC_DRUG,
-      GoodsId.OTC_DRUG,
-      GoodsId.GOLD,
-      GoodsId.DIAMOND,
-      GoodsId.CAR_PARTS,
-      GoodsId.SILK,
-      GoodsId.RARE_EARTH,
-      GoodsId.PHARMA_BASE,
-      GoodsId.MEDICAL_SUPPLIES,
-    ];
-
-    const zeroSupply = guarded
-      .filter((g) => !DEMANDLESS_GUARDED_GOODS.has(g))
-      .filter((g) => (supply.get(g) ?? 0) <= 0)
-      .map((g) => `${GOODS_BY_ID.get(g)?.name ?? '?'}#${g}`);
-
-    expect(zeroSupply, `下列已知失衡商品当前产能为 0，市场无法自愈：${zeroSupply.join(', ')}`).toEqual([]);
-  });
-
-  it('已知失衡商品的供需比不得在当前基础上恶化超过 2 倍（防止平衡补丁误改放大问题）', () => {
+describe('工资版供应体系关键瓶颈回归', () => {
+  it('塑料与贵金属链不再退回严重短缺区间', () => {
     const baseline: Record<string, { min: number; max: number }> = {
-      HERBS: { min: 0, max: 8 },
-      GRAIN: { min: 0, max: 6 },
-      GENERIC_DRUG: { min: 0, max: Infinity },
-      OTC_DRUG: { min: 0, max: Infinity },
-      MEDICAL_SUPPLIES: { min: 0.5, max: Infinity },
-      GOLD: { min: 0.3, max: Infinity },
-      DIAMOND: { min: 0, max: Infinity },
-      CAR_PARTS: { min: 0.3, max: Infinity },
-      SILK: { min: 0.3, max: Infinity },
-      RARE_EARTH: { min: 0.3, max: Infinity },
-      PHARMA_BASE: { min: 0.3, max: Infinity },
+      PLASTIC: { min: 0.5, max: 2.5 },
+      GOLD: { min: 0.6, max: 2.5 },
+      DIAMOND: { min: 0.5, max: 2.5 },
     };
 
     const { supply, productionDemand } = aggregateDeployedFlows();
@@ -329,6 +273,6 @@ describe('已知失衡商品的回归基线', () => {
       }
     }
 
-    expect(violations, `已知失衡商品超出回归基线带：\n${violations.join('\n')}`).toEqual([]);
+    expect(violations, `工资版关键瓶颈超出回归基线带：\n${violations.join('\n')}`).toEqual([]);
   });
 });

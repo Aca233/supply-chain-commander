@@ -119,4 +119,79 @@ describe('gameStore save loading regressions', () => {
     expect(laborView.roles.basic.wageMultiplier).toBeCloseTo(1.35);
     expect(world.buildings.wageMultipliers[buildingId * 3]).toBeCloseTo(1.35);
   });
+
+  it('does not charge the building asset value again when auto-buying construction materials', async () => {
+    const { useGameStore } = await import('../gameStore');
+    const { BuildingId, BUILDINGS_BY_ID } = await import('@/data/buildings');
+    const { getBaseMaterials } = await import('@/data/buildingMaterials');
+    const { GOODS_COUNT } = await import('@/core/constants');
+    const { createOrdersSystem } = await import('@/core/world/GameWorld');
+    const { resetOrderPool } = await import('@/core/market/OrderBook');
+
+    const store = useGameStore.getState();
+    store.initGame();
+    const world = store.getWorld()!;
+    const building = BUILDINGS_BY_ID.get(BuildingId.IRON_MINE)!;
+    const materials = getBaseMaterials(BuildingId.IRON_MINE);
+
+    resetOrderPool();
+    world.orders = createOrdersSystem();
+    world.companies.cash[0] = 1_000_000_000;
+    for (const material of materials) {
+      const idx = material.goodsId;
+      world.goods.prices[idx] = world.goods.prices[idx] || 100;
+      world.companies.inventories[material.goodsId] = 0;
+      world.companies.inventories[0 * GOODS_COUNT + material.goodsId] = 0;
+      world.companies.inventoryReserved[0 * GOODS_COUNT + material.goodsId] = 0;
+    }
+
+    const cashBefore = world.companies.cash[0];
+    const result = store.buildBuilding(BuildingId.IRON_MINE);
+
+    expect(result).not.toBeNull();
+
+    let frozenBuyOrderCash = 0;
+    for (let i = 0; i < world.orders.maxOrders; i++) {
+      if (world.orders.isActive[i] && world.orders.companyIds[i] === 0 && world.orders.types[i] === 0) {
+        frozenBuyOrderCash += world.orders.remainings[i] * world.orders.prices[i];
+      }
+    }
+
+    const cashSpent = cashBefore - world.companies.cash[0];
+    expect(frozenBuyOrderCash).toBeGreaterThan(0);
+    // 容差 1（允许 ±0.05），Float32Array 价格累积可能产生小偏差
+    expect(cashSpent).toBeCloseTo(frozenBuyOrderCash, 1);
+    expect(cashSpent).toBeLessThan(frozenBuyOrderCash + building.buildCost);
+  });
+
+  it('does not mint cash refunds for construction value that was not prepaid', async () => {
+    const { useGameStore } = await import('../gameStore');
+    const { BuildingId } = await import('@/data/buildings');
+    const { getBaseMaterials } = await import('@/data/buildingMaterials');
+    const { GOODS_COUNT } = await import('@/core/constants');
+    const { ConstructionStatus } = await import('@/core/world/GameWorld');
+
+    const store = useGameStore.getState();
+    store.initGame();
+    const world = store.getWorld()!;
+
+    for (const material of getBaseMaterials(BuildingId.IRON_MINE)) {
+      const idx = 0 * GOODS_COUNT + material.goodsId;
+      world.companies.inventories[idx] = material.amount;
+      world.companies.inventoryReserved[idx] = 0;
+    }
+    world.companies.cash[0] = 1_000_000_000;
+
+    const cashBeforeBuild = world.companies.cash[0];
+    const queueIdx = store.buildBuilding(BuildingId.IRON_MINE);
+    expect(queueIdx).not.toBeNull();
+    expect(world.companies.cash[0]).toBe(cashBeforeBuild);
+
+    world.construction.statuses[queueIdx!] = ConstructionStatus.IN_PROGRESS;
+    world.construction.progress[queueIdx!] = 0.5;
+
+    const cashBeforeCancel = world.companies.cash[0];
+    expect(store.cancelPlayerConstruction(queueIdx!)).toBe(true);
+    expect(world.companies.cash[0]).toBe(cashBeforeCancel);
+  });
 });

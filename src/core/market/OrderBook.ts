@@ -66,11 +66,11 @@ export interface Trade {
 class CompanyGoodsOrderIndex {
   // 索引结构: Map<companyId * GOODS_COUNT * 2 + goodsId * 2 + type, Set<orderIdx>>
   private index: Map<number, Set<number>> = new Map();
-  
+
   private getKey(companyId: number, goodsId: number, orderType: number): number {
     return companyId * GOODS_COUNT * 2 + goodsId * 2 + orderType;
   }
-  
+
   /**
    * 添加订单到索引
    */
@@ -83,7 +83,7 @@ class CompanyGoodsOrderIndex {
     }
     set.add(orderIdx);
   }
-  
+
   /**
    * 从索引移除订单
    */
@@ -97,7 +97,7 @@ class CompanyGoodsOrderIndex {
       }
     }
   }
-  
+
   /**
    * 获取某公司某商品某类型的所有订单索引
    */
@@ -105,7 +105,7 @@ class CompanyGoodsOrderIndex {
     const key = this.getKey(companyId, goodsId, orderType);
     return this.index.get(key);
   }
-  
+
   /**
    * 获取订单数量（O(1)复杂度）
    */
@@ -113,7 +113,7 @@ class CompanyGoodsOrderIndex {
     const set = this.getOrders(companyId, goodsId, orderType);
     return set ? set.size : 0;
   }
-  
+
   /**
    * 清空索引
    */
@@ -159,11 +159,11 @@ function getCompanyGoodsIndex(): CompanyGoodsOrderIndex {
  */
 class OrderPool {
   private freeIndices: number[] = [];
-  
+
   // 增量维护买卖单计数，避免每次统计都遍历
   public buyOrderCount = 0;
   public sellOrderCount = 0;
-  
+
   constructor(maxSize: number) {
     // 初始化所有索引为空闲
     for (let i = maxSize - 1; i >= 0; i--) {
@@ -172,29 +172,29 @@ class OrderPool {
     this.buyOrderCount = 0;
     this.sellOrderCount = 0;
   }
-  
+
   acquire(): number | null {
     if (this.freeIndices.length === 0) {
       return null;
     }
     return this.freeIndices.pop()!;
   }
-  
+
   release(index: number): void {
     this.freeIndices.push(index);
   }
-  
+
   get availableCount(): number {
     return this.freeIndices.length;
   }
-  
+
   /**
    * 检查是否有可用槽位（用于提前退出）
    */
   hasAvailable(): boolean {
     return this.freeIndices.length > 0;
   }
-  
+
   // 更新订单类型计数
   incrementOrderCount(orderType: number): void {
     if (orderType === 0) {
@@ -203,7 +203,7 @@ class OrderPool {
       this.sellOrderCount++;
     }
   }
-  
+
   decrementOrderCount(orderType: number): void {
     if (orderType === 0) {
       this.buyOrderCount = Math.max(0, this.buyOrderCount - 1);
@@ -249,15 +249,15 @@ export function resetOrderPool(): void {
 export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; details: string } {
   const o = world.orders;
   const orderIndex = getOrderBookIndex();
-  
+
   // 1. 统计world.orders中的实际活跃订单，并重建activeOrderIndices
   const foundActiveIndices: number[] = [];
   let actualBuyCount = 0;
   let actualSellCount = 0;
-  
+
   // 清空并重建活跃订单索引
   activeOrderIndices.clear();
-  
+
   for (let i = 0; i < MAX_ORDERS; i++) {
     if (o.isActive[i]) {
       foundActiveIndices.push(i);
@@ -269,29 +269,29 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
       }
     }
   }
-  
+
   // 2. 检查订单池状态
   const poolAvailable = orderPool?.availableCount ?? 0;
   const expectedAvailable = MAX_ORDERS - foundActiveIndices.length;
-  
+
   // 3. 如果不一致，重建订单池
   if (poolAvailable !== expectedAvailable) {
     console.warn(`[订单池同步] 检测到不一致：池可用${poolAvailable}, 应有${expectedAvailable}`);
-    
+
     // 重建订单池
     orderPool = new OrderPool(MAX_ORDERS);
     orderPool.buyOrderCount = actualBuyCount;
     orderPool.sellOrderCount = actualSellCount;
-    
+
     const details = `同步完成：活跃订单${foundActiveIndices.length}, 买${actualBuyCount}, 卖${actualSellCount}`;
     console.log(`[订单池同步] ${details}`);
-    
+
     // 重建公司商品索引
     companyGoodsIndex = new CompanyGoodsOrderIndex();
     for (const idx of foundActiveIndices) {
       companyGoodsIndex!.add(idx, o.companyIds[idx], o.goodsIds[idx], o.types[idx]);
     }
-    
+
     // 【关键修复】重建OrderBookIndex，确保撮合引擎能找到所有订单
     orderIndex.clearAll();
     for (const idx of foundActiveIndices) {
@@ -302,19 +302,19 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
     }
     return { fixed: true, details };
   }
-  
+
   // 4. 【新增】即使订单池状态一致，也检查并同步 OrderBookIndex
   // 这是因为 OrderBookIndex 可能在其他地方被意外清空
   let orderIndexNeedsRebuild = false;
   for (const idx of foundActiveIndices) {
     const goodsId = o.goodsIds[idx];
     const orderType = o.types[idx] as 0 | 1;
-    
+
     // 检查订单是否在 OrderBookIndex 中
     const allOrders = orderType === 0
       ? orderIndex.getAllBuyOrders(goodsId)
       : orderIndex.getAllSellOrders(goodsId);
-    
+
     let found = false;
     for (let i = 0; i < allOrders.length; i++) {
       if (allOrders[i] === idx) {
@@ -322,13 +322,13 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
         break;
       }
     }
-    
+
     if (!found) {
       orderIndexNeedsRebuild = true;
       break;
     }
   }
-  
+
   if (orderIndexNeedsRebuild) {
     console.warn(`[订单池同步] OrderBookIndex与订单池不同步，正在重建...`);
     orderIndex.clearAll();
@@ -340,7 +340,7 @@ export function syncOrderPoolWithWorld(world: GameWorld): { fixed: boolean; deta
     }
     return { fixed: true, details: `OrderBookIndex已同步，包含${foundActiveIndices.length}个订单` };
   }
-  
+
   return { fixed: false, details: `订单池状态正常：可用${poolAvailable}/${MAX_ORDERS}` };
 }
 
@@ -393,48 +393,54 @@ export function finalizeFilledOrder(world: GameWorld, orderIdx: number): void {
   releaseOrderSlot(orderIdx, orderType);
 }
 
-/** 每公司每商品最大订单数（放宽限制） */
-const MAX_ORDERS_PER_COMPANY_GOODS = 6;
-
 /** 价格合并容差（5%以内视为相同价格，增加合并率以减少订单池压力） */
 const PRICE_MERGE_TOLERANCE = 0.05;
 
-/** 单个订单最大数量限制（大幅提高以支持大额交易） */
-const MAX_ORDER_QUANTITY = 100000;
-const BUY_ORDER_EXPIRY_TICKS = TICKS_PER_DAY;
-const SELL_ORDER_EXPIRY_TICKS = TICKS_PER_DAY * 2;
+const BUY_ORDER_EXPIRY_TICKS = TICKS_PER_DAY * 5;
+const SELL_ORDER_EXPIRY_TICKS = TICKS_PER_DAY * 5;
 const ORDER_PRICE_BAND = 0.50;
-
-/** 单个订单最大合并后数量（大幅提高以支持大额交易） */
-const MAX_MERGED_QUANTITY = 500000;
 
 function getReferencePrice(world: GameWorld, goodsId: number): number {
   return world.goods.prices[goodsId] || world.goods.baseValues[goodsId] || 1;
 }
 
-function normalizeOrderPrice(world: GameWorld, goodsId: number, orderType: number, requestedPrice: number): number {
+function getBestOpposingOrderPrice(world: GameWorld, goodsId: number, orderType: number): number | null {
+  const o = world.orders;
+  const orderIndex = getOrderBookIndex();
+  const opposingOrders = orderType === 0
+    ? orderIndex.getAllSellOrders(goodsId)
+    : orderIndex.getAllBuyOrders(goodsId);
+
+  for (const orderIdx of opposingOrders) {
+    if (!o.isActive[orderIdx] || o.remainings[orderIdx] <= 0) continue;
+    return o.prices[orderIdx];
+  }
+
+  return null;
+}
+
+export function getNormalizedOrderPrice(
+  world: GameWorld,
+  goodsId: number,
+  orderType: 0 | 1 | 'buy' | 'sell',
+  requestedPrice: number
+): number {
+  const numericOrderType = orderType === 'buy' ? 0 : orderType === 'sell' ? 1 : orderType;
+  const bestOpposingPrice = getBestOpposingOrderPrice(world, goodsId, numericOrderType);
+
+  if (numericOrderType === 0 && bestOpposingPrice !== null && requestedPrice >= bestOpposingPrice) {
+    return requestedPrice;
+  }
+
+  if (numericOrderType === 1 && bestOpposingPrice !== null && requestedPrice <= bestOpposingPrice) {
+    return requestedPrice;
+  }
+
   const referencePrice = getReferencePrice(world, goodsId);
   const minPrice = referencePrice * (1 - ORDER_PRICE_BAND);
   const maxPrice = referencePrice * (1 + ORDER_PRICE_BAND);
 
-  if (orderType === 0) {
-    return Math.max(minPrice, Math.min(maxPrice, requestedPrice));
-  }
-
   return Math.max(minPrice, Math.min(maxPrice, requestedPrice));
-}
-
-/**
- * 统计某公司某商品的活跃订单数（优化版：O(1)复杂度）
- */
-function countCompanyGoodsOrders(
-  world: GameWorld,
-  companyId: number,
-  goodsId: number,
-  orderType: number
-): number {
-  // 使用索引直接获取数量，O(1)复杂度
-  return getCompanyGoodsIndex().count(companyId, goodsId, orderType);
 }
 
 /**
@@ -451,30 +457,30 @@ function findMatchingOrder(
   price: number
 ): number {
   const o = world.orders;
-  
+
   // 使用索引获取该公司该商品的订单集合
   const orderSet = getCompanyGoodsIndex().getOrders(companyId, goodsId, orderType);
   if (!orderSet || orderSet.size === 0) {
     return -1;  // 没有现有订单
   }
-  
+
   // 价格容差：1%以内视为相同价格
   const priceTolerance = price * PRICE_MERGE_TOLERANCE;
-  
+
   let bestIdx = -1;
   let bestPrice = orderType === 0 ? 0 : Infinity;  // 买单找最高价，卖单找最低价
-  
+
   // 只遍历该公司该商品的订单（通常只有几个）
   for (const orderIdx of orderSet) {
     if (!o.isActive[orderIdx]) continue;
-    
+
     const existingPrice = o.prices[orderIdx];
-    
+
     // 检查价格是否在容差范围内
     if (Math.abs(existingPrice - price) <= priceTolerance) {
       return orderIdx;
     }
-    
+
     // 记录最优价格的订单用于强制合并
     if (orderType === 0) {  // 买单：找最高价
       if (existingPrice > bestPrice) {
@@ -488,7 +494,7 @@ function findMatchingOrder(
       }
     }
   }
-  
+
   return -1;  // 未找到
 }
 
@@ -497,14 +503,14 @@ function findMatchingOrder(
  */
 export function logOrderPoolPerformance(currentTick: number): void {
   if (!orderPool) return;
-  
+
   const available = orderPool.availableCount;
   const buyCount = orderPool.buyOrderCount;
   const sellCount = orderPool.sellOrderCount;
   const total = buyCount + sellCount;
-  
+
   console.log(`[订单池 T${currentTick}] 可用槽位: ${available}/${MAX_ORDERS}, 活跃订单: ${total} (买${buyCount}/卖${sellCount}), 使用率: ${((1 - available/MAX_ORDERS) * 100).toFixed(1)}%`);
-  
+
   // 如果槽位严重不足，输出警告
   if (available < 1000) {
     console.warn(`[订单池警告] 可用槽位只剩 ${available}！可能存在槽位泄漏。`);
@@ -518,7 +524,7 @@ export function logOrderPoolPerformance(currentTick: number): void {
  * 性能优化：
  * - 提前检查订单池容量，避免无效计算
  * - 使用公司商品索引加速合并查找
- * - 限制单个订单最大数量，防止无限堆积
+ * - 合并相近价格订单，减少订单池压力
  */
 export function createBuyOrder(
   world: GameWorld,
@@ -532,104 +538,88 @@ export function createBuyOrder(
   if (!orderPool) {
     initOrderPool();
   }
-  
+
   const o = world.orders;
   const c = world.companies;
   const orderIndex = getOrderBookIndex();
   const cgIndex = getCompanyGoodsIndex();
-  
-  // 【新增】限制单个订单数量，防止无限堆积
-  const clampedQuantity = Math.min(quantity, MAX_ORDER_QUANTITY);
-  if (clampedQuantity <= 0) {
+
+  const orderQuantity = quantity;
+  if (orderQuantity <= 0) {
     return null;
   }
-  const normalizedPrice = normalizeOrderPrice(world, goodsId, 0, price);
-  
+  const normalizedPrice = getNormalizedOrderPrice(world, goodsId, 0, price);
+
   // 检查公司现金是否足够
-  const totalValue = clampedQuantity * normalizedPrice;
+  const totalValue = orderQuantity * normalizedPrice;
   if (c.cash[companyId] < totalValue) {
     return null;
   }
-  
+
   // 查找可合并的现有订单（使用优化后的索引查找）
   const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 0, normalizedPrice);
-  
+
   if (existingOrderIdx >= 0) {
-    // 【新增】检查合并后是否超过最大数量限制
-    const currentRemaining = o.remainings[existingOrderIdx];
-    if (currentRemaining >= MAX_MERGED_QUANTITY) {
-      // 已达到最大合并数量，拒绝继续合并，静默失败
-      return null;
-    }
-    
-    // 计算实际可合并的数量
-    const maxAddable = MAX_MERGED_QUANTITY - currentRemaining;
-    const actualAddQuantity = Math.min(clampedQuantity, maxAddable);
-    
-    if (actualAddQuantity <= 0) {
-      return null;
-    }
-    
     // 找到可合并的订单，合并数量
-    const actualValue = actualAddQuantity * normalizedPrice;
+    const actualValue = orderQuantity * normalizedPrice;
     c.cash[companyId] -= actualValue;  // 冻结资金
-    
-    o.quantities[existingOrderIdx] += actualAddQuantity;
-    o.remainings[existingOrderIdx] += actualAddQuantity;
-    
+
+    o.quantities[existingOrderIdx] += orderQuantity;
+    o.remainings[existingOrderIdx] += orderQuantity;
+
     // 延长过期时间（取较晚的）
     const newExpiry = world.tick + expiryTicks;
     if (newExpiry > o.expiries[existingOrderIdx]) {
       o.expiries[existingOrderIdx] = newExpiry;
     }
-    
+
     // 返回一个特殊值表示合并成功（使用负数表示合并到索引）
     return -(existingOrderIdx + 1);
   }
-  
+
   // 【优化】提前检查池容量，避免后续无效计算
   if (!orderPool!.hasAvailable()) {
     // 静默失败，不输出警告（避免日志刷屏）
     return null;
   }
-  
+
   const orderIdx = orderPool!.acquire();
   if (orderIdx === null) {
     return null;
   }
-  
+
   // 冻结资金（使用实际入簿价格）
-  c.cash[companyId] -= clampedQuantity * normalizedPrice;
-  
+  c.cash[companyId] -= orderQuantity * normalizedPrice;
+
   // 创建订单
   const orderId = o.nextOrderId++;
   o.companyIds[orderIdx] = companyId;
   o.goodsIds[orderIdx] = goodsId;
   o.types[orderIdx] = 0;  // 0 = buy
-  o.quantities[orderIdx] = clampedQuantity;
+  o.quantities[orderIdx] = orderQuantity;
   o.prices[orderIdx] = normalizedPrice;
-  o.remainings[orderIdx] = clampedQuantity;
+  o.remainings[orderIdx] = orderQuantity;
   o.createdTicks[orderIdx] = world.tick;
   o.expiries[orderIdx] = world.tick + expiryTicks;
   o.isActive[orderIdx] = 1;
   o.activeCount++;
-  
+
   // 【性能优化】添加到活跃订单索引集合
   activeOrderIndices.add(orderIdx);
-  
+
   // 更新买单计数
   orderPool!.incrementOrderCount(0);
-  
+
   // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
   const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 0, normalizedPrice);
   if (!indexAdded) {
     console.error(`[createBuyOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
     // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
   }
-  
+
   // 【新增】添加到公司商品索引
   cgIndex.add(orderIdx, companyId, goodsId, 0);
-  
+
   return orderId;
 }
 
@@ -641,6 +631,7 @@ export interface OrderResult {
   orderId: number | null;
   reason?: string;
   actualQuantity?: number;
+  actualPrice?: number;
 }
 
 /**
@@ -650,7 +641,7 @@ export interface OrderResult {
  * 性能优化：
  * - 提前检查订单池容量，避免无效计算
  * - 使用公司商品索引加速合并查找
- * - 限制单个订单最大数量，防止无限堆积
+ * - 合并相近价格订单，减少订单池压力
  */
 export function createSellOrder(
   world: GameWorld,
@@ -679,85 +670,62 @@ export function createSellOrderWithReason(
   if (!orderPool) {
     initOrderPool();
   }
-  
+
   const o = world.orders;
   const c = world.companies;
   const orderIndex = getOrderBookIndex();
   const cgIndex = getCompanyGoodsIndex();
-  
+
   // 数量验证
   if (quantity <= 0) {
     return { success: false, orderId: null, reason: '数量必须大于0' };
   }
-  const normalizedPrice = normalizeOrderPrice(world, goodsId, 1, price);
-  
-  // 限制单个卖单数量，避免生产型 AI 把百万库存一次性砸成单笔巨单
-  const clampedQuantity = Math.min(quantity, MAX_ORDER_QUANTITY);
-  if (clampedQuantity <= 0) {
+  const normalizedPrice = getNormalizedOrderPrice(world, goodsId, 1, price);
+
+  const orderQuantity = quantity;
+  if (orderQuantity <= 0) {
     return { success: false, orderId: null, reason: '数量必须大于0' };
   }
-  
+
   // 检查库存是否足够
   const inventoryIdx = companyId * GOODS_COUNT + goodsId;
   const totalInventory = c.inventories[inventoryIdx];
   const reserved = c.inventoryReserved[inventoryIdx];
   const available = totalInventory - reserved;
-  
-  if (available < clampedQuantity) {
+
+  if (available < orderQuantity) {
     return {
       success: false,
       orderId: null,
-      reason: `库存不足：可用 ${available.toFixed(0)}，需要 ${clampedQuantity.toFixed(0)}（总库存 ${totalInventory.toFixed(0)}，已预留 ${reserved.toFixed(0)}）`
+      reason: `库存不足：可用 ${available.toFixed(0)}，需要 ${orderQuantity.toFixed(0)}（总库存 ${totalInventory.toFixed(0)}，已预留 ${reserved.toFixed(0)}）`
     };
   }
-  
+
   // 查找可合并的现有订单（使用优化后的索引查找）
   const existingOrderIdx = findMatchingOrder(world, companyId, goodsId, 1, normalizedPrice);
-  
+
   if (existingOrderIdx >= 0) {
-    // 【新增】检查合并后是否超过最大数量限制
-    const currentRemaining = o.remainings[existingOrderIdx];
-    if (currentRemaining >= MAX_MERGED_QUANTITY) {
-      return {
-        success: false,
-        orderId: null,
-        reason: `订单合并数量已达上限 ${MAX_MERGED_QUANTITY.toLocaleString()}`
-      };
-    }
-    
-    // 计算实际可合并的数量
-    const maxAddable = MAX_MERGED_QUANTITY - currentRemaining;
-    const actualAddQuantity = Math.min(clampedQuantity, maxAddable);
-    
-    if (actualAddQuantity <= 0) {
-      return {
-        success: false,
-        orderId: null,
-        reason: '无法添加更多数量到现有订单'
-      };
-    }
-    
     // 找到可合并的订单，合并数量
-    c.inventoryReserved[inventoryIdx] += actualAddQuantity;  // 冻结库存
-    
-    o.quantities[existingOrderIdx] += actualAddQuantity;
-    o.remainings[existingOrderIdx] += actualAddQuantity;
-    
+    c.inventoryReserved[inventoryIdx] += orderQuantity;  // 冻结库存
+
+    o.quantities[existingOrderIdx] += orderQuantity;
+    o.remainings[existingOrderIdx] += orderQuantity;
+
     // 延长过期时间（取较晚的）
     const newExpiry = world.tick + expiryTicks;
     if (newExpiry > o.expiries[existingOrderIdx]) {
       o.expiries[existingOrderIdx] = newExpiry;
     }
-    
+
     // 返回一个特殊值表示合并成功（使用负数表示合并到索引）
     return {
       success: true,
       orderId: -(existingOrderIdx + 1),
-      actualQuantity: actualAddQuantity,
-      reason: actualAddQuantity < clampedQuantity ? `部分合并：${actualAddQuantity.toFixed(0)}/${clampedQuantity.toFixed(0)}` : undefined
+      actualQuantity: orderQuantity,
+      actualPrice: normalizedPrice,
     };
   }
-  
+
   // 【优化】提前检查池容量，避免后续无效计算
   if (!orderPool!.hasAvailable()) {
     return {
@@ -766,7 +734,7 @@ export function createSellOrderWithReason(
       reason: '订单池已满，请等待现有订单成交或过期'
     };
   }
-  
+
   const orderIdx = orderPool!.acquire();
   if (orderIdx === null) {
     return {
@@ -775,40 +743,40 @@ export function createSellOrderWithReason(
       reason: '无法获取订单槽位'
     };
   }
-  
+
   // 冻结库存
-  c.inventoryReserved[inventoryIdx] += clampedQuantity;
-  
+  c.inventoryReserved[inventoryIdx] += orderQuantity;
+
   // 创建订单
   const orderId = o.nextOrderId++;
   o.companyIds[orderIdx] = companyId;
   o.goodsIds[orderIdx] = goodsId;
   o.types[orderIdx] = 1;  // 1 = sell
-  o.quantities[orderIdx] = clampedQuantity;
+  o.quantities[orderIdx] = orderQuantity;
   o.prices[orderIdx] = normalizedPrice;
-  o.remainings[orderIdx] = clampedQuantity;
+  o.remainings[orderIdx] = orderQuantity;
   o.createdTicks[orderIdx] = world.tick;
   o.expiries[orderIdx] = world.tick + expiryTicks;
   o.isActive[orderIdx] = 1;
   o.activeCount++;
-  
+
   // 【性能优化】添加到活跃订单索引集合
   activeOrderIndices.add(orderIdx);
-  
+
   // 更新卖单计数
   orderPool!.incrementOrderCount(1);
-  
+
   // 添加到订单簿索引（【关键修复】检查返回值确保同步成功）
   const indexAdded = orderIndex.addOrder(orderIdx, goodsId, 1, normalizedPrice);
   if (!indexAdded) {
     console.error(`[createSellOrder] 订单添加到索引失败: orderIdx=${orderIdx}, goodsId=${goodsId}, price=${price}`);
     // 不回滚，订单仍然有效，只是撮合可能需要通过备用路径
   }
-  
+
   // 【新增】添加到公司商品索引
   cgIndex.add(orderIdx, companyId, goodsId, 1);
-  
-  return { success: true, orderId, actualQuantity: clampedQuantity };
+
+  return { success: true, orderId, actualQuantity: orderQuantity, actualPrice: normalizedPrice };
 }
 
 /**
@@ -822,17 +790,17 @@ export function cancelOrder(
   const c = world.companies;
   const orderIndex = getOrderBookIndex();
   const cgIndex = getCompanyGoodsIndex();
-  
+
   if (!o.isActive[orderIdx]) {
     return false;
   }
-  
+
   const companyId = o.companyIds[orderIdx];
   const goodsId = o.goodsIds[orderIdx];
   const remaining = o.remainings[orderIdx];
   const price = o.prices[orderIdx];
   const type = o.types[orderIdx];
-  
+
   if (type === 0) {
     // 买单：退还冻结资金
     c.cash[companyId] += remaining * price;
@@ -841,26 +809,26 @@ export function cancelOrder(
     const inventoryIdx = companyId * GOODS_COUNT + goodsId;
     c.inventoryReserved[inventoryIdx] -= remaining;
   }
-  
+
   // 从订单簿索引移除
   orderIndex.removeOrder(orderIdx);
-  
+
   // 【新增】从公司商品索引移除
   cgIndex.remove(orderIdx, companyId, goodsId, type);
-  
+
   // 标记为非激活
   o.isActive[orderIdx] = 0;
   o.activeCount--;
-  
+
   // 【性能优化】从活跃订单索引集合移除
   activeOrderIndices.delete(orderIdx);
-  
+
   // 更新订单类型计数
   orderPool?.decrementOrderCount(type);
-  
+
   // 释放到对象池
   orderPool?.release(orderIdx);
-  
+
   return true;
 }
 
@@ -912,23 +880,23 @@ export function cancelCompanyOrders(
 export function cleanupExpiredOrders(world: GameWorld): number {
   const o = world.orders;
   let cleanedCount = 0;
-  
+
   // 收集要删除的订单（避免在遍历中修改集合）
   const toDelete: number[] = [];
-  
+
   // 只遍历活跃订单，而不是全部100万个槽位
   for (const orderIdx of activeOrderIndices) {
     if (o.expiries[orderIdx] <= world.tick) {
       toDelete.push(orderIdx);
     }
   }
-  
+
   // 批量取消过期订单
   for (const orderIdx of toDelete) {
     cancelOrder(world, orderIdx);
     cleanedCount++;
   }
-  
+
   return cleanedCount;
 }
 
@@ -941,14 +909,14 @@ export function getOrderBookView(
   goodsId: number
 ): OrderBookView {
   const o = world.orders;
-  
+
   const buyOrders: OrderView[] = [];
   const sellOrders: OrderView[] = [];
-  
+
   // 只遍历活跃订单，而不是全部100万个槽位
   for (const orderIdx of activeOrderIndices) {
     if (o.goodsIds[orderIdx] !== goodsId) continue;
-    
+
     const orderView: OrderView = {
       idx: orderIdx,
       companyId: o.companyIds[orderIdx],
@@ -956,29 +924,29 @@ export function getOrderBookView(
       remaining: o.remainings[orderIdx],
       createdTick: o.createdTicks[orderIdx],
     };
-    
+
     if (o.types[orderIdx] === 0) {
       buyOrders.push(orderView);
     } else {
       sellOrders.push(orderView);
     }
   }
-  
+
   // 买单按价格降序排列（最高价优先）
   buyOrders.sort((a, b) => b.price - a.price);
-  
+
   // 卖单按价格升序排列（最低价优先）
   sellOrders.sort((a, b) => a.price - b.price);
-  
+
   // 计算统计数据
   const bestBid = buyOrders.length > 0 ? buyOrders[0].price : null;
   const bestAsk = sellOrders.length > 0 ? sellOrders[0].price : null;
   const spread = bestBid && bestAsk ? (bestAsk - bestBid) / bestBid : null;
   const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : null;
-  
+
   const totalBuyVolume = buyOrders.reduce((sum, o) => sum + o.remaining, 0);
   const totalSellVolume = sellOrders.reduce((sum, o) => sum + o.remaining, 0);
-  
+
   return {
     goodsId,
     buyOrders,
@@ -1028,17 +996,17 @@ export function aggregateOrderBook(
 ): AggregatedOrderBook {
   const aggregateSide = (orders: OrderView[]): AggregatedLevel[] => {
     const levels: Map<number, number> = new Map();
-    
+
     for (const order of orders) {
       const levelPrice = Math.floor(order.price / priceStep) * priceStep;
       levels.set(levelPrice, (levels.get(levelPrice) || 0) + order.remaining);
     }
-    
+
     return Array.from(levels.entries())
       .map(([price, volume]) => ({ price, volume }))
       .sort((a, b) => b.price - a.price);
   };
-  
+
   return {
     goodsId: view.goodsId,
     bids: aggregateSide(view.buyOrders),
@@ -1080,15 +1048,15 @@ export interface OrderPoolStats {
  */
 export function getOrderPoolStats(world: GameWorld): OrderPoolStats {
   const o = world.orders;
-  
+
   const activeOrders = o.activeCount;
   const availableSlots = orderPool?.availableCount ?? (MAX_ORDERS - activeOrders);
   const usagePercent = (activeOrders / MAX_ORDERS) * 100;
-  
+
   // 使用增量维护的计数器，避免遍历所有订单
   const buyCount = orderPool?.buyOrderCount ?? 0;
   const sellCount = orderPool?.sellOrderCount ?? 0;
-  
+
   return {
     maxOrders: MAX_ORDERS,
     activeOrders,
@@ -1109,7 +1077,7 @@ export function getOrderPoolStats(world: GameWorld): OrderPoolStats {
 export function getOrderPoolHealth(world: GameWorld): 'healthy' | 'warning' | 'critical' {
   const activeOrders = world.orders.activeCount;
   const usageRatio = activeOrders / MAX_ORDERS;
-  
+
   // 使用constants.ts中定义的阈值
   if (usageRatio >= ORDER_POOL_CRITICAL_THRESHOLD) {
     return 'critical';
@@ -1139,10 +1107,10 @@ export function performOrderPoolHealthCheck(world: GameWorld): {
   const activeOrders = o.activeCount;
   const usageRatio = activeOrders / MAX_ORDERS;
   const usagePercent = usageRatio * 100;
-  
+
   let cleanedCount = 0;
   let status: 'healthy' | 'warning' | 'critical' = 'healthy';
-  
+
   if (usageRatio >= ORDER_POOL_CRITICAL_THRESHOLD) {
     status = 'critical';
     // 危险状态：强制清理最旧的10%订单
@@ -1151,8 +1119,9 @@ export function performOrderPoolHealthCheck(world: GameWorld): {
   } else if (usageRatio >= ORDER_POOL_WARNING_THRESHOLD) {
     status = 'warning';
     // 警告状态：清理过期订单
-    cleanedCount = cleanupExpiredOrders(world);}
-  
+    cleanedCount = cleanupExpiredOrders(world);
+}
+
   return { status, usagePercent, cleanedCount };
 }
 
@@ -1172,16 +1141,16 @@ export function performOrderPoolHealthCheck(world: GameWorld): {
 function performEmergencyCleanup(world: GameWorld, cleanupRatio: number): number {
   const o = world.orders;
   const targetCleanupCount = Math.floor(o.activeCount * cleanupRatio);
-  
+
   if (targetCleanupCount <= 0) return 0;
-  
+
   // 收集所有活跃订单信息
   const orderInfos: Array<{
     idx: number;
     createdTick: number;
     priceDeviation: number;  // 价格偏离度
   }> = [];
-  
+
   // 保护阈值：偏离度低于此值的订单被视为"合理报价"，紧急清理时跳过
   // 这能避免误杀零售店补货 / 生产链刚需的合理订单
   const PROTECTED_DEVIATION_THRESHOLD = 0.10;
@@ -1265,21 +1234,21 @@ export function getOrderPoolHealthReport(world: GameWorld): {
   const o = world.orders;
   const stats = getOrderPoolStats(world);
   const status = getOrderPoolHealth(world);
-  
+
   // 计算订单年龄统计
   let oldestAge = 0;
   let totalAge = 0;
   let orderCount = 0;
-  
+
   for (const idx of activeOrderIndices) {
     const age = world.tick - o.createdTicks[idx];
     oldestAge = Math.max(oldestAge, age);
     totalAge += age;
     orderCount++;
   }
-  
+
   const avgOrderAge = orderCount > 0 ? totalAge / orderCount : 0;
-  
+
   // 生成建议
   let recommendation = '';
   if (status === 'critical') {
@@ -1291,7 +1260,7 @@ export function getOrderPoolHealthReport(world: GameWorld): {
   } else {
     recommendation = '订单池状态正常。';
   }
-  
+
   return {
     status,
     activeOrders: stats.activeOrders,

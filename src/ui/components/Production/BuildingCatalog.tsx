@@ -26,6 +26,7 @@ const INDUSTRY_CONFIG: Record<string, { name: string; icon: string; color: strin
   newEnergy: { name: '新能源', icon: '☀️', color: 'text-lime-400', gradient: 'from-lime-500/20' },
   pharma: { name: '医药', icon: '💊', color: 'text-pink-400', gradient: 'from-pink-500/20' },
   luxury: { name: '奢侈品', icon: '💎', color: 'text-purple-400', gradient: 'from-purple-500/20' },
+  warehouse: { name: '仓储物流', icon: '📦', color: 'text-teal-400', gradient: 'from-teal-500/20' },
 };
 
 interface BuildingCatalogProps {
@@ -101,7 +102,7 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
         <Tabs value={filterMode} onValueChange={(v) => setFilterMode(v as 'all' | 'affordable')}>
           <TabsList variant="game" size="sm" className="w-full">
             <TabsTrigger value="all" variant="game" className="flex-1">全部</TabsTrigger>
-            <TabsTrigger value="affordable" variant="game" className="flex-1">可建造</TabsTrigger>
+            <TabsTrigger value="affordable" variant="game" className="flex-1">估值内</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -139,20 +140,15 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
               {isExpanded && (
                 <div className="pb-2">
                   {buildings.map((building) => {
-                    const canAfford = playerCash >= building.buildCost;
+                    const hasValuationBuffer = playerCash >= building.buildCost;
                     const isRetail = isRetailBuilding(building.id);
                     
                     return (
                       <button
                         key={building.id}
-                        onClick={() => canAfford && onSelectBuilding(building.id)}
-                        disabled={!canAfford}
+                        onClick={() => onSelectBuilding(building.id)}
                         className={`w-full flex items-center gap-3 px-4 py-2 
-                                   transition-all duration-150 group
-                                   ${canAfford
-                                     ? 'hover:bg-[var(--bg-muted)] cursor-pointer'
-                                     : 'opacity-40 cursor-not-allowed'
-                                   }`}
+                                   transition-all duration-150 group hover:bg-[var(--bg-muted)] cursor-pointer`}
                       >
                         <div className="w-8 h-8 rounded-lg bg-[var(--bg-muted)] flex items-center justify-center
                                        group-hover:bg-[var(--bg-subtle)] transition-colors">
@@ -166,11 +162,11 @@ export const BuildingCatalog: React.FC<BuildingCatalogProps> = ({ onSelectBuildi
                             {isRetail && <Badge variant="warning" size="sm">零售</Badge>}
                           </div>
                           <div className="text-[10px] text-[var(--text-muted)] truncate">
-                            建造 ¥{formatCost(building.buildCost)} · 工期 {building.buildTime}h · 最高Lv.{building.maxLevel}
+                            估值 ¥{formatCost(building.buildCost)} · 工期 {building.buildTime}h · 最高Lv.{building.maxLevel}
                           </div>
                         </div>
                         <Badge
-                          variant={canAfford ? 'success' : 'error'}
+                          variant={hasValuationBuffer ? 'success' : 'outline'}
                           size="sm"
                           className="tabular-nums"
                         >

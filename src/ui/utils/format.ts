@@ -107,6 +107,26 @@ export function formatChange(value: number, decimals: number = 1): string {
 }
 
 /**
+ * 紧凑货币格式化（生产管理 UI 专用）
+ * ≥1M → ¥X.XXM, ≥1K → ¥X.XK, <1K → ¥X
+ * 安全处理 undefined / NaN / Infinity
+ */
+export function formatMoneyCompact(value: number | undefined): string {
+  const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  if (Math.abs(safeValue) >= 1_000_000) return `¥${(safeValue / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(safeValue) >= 1000) return `¥${(safeValue / 1000).toFixed(1)}K`;
+  return `¥${safeValue.toFixed(0)}`;
+}
+
+/**
+ * 格式化数量
+ */
+export function formatQuantity(value: number | undefined, digits = 0): string {
+  const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return safeValue.toFixed(digits);
+}
+
+/**
  * 格式化库存状态
  */
 export function formatStockStatus(current: number, capacity: number): {

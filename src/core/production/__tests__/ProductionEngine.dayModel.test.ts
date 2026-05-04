@@ -8,7 +8,7 @@ import {
   getRecipeForBuilding,
   initializeBuildingProductionMethods,
 } from '@/core/production/ProductionMethods';
-import { MAX_OUTPUTS, TICKS_PER_DAY } from '@/core/constants';
+import { MAX_INPUTS, MAX_OUTPUTS, TICKS_PER_DAY } from '@/core/constants';
 import { BuildingId } from '@/data/buildings';
 import {
   LABOR_ROLE_BASIC,
@@ -97,6 +97,17 @@ describe('ProductionEngine workforce coverage', () => {
     return { world, buildingId, recipe };
   }
 
+  function fillInputBuffers(
+    world: ReturnType<typeof createGameWorld>,
+    buildingId: number,
+    recipe: ReturnType<typeof getRecipeForBuilding>,
+  ): void {
+    const inputOffset = buildingId * MAX_INPUTS;
+    recipe.inputs.forEach((input, index) => {
+      world.buildings.inputBuffers[inputOffset + index] = input.amount;
+    });
+  }
+
   it('blocks production when an active building has no hired workforce coverage', () => {
     const { world, buildingId } = createSingleBuildingWorld();
 
@@ -134,6 +145,7 @@ describe('ProductionEngine workforce coverage', () => {
     const { world, buildingId, recipe } = createSingleBuildingWorld();
     world.tick = 1;
     world.buildings.efficiencies[buildingId] = 0.5;
+    fillInputBuffers(world, buildingId, recipe);
 
     world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] =
       Math.ceil(recipe.workforceRequired.basic * 0.5);
@@ -156,6 +168,7 @@ describe('ProductionEngine workforce coverage', () => {
     const { world, buildingId, recipe } = createSingleBuildingWorld();
     const outputOffset = buildingId * MAX_OUTPUTS;
     const basicDemand = recipe.workforceRequired.basic;
+    fillInputBuffers(world, buildingId, recipe);
 
     world.buildings.workforceHired[getBuildingLaborIndex(buildingId, LABOR_ROLE_BASIC)] =
       basicDemand / 2;

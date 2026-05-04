@@ -1,308 +1,223 @@
 /**
- * 生产管理页面
- * 建筑管理、配方设置、建造队列
- * 使用新设计系统组件重构
+ * 生产管理页面（视觉重做）
+ *
+ * 设计要点：
+ * - 空状态用居中大图 + 渐变按钮
+ * - 网格视图：卡片行间距 + 选中行下方插入展开面板
+ * - 表格视图：半透明表头 + 行间微分隔 + 选中行下方展开
+ * - 内容区带顶部微光渐变
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useGameStore } from '@/stores/gameStore';
+import React, { useMemo } from 'react';
 import {
-  ProductionOverview,
-  BuildingCard,
   BuildingCatalog,
   BuildModal,
-  BuildingDetailPanel,
   ConstructionQueuePanel,
 } from '@/ui/components/Production';
+import { BuildingCardGrid } from '@/ui/components/Production/BuildingCardGrid';
+import { BuildingCardExpanded } from '@/ui/components/Production/BuildingCardExpanded';
+import { BuildingCardRow } from '@/ui/components/Production/BuildingCardRow';
+import { ProductionToolbar } from '@/ui/components/Production/ProductionToolbar';
+import { useProductionStats } from '@/ui/components/Production/useProductionStats';
+import { useProductionPageState } from '@/ui/hooks/useProductionPageState';
 import { ResponsiveOverlayPanel } from '@/ui/components/Layout/ResponsiveOverlayPanel';
-
-// 设计系统组件
-import {
-  Button,
-  Badge,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from '@/ui/design-system';
-
 import { useMobile } from '@/ui/hooks/useMobile';
-import { formatCurrency } from '@/ui/utils/format';
+import { Button } from '@/ui/design-system';
 
-// 视图模式
-type ViewMode = 'grid' | 'list';
+/**
+ * 计算当前视口下每行卡片数量
+ */
+function useColumnsPerRow(): number {
+  const { width } = useMobile();
+  if (width >= 1536) return 5;  // 2xl
+  if (width >= 1280) return 4;  // xl
+  if (width >= 1024) return 3;  // lg
+  if (width >= 640) return 2;   // sm
+  return 1;
+}
 
-export const Production: React.FC = () => {
-  const { getWorld, playerBuildings, playerCash, buildBuilding, tick, ui, setSelectedBuilding: setStoreSelectedBuilding, setPendingBuildTypeId } = useGameStore();
-  const world = getWorld();
-  const { isMobile, isTablet, isNarrowDesktop } = useMobile();
-  const useOverlayPanels = isMobile || isTablet || isNarrowDesktop;
-  
-  // 状态
-  const [selectedBuilding, setSelectedBuilding] = useState<number | null>(null);
-  const [buildModalTypeId, setBuildModalTypeId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [showCatalog, setShowCatalog] = useState(!useOverlayPanels);
-  const [showConstructionQueue, setShowConstructionQueue] = useState(false);
-  
-  const processedStoreSelectionRef = useRef<number | null>(null);
-  const processedPendingBuildRef = useRef<number | null>(null);
-  
-  // 监听从其他页面跳转来的建造请求
-  useEffect(() => {
-    if (ui.pendingBuildTypeId !== null && ui.pendingBuildTypeId !== processedPendingBuildRef.current) {
-      setBuildModalTypeId(ui.pendingBuildTypeId);
-      processedPendingBuildRef.current = ui.pendingBuildTypeId;
-      setPendingBuildTypeId(null);
-    }
-  }, [ui.pendingBuildTypeId, setPendingBuildTypeId]);
-  
-  useEffect(() => {
-    if (ui.selectedBuildingId !== null && ui.selectedBuildingId !== processedStoreSelectionRef.current) {
-      setSelectedBuilding(ui.selectedBuildingId);
-      processedStoreSelectionRef.current = ui.selectedBuildingId;
-      setStoreSelectedBuilding(null);
-    }
-  }, [ui.selectedBuildingId, setStoreSelectedBuilding]);
+/**
+ * 将建筑列表按行分组，并在选中建筑所在行后插入展开面板
+ */
+function useBuildingRows(
+  buildings: number[],
+  columnsPerRow: number,
+  selectedBuilding: number | null,
+) {
+  return useMemo(() => {
+    const rows: Array<
+      | { type: 'cards'; items: number[] }
+      | { type: 'detail'; buildingIndex: number }
+    > = [];
+    let selectedRowInserted = false;
 
-  useEffect(() => {
-    setShowCatalog(!useOverlayPanels);
-    if (!useOverlayPanels) {
-      setShowConstructionQueue(true);
-    } else {
-      setShowConstructionQueue(false);
-    }
-  }, [useOverlayPanels]);
+    for (let i = 0; i < buildings.length; i += columnsPerRow) {
+      const rowItems = buildings.slice(i, i + columnsPerRow);
+      rows.push({ type: 'cards', items: rowItems });
 
-  // 获取玩家的建筑列表
-  const playerBuildingList = useMemo(() => {
-    if (!world) return [];
-    const buildings: number[] = [];
-
-    for (let i = 0; i < world.buildings.count; i++) {
-      if (world.buildings.owners[i] === 0) {
-        buildings.push(i);
+      if (selectedBuilding !== null && !selectedRowInserted && rowItems.includes(selectedBuilding)) {
+        rows.push({ type: 'detail', buildingIndex: selectedBuilding });
+        selectedRowInserted = true;
       }
     }
-    
-    buildings.sort((a, b) => {
-      const typeA = world.buildings.types[a];
-      const typeB = world.buildings.types[b];
-      if (typeA !== typeB) return typeA - typeB;
-      return a - b;
-    });
-    
-    return buildings;
-  }, [world, tick]);
 
-  // 处理建造建筑
-  const handleBuild = useCallback((buildingTypeId: number, slotMethods?: number[]) => {
-    const buildingId = buildBuilding(buildingTypeId, slotMethods);
-    if (buildingId !== null) {
-      setBuildModalTypeId(null);
-      setSelectedBuilding(buildingId);
-    }
-  }, [buildBuilding]);
+    return rows;
+  }, [buildings, columnsPerRow, selectedBuilding]);
+}
 
-  // 处理选择建筑
-  const handleSelectBuilding = useCallback((index: number) => {
-    setSelectedBuilding(selectedBuilding === index ? null : index);
-  }, [selectedBuilding]);
-
-  // 处理打开建造弹窗
-  const handleOpenBuildModal = useCallback((typeId: number) => {
-    setBuildModalTypeId(typeId);
-  }, []);
-
-  const showPersistentCatalog = showCatalog && !useOverlayPanels;
-  const showPersistentDetail = selectedBuilding !== null && !useOverlayPanels;
-  const showPersistentQueue = showConstructionQueue && !useOverlayPanels;
+export const Production: React.FC = () => {
+  const stats = useProductionStats();
+  const page = useProductionPageState();
+  const columnsPerRow = useColumnsPerRow();
+  const rows = useBuildingRows(page.playerBuildingList, columnsPerRow, page.selectedBuilding);
 
   return (
-    <div className="h-full min-h-0 flex">
-      {/* 左侧建筑目录 */}
-      {showPersistentCatalog && (
-        <div className="w-64 flex-shrink-0 h-full">
-          <BuildingCatalog onSelectBuilding={handleOpenBuildModal} />
-        </div>
-      )}
+    <div className="flex flex-col h-full min-h-0">
+      {/* ═══ 工具栏 ═══ */}
+      <ProductionToolbar
+        stats={stats}
+        viewMode={page.viewMode}
+        onViewModeChange={page.setViewMode}
+        onOpenCatalog={page.toggleCatalog}
+        onOpenQueue={page.toggleQueue}
+        queueCount={page.queueCount}
+      />
 
-      {/* 主内容区 */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
-        {/* 头部 */}
-        <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 lg:px-6 border-b border-[var(--border-muted)] bg-[var(--bg-surface)]">
-          <div className="flex items-start gap-4 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                variant={showCatalog ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => setShowCatalog((open) => !open)}
-              >
-                {showCatalog ? (useOverlayPanels ? '隐藏目录' : '◀') : (useOverlayPanels ? '建筑目录' : '▶')}
-              </Button>
-              <Button
-                variant={selectedBuilding !== null ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => {
-                  if (selectedBuilding !== null) setSelectedBuilding(null);
-                }}
-                disabled={selectedBuilding === null}
-              >
-                建筑详情
+      {/* ═══ 内容区 ═══ */}
+      <div className="flex-1 min-h-0 overflow-y-auto relative">
+        {/* 顶部渐变光晕 */}
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[var(--accent)]/[0.03] to-transparent pointer-events-none z-0" />
+
+        <div className="relative z-10 p-4 lg:p-6">
+          {page.playerBuildingList.length === 0 ? (
+            /* ──── 空状态 ──── */
+            <div className="flex flex-col items-center justify-center py-20">
+              {/* 装饰圆环 */}
+              <div className="
+                w-24 h-24 rounded-full mb-6
+                bg-gradient-to-br from-white/[0.06] to-white/[0.02]
+                border border-white/[0.08]
+                flex items-center justify-center
+                shadow-[0_0_40px_rgba(59,130,246,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]
+              ">
+                <span className="text-4xl">🏗️</span>
+              </div>
+              <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1.5">
+                还没有建筑
+              </h3>
+              <p className="text-sm text-white/30 mb-6 text-center max-w-[240px]">
+                建造你的第一个工厂，开始生产商品并赚取利润
+              </p>
+              <Button variant="primary" size="md" onClick={page.toggleCatalog} className="gap-1.5">
+                <span className="text-base">＋</span>
+                建造第一个建筑
               </Button>
             </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
-                🏭 生产管理
-              </h2>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                <Badge variant="outline" size="sm">
-                  建筑: {playerBuildings}/100
-                </Badge>
-                <Badge variant="success" size="sm">
-                  {formatCurrency(playerCash)}
-                </Badge>
-              </div>
+
+          ) : page.viewMode === 'grid' ? (
+            /* ──── 网格视图 ──── */
+            <div className="space-y-3">
+              {rows.map((row, ri) => {
+                if (row.type === 'detail') {
+                  return (
+                    <BuildingCardExpanded
+                      key={`detail-${row.buildingIndex}`}
+                      buildingIndex={row.buildingIndex}
+                      onClose={() => page.selectBuilding(null)}
+                    />
+                  );
+                }
+                const gridCols = {
+                  1: 'grid-cols-1',
+                  2: 'grid-cols-1 sm:grid-cols-2',
+                  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+                  4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+                  5: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
+                }[columnsPerRow] || 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5';
+
+                return (
+                  <div key={`row-${ri}`} className={`grid ${gridCols} gap-3`}>
+                    {row.items.map(idx => (
+                      <BuildingCardGrid
+                        key={idx}
+                        buildingIndex={idx}
+                        isSelected={page.selectedBuilding === idx}
+                        onClick={() => page.selectBuilding(idx)}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          
-          {/* 视图切换和队列按钮 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* 建造队列按钮 */}
-            <Button
-              variant={showConstructionQueue ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setShowConstructionQueue((open) => !open)}
-            >
-              🏗️ 建造队列
-            </Button>
-            
-            {/* 视图切换 */}
-            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-              <TabsList variant="default" size="sm">
-                <TabsTrigger value="grid">网格</TabsTrigger>
-                <TabsTrigger value="list">列表</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
 
-        {/* 内容区域 */}
-        <div className="flex-1 min-h-0 flex">
-          {/* 建筑展示区 */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-6">
-            {/* 生产概览 */}
-            <ProductionOverview />
-
-            {/* 建筑列表 */}
-            {playerBuildingList.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-[var(--text-muted)]">
-                <div className="text-6xl mb-4">🏗️</div>
-                <h3 className="text-lg font-medium text-[var(--text-secondary)] mb-2">还没有建筑</h3>
-                <p className="text-sm mb-4">{useOverlayPanels ? '打开建筑目录开始建造吧' : '从左侧目录选择建筑开始建造吧'}</p>
-                {!showCatalog && (
-                  <Button onClick={() => setShowCatalog(true)}>
-                    📋 打开建筑目录
-                  </Button>
-                )}
+          ) : (
+            /* ──── 表格视图 ──── */
+            <div className="space-y-0.5">
+              {/* 表头 — 半透明固定行 */}
+              <div className="
+                flex items-center gap-3 px-3 py-2
+                rounded-lg
+                bg-white/[0.02] border border-white/[0.04]
+                text-[9px] text-white/20 uppercase tracking-wider font-semibold
+                mb-1
+              ">
+                <span className="w-[140px] pl-3">建筑</span>
+                <span className="w-[52px]">状态</span>
+                <span className="w-[80px]">效率</span>
+                <span className="w-[60px]">输入</span>
+                <span className="flex-1">产出</span>
+                <span className="w-[76px] text-right pr-2">日利润</span>
               </div>
-            ) : viewMode === 'grid' ? (
-              /* 网格视图 */
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {playerBuildingList.map((buildingIndex) => (
-                  <BuildingCard
-                    key={buildingIndex}
-                    buildingIndex={buildingIndex}
-                    isSelected={selectedBuilding === buildingIndex}
-                    onClick={() => handleSelectBuilding(buildingIndex)}
+              {page.playerBuildingList.map(idx => (
+                <React.Fragment key={idx}>
+                  <BuildingCardRow
+                    buildingIndex={idx}
+                    isSelected={page.selectedBuilding === idx}
+                    onClick={() => page.selectBuilding(idx)}
                   />
-                ))}
-              </div>
-            ) : (
-              /* 列表视图 */
-              <div className="space-y-2">
-                {playerBuildingList.map((buildingIndex) => (
-                  <BuildingCard
-                    key={buildingIndex}
-                    buildingIndex={buildingIndex}
-                    isSelected={selectedBuilding === buildingIndex}
-                    onClick={() => handleSelectBuilding(buildingIndex)}
-                    compact
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 右侧详情面板 */}
-          {showPersistentDetail && (
-            <div className="w-80 flex-shrink-0 h-full border-l border-[var(--border-muted)]">
-              <BuildingDetailPanel
-                buildingIndex={selectedBuilding}
-                onClose={() => setSelectedBuilding(null)}
-              />
+                  {page.selectedBuilding === idx && (
+                    <BuildingCardExpanded
+                      buildingIndex={idx}
+                      onClose={() => page.selectBuilding(null)}
+                    />
+                  )}
+                </React.Fragment>
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* 建造模态框 */}
-      {buildModalTypeId !== null && (
+      {/* ═══ 建造模态框 ═══ */}
+      {page.buildModalTypeId !== null && (
         <BuildModal
-          buildingTypeId={buildModalTypeId}
-          onClose={() => setBuildModalTypeId(null)}
-          onConfirm={handleBuild}
+          buildingTypeId={page.buildModalTypeId}
+          onClose={page.closeBuildModal}
+          onConfirm={page.handleBuild}
         />
       )}
 
-      {/* 建造队列悬浮面板 */}
-      {showPersistentQueue && (
-        <div
-          className={`fixed bottom-4 w-80 z-40 transition-all duration-300 ${
-            showPersistentDetail ? 'right-[340px]' : 'right-4'
-          }`}
-        >
-          <ConstructionQueuePanel
-            collapsed={false}
-            onToggleCollapse={() => setShowConstructionQueue(false)}
-          />
-        </div>
-      )}
-
-      {/* 响应式覆盖层面板 */}
+      {/* ═══ Overlay: 建筑目录 ═══ */}
       <ResponsiveOverlayPanel
-        open={useOverlayPanels && showCatalog}
+        open={page.showCatalog}
         title="建筑目录"
         position="left"
         widthClassName="max-w-sm"
-        onClose={() => setShowCatalog(false)}
+        onClose={page.closeCatalog}
       >
-        <BuildingCatalog onSelectBuilding={handleOpenBuildModal} />
+        <BuildingCatalog onSelectBuilding={page.openBuildModal} />
       </ResponsiveOverlayPanel>
 
+      {/* ═══ Overlay: 建造队列 ═══ */}
       <ResponsiveOverlayPanel
-        open={useOverlayPanels && selectedBuilding !== null}
-        title="建筑详情"
-        position="right"
-        widthClassName="max-w-lg"
-        onClose={() => setSelectedBuilding(null)}
-      >
-        {selectedBuilding !== null && (
-          <BuildingDetailPanel
-            buildingIndex={selectedBuilding}
-            onClose={() => setSelectedBuilding(null)}
-          />
-        )}
-      </ResponsiveOverlayPanel>
-
-      <ResponsiveOverlayPanel
-        open={useOverlayPanels && showConstructionQueue}
+        open={page.showQueue}
         title="建造队列"
         position="bottom"
-        onClose={() => setShowConstructionQueue(false)}
+        onClose={page.closeQueue}
       >
         <ConstructionQueuePanel
           collapsed={false}
-          onToggleCollapse={() => setShowConstructionQueue(false)}
+          onToggleCollapse={page.closeQueue}
         />
       </ResponsiveOverlayPanel>
     </div>

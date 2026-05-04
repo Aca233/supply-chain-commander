@@ -104,7 +104,7 @@ export const BuildingUpgradePanel: React.FC<BuildingUpgradePanelProps> = ({
       });
     }
 
-    const totalCost = upgradeCost + totalMaterialCost;
+    const totalCost = totalMaterialCost;
     const allMaterialsAvailable = materials.every((m) => m.missing === 0);
 
     // 计算属性变化
@@ -182,7 +182,9 @@ export const BuildingUpgradePanel: React.FC<BuildingUpgradePanelProps> = ({
             </Badge>
           </div>
           <Badge variant={upgradePreview.canAfford ? 'success' : 'error'} size="sm">
-            {upgradePreview.canAfford ? '资金充足' : '资金不足'}
+            {upgradePreview.canAfford
+              ? upgradePreview.totalCost > 0 ? '采购资金充足' : '无需现金预付'
+              : '采购资金不足'}
           </Badge>
         </div>
 
@@ -233,11 +235,11 @@ export const BuildingUpgradePanel: React.FC<BuildingUpgradePanelProps> = ({
       {/* 费用明细 */}
       <Card variant="elevated" padding="md">
         <h4 className="text-xs font-medium text-[var(--text-primary)] mb-3 flex items-center gap-2">
-          💰 费用明细
+          💰 升级投入
         </h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-[var(--text-muted)]">升级工程费</span>
+            <span className="text-[var(--text-muted)]">升级估值</span>
             <span className="text-[var(--text-primary)] tabular-nums">
               {formatMoney(upgradePreview.upgradeCost)}
             </span>
@@ -251,7 +253,7 @@ export const BuildingUpgradePanel: React.FC<BuildingUpgradePanelProps> = ({
             </div>
           )}
           <div className="flex justify-between pt-2 border-t border-[var(--border-muted)]">
-            <span className="text-[var(--text-secondary)] font-medium">总计</span>
+            <span className="text-[var(--text-secondary)] font-medium">采购预留</span>
             <span className={`font-medium tabular-nums ${upgradePreview.canAfford ? 'text-[var(--text-primary)]' : 'text-[var(--error)]'}`}>
               {formatMoney(upgradePreview.totalCost)}
             </span>
@@ -330,10 +332,10 @@ export const BuildingUpgradePanel: React.FC<BuildingUpgradePanelProps> = ({
       >
         <div className="text-center">
           <div className="font-medium">
-            {upgradePreview.canAfford ? '🚀 开始升级' : '💰 资金不足'}
+            {upgradePreview.canAfford ? '🚀 开始升级' : '💰 采购资金不足'}
           </div>
           <div className="text-xs opacity-80">
-            {formatMoney(upgradePreview.totalCost)} · {upgradePreview.buildTime}小时
+            采购预留 {formatMoney(upgradePreview.totalCost)} · {upgradePreview.buildTime}小时
           </div>
         </div>
       </Button>

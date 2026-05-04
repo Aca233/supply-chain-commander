@@ -1,6 +1,6 @@
 /**
  * 建筑建造材料配置
- * 与重构后的40种建筑体系对齐
+ * 与55种建筑体系对齐（含仓储类 ID 50-54）
  */
 
 import { GoodsId } from './goods';
@@ -1078,6 +1078,103 @@ const RETAIL_CONFIGS: BuildingConstructionConfig[] = [
   },
 ];
 
+// ==================== 仓储类建筑材料 (ID 50-54) ====================
+
+/** 仓库通用升级材料 */
+const WAREHOUSE_BASE_UPGRADE_MATERIALS: MaterialRequirement[][] = [
+  [],
+  [{ goodsId: GoodsId.STEEL, amount: 150 }, { goodsId: GoodsId.CEMENT, amount: 100 }],
+  [{ goodsId: GoodsId.STEEL, amount: 300 }, { goodsId: GoodsId.BUILDING_MATERIALS, amount: 120 }, { goodsId: GoodsId.MECHANICAL_PARTS, amount: 20 }],
+  [{ goodsId: GoodsId.STEEL, amount: 500 }, { goodsId: GoodsId.BUILDING_MATERIALS, amount: 200 }, { goodsId: GoodsId.ELECTRONICS, amount: 30 }],
+  [{ goodsId: GoodsId.STEEL, amount: 800 }, { goodsId: GoodsId.BUILDING_MATERIALS, amount: 350 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 3 }],
+];
+
+const WAREHOUSE_CONFIGS: BuildingConstructionConfig[] = [
+  {
+    buildingTypeId: BuildingId.SMALL_WAREHOUSE, // 50 小型仓库
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 400 },
+      { goodsId: GoodsId.CEMENT, amount: 300 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 200 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 80 },
+    ],
+    upgradeMaterials: WAREHOUSE_BASE_UPGRADE_MATERIALS,
+    buildTime: 720,
+    workers: 25,
+  },
+  {
+    buildingTypeId: BuildingId.LARGE_WAREHOUSE, // 51 大型仓库
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 1200 },
+      { goodsId: GoodsId.CEMENT, amount: 900 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 500 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 200 },
+      { goodsId: GoodsId.MECHANICAL_PARTS, amount: 40 },
+    ],
+    upgradeMaterials: WAREHOUSE_BASE_UPGRADE_MATERIALS,
+    buildTime: 1440,
+    workers: 50,
+  },
+  {
+    buildingTypeId: BuildingId.COLD_STORAGE, // 52 冷链仓库
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 800 },
+      { goodsId: GoodsId.CEMENT, amount: 500 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 300 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 150 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 60 },
+      { goodsId: GoodsId.MOTOR, amount: 8 },
+    ],
+    upgradeMaterials: [
+      [],
+      [{ goodsId: GoodsId.STEEL, amount: 200 }, { goodsId: GoodsId.ELECTRONICS, amount: 30 }],
+      [{ goodsId: GoodsId.STEEL, amount: 400 }, { goodsId: GoodsId.ELECTRONICS, amount: 50 }, { goodsId: GoodsId.MOTOR, amount: 4 }],
+      [{ goodsId: GoodsId.STEEL, amount: 600 }, { goodsId: GoodsId.ELECTRONICS, amount: 80 }, { goodsId: GoodsId.MOTOR, amount: 6 }],
+      [{ goodsId: GoodsId.STEEL, amount: 800 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 3 }, { goodsId: GoodsId.MOTOR, amount: 8 }],
+    ],
+    buildTime: 1080,
+    workers: 40,
+  },
+  {
+    buildingTypeId: BuildingId.BULK_YARD, // 53 散货堆场
+    baseMaterials: [
+      { goodsId: GoodsId.CEMENT, amount: 600 },
+      { goodsId: GoodsId.STEEL, amount: 300 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 250 },
+    ],
+    upgradeMaterials: [
+      [],
+      [{ goodsId: GoodsId.CEMENT, amount: 200 }, { goodsId: GoodsId.STEEL, amount: 100 }],
+      [{ goodsId: GoodsId.CEMENT, amount: 400 }, { goodsId: GoodsId.STEEL, amount: 200 }, { goodsId: GoodsId.MECHANICAL_PARTS, amount: 15 }],
+      [{ goodsId: GoodsId.CEMENT, amount: 600 }, { goodsId: GoodsId.STEEL, amount: 300 }, { goodsId: GoodsId.MECHANICAL_PARTS, amount: 30 }],
+      [{ goodsId: GoodsId.CEMENT, amount: 800 }, { goodsId: GoodsId.STEEL, amount: 400 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 2 }],
+    ],
+    buildTime: 480,
+    workers: 30,
+  },
+  {
+    buildingTypeId: BuildingId.AUTOMATED_WAREHOUSE, // 54 自动化仓库
+    baseMaterials: [
+      { goodsId: GoodsId.STEEL, amount: 2000 },
+      { goodsId: GoodsId.CEMENT, amount: 1200 },
+      { goodsId: GoodsId.BUILDING_MATERIALS, amount: 600 },
+      { goodsId: GoodsId.BUILDING_PRODUCTS, amount: 300 },
+      { goodsId: GoodsId.ELECTRONICS, amount: 150 },
+      { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 10 },
+      { goodsId: GoodsId.MOTOR, amount: 15 },
+    ],
+    upgradeMaterials: [
+      [],
+      [{ goodsId: GoodsId.STEEL, amount: 500 }, { goodsId: GoodsId.ELECTRONICS, amount: 60 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 3 }],
+      [{ goodsId: GoodsId.STEEL, amount: 800 }, { goodsId: GoodsId.ELECTRONICS, amount: 100 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 5 }],
+      [{ goodsId: GoodsId.STEEL, amount: 1200 }, { goodsId: GoodsId.ELECTRONICS, amount: 150 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 8 }],
+      [{ goodsId: GoodsId.STEEL, amount: 1600 }, { goodsId: GoodsId.ELECTRONICS, amount: 200 }, { goodsId: GoodsId.INDUSTRIAL_ROBOT, amount: 12 }],
+    ],
+    buildTime: 2160,
+    workers: 60,
+  },
+];
+
 // ==================== 合并所有配置 ====================
 const ALL_CONSTRUCTION_CONFIGS: BuildingConstructionConfig[] = [
   ...EXTRACTION_CONFIGS,      // ID 0-14
@@ -1086,6 +1183,7 @@ const ALL_CONSTRUCTION_CONFIGS: BuildingConstructionConfig[] = [
   ...LUXURY_CONFIGS,          // ID 37-38
   ...SERVICE_CONFIGS,         // ID 39
   ...RETAIL_CONFIGS,          // ID 40-49
+  ...WAREHOUSE_CONFIGS,       // ID 50-54
 ];
 
 // ==================== 导出配置 ====================

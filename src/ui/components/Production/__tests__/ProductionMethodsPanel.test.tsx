@@ -108,7 +108,7 @@ describe('ProductionMethodsPanel', () => {
           slotId: 'workforce',
           inputDelta: [{ goodsId: 3, amount: 5 }],
           outputDelta: [{ goodsId: 1, amount: 24 }],
-          workforceDelta: { basic: 1, technical: 0, management: 0 },
+          workforceDelta: { basic: -2, technical: 3, management: 1 },
           energyDelta: 0,
           ticksRequired: 1,
           requiredLevel: 1,
@@ -128,7 +128,7 @@ describe('ProductionMethodsPanel', () => {
         { goodsId: 3, amount: 7 },
       ],
       outputs: [{ goodsId: 1, amount: 41 }],
-      workforceRequired: { basic: 1, technical: 0, management: 0 },
+      workforceRequired: { basic: 12, technical: 4, management: 2 },
       energyRequired: 0,
       ticksRequired: 1,
     });
@@ -158,7 +158,27 @@ describe('ProductionMethodsPanel', () => {
     expect(html).toContain('41');
     expect(html).toContain('62');
     expect(html).toContain('7');
+    expect(html).toContain('普通工人');
+    expect(html).toContain('技术工人');
+    expect(html).toContain('管理人员');
+    expect(html).not.toContain('工资');
     expect(html).not.toContain('产出#1');
     expect(html).not.toContain('输入#2');
+  });
+
+  it('uses industrial dashboard styling instead of the old brown switching panel style', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProductionMethodsPanel, {
+        buildingId: 0,
+        buildingTypeId: 1,
+        buildingLevel: 1,
+        compact: true,
+      })
+    );
+
+    expect(html).toContain('最终投入产出');
+    expect(html).not.toContain('#b89353');
+    expect(html).not.toContain('#efdfba');
+    expect(html).not.toContain('#c8ab72');
   });
 });

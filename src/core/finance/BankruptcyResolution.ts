@@ -1,5 +1,6 @@
 import { GOODS_COUNT, TICKS_PER_DAY } from '@/core/constants';
 import { supplyContractManager } from '@/core/economy/SupplyContracts';
+import { releaseBuildingWorkforce } from '@/core/labor/LaborSystem';
 import { cancelCompanyOrders } from '@/core/market/OrderBook';
 import { GameWorld } from '@/core/world/GameWorld';
 import { addBuilding } from '@/core/world/WorldInitializer';
@@ -179,6 +180,7 @@ export class BankruptcyResolutionManager {
       }
 
       world.buildings.isActive[buildingId] = 0;
+      releaseBuildingWorkforce(world, buildingId);
 
       const assetId = `ba-${this.nextAssetId++}`;
       const asset: BankruptcyAuctionAsset = {
@@ -691,6 +693,7 @@ export class BankruptcyResolutionManager {
       asset.auctionEndTick = null;
       if (asset.buildingId !== undefined) {
         world.buildings.isActive[asset.buildingId] = 0;
+        releaseBuildingWorkforce(world, asset.buildingId);
       }
       return;
     }

@@ -7,6 +7,7 @@ import { BuildingId } from '@/data/buildings';
 import { GoodsId } from '@/data/goods';
 
 import { createGameWorld } from '../../world/GameWorld';
+import { initializeWorld } from '../../world/WorldInitializer';
 import { calculateDerivedDemand } from '../DemandCurve';
 
 describe('derived demand realism', () => {
@@ -80,5 +81,15 @@ describe('derived demand realism', () => {
     calculateDerivedDemand(world);
 
     expect(world.goods.demands[replenishmentInput.goodsId]).toBeGreaterThan(0);
+  });
+
+  it('derives electricity demand from real recipe inputs within the scale of bootstrap power supply', () => {
+    const world = initializeWorld();
+
+    world.goods.demands[GoodsId.ELECTRICITY] = 0;
+    calculateDerivedDemand(world);
+
+    expect(world.goods.demands[GoodsId.ELECTRICITY]).toBeGreaterThan(0);
+    expect(world.goods.demands[GoodsId.ELECTRICITY]).toBeLessThanOrEqual(10_000_000);
   });
 });

@@ -86,6 +86,21 @@ function createWorldWithTwoPlayerBuildings() {
   };
 }
 
+function createWorldWithPayroll() {
+  const world = createWorld();
+  return {
+    ...world,
+    labor: {
+      marketWages: new Float32Array([300, 0, 0]),
+    },
+    buildings: {
+      ...world.buildings,
+      workforceHired: new Float32Array([1, 0, 0]),
+      wageMultipliers: new Float32Array([1, 1, 1]),
+    },
+  };
+}
+
 describe('ProductionOverview time model', () => {
   beforeEach(() => {
     useGameStoreMock.mockReset();
@@ -116,5 +131,18 @@ describe('ProductionOverview time model', () => {
     const html = renderToStaticMarkup(React.createElement(ProductionOverview));
 
     expect(html).toContain('运营建筑:1/2');
+  });
+
+  it('subtracts active building payroll from estimated profit', () => {
+    useGameStoreMock.mockReturnValue({
+      getWorld: () => createWorldWithPayroll(),
+      playerCash: 1_000_000,
+      playerBuildings: 1,
+      tick: 1,
+    });
+
+    const html = renderToStaticMarkup(React.createElement(ProductionOverview));
+
+    expect(html).toContain('日预估利润:¥691.67');
   });
 });

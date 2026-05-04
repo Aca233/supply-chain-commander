@@ -13,7 +13,7 @@
  */
 
 import { GameWorld, getPriceHistory } from '@/core/world/GameWorld';
-import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE, TICKS_PER_DAY } from '@/core/constants';
+import { GOODS_COUNT, ACTUAL_GOODS_COUNT, HISTORY_SIZE, TICKS_PER_DAY, LABOR_ROLE_COUNT } from '@/core/constants';
 import { ALL_GOODS, GoodsDefinition } from '@/data/goods';
 import { getBuildingRecipeFromInstance } from '@/core/production/ProductionEngine';
 import type { ComputedRecipe, RecipeDelta } from '@/core/production/ProductionMethods';
@@ -153,6 +153,22 @@ interface ProductionConfig {
 }
 
 /**
+ * 基于市场工资估算配方的日薪酬成本（不依赖具体建筑实例）。
+ * 取各角色市场工资中值计算，用于 AI 利润分析。
+ */
+function estimateWorkforceDailyWage(world: GameWorld, workforce: WorkforceDemand): number {
+  const roles = [workforce.basic, workforce.technical, workforce.management];
+  let total = 0;
+  for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+    const count = roles[role] || 0;
+    if (count <= 0) continue;
+    const marketWage = world.labor.marketWages[role] || 0;
+    total += count * marketWage;
+  }
+  return total;
+}
+
+/**
  * 计算生产配置的原材料成本
  * v4.0更新：使用ProductionConfig替代RecipeDefinition
  */
@@ -180,10 +196,10 @@ export function calculateProductionUnitCost(
 ): number {
   // 原材料成本
   const materialCost = calculateProductionMaterialCost(world, production);
-  
-  // 人工成本（假设人工时薪50元）
-  const laborCost = getTotalWorkforceDemand(production.workforceRequired) * 50 / production.ticksRequired;
-  
+
+  // 人工成本：基于实际市场工资
+  const laborCost = estimateWorkforceDailyWage(world, production.workforceRequired) / production.ticksRequired;
+
   // 能源成本（假设电价0.5元/度）
   const energyCost = production.energyRequired * 0.5 / production.ticksRequired;
   
@@ -269,7 +285,7 @@ export function analyzeGoodsProfit(
   
   if (producingConfig) {
     rawMaterialCost = calculateProductionMaterialCost(world, producingConfig);
-    laborCost = getTotalWorkforceDemand(producingConfig.workforceRequired) * 50 / producingConfig.ticksRequired;
+    laborCost = estimateWorkforceDailyWage(world, producingConfig.workforceRequired) / producingConfig.ticksRequired;
     energyCost = producingConfig.energyRequired * 0.5 / producingConfig.ticksRequired;
     
     // 转换为单位成本

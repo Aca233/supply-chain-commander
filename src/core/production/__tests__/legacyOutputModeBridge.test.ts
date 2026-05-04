@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { initializeBuildingProductionMethods } from '@/core/production/ProductionMethods';
+import {
+  getDefaultSlotMethods,
+  initializeBuildingProductionMethods,
+} from '@/core/production/ProductionMethods';
 import {
   resolveLegacyOutputModeToSlotMethods,
 } from '@/core/production/legacyOutputModeBridge';
@@ -24,7 +27,7 @@ describe('legacy output mode bridge', () => {
   it('falls back to default slot methods when a legacy output mode is unknown', () => {
     const slotMethods = resolveLegacyOutputModeToSlotMethods(BuildingId.FARM, 999);
 
-    expect(slotMethods).toHaveLength(1);
-    expect(slotMethods[0]).toBeGreaterThan(0);
+    expect(slotMethods).toEqual(getDefaultSlotMethods(BuildingId.FARM));
+    expect(slotMethods.every((methodId) => methodId > 0)).toBe(true);
   });
 });

@@ -11,7 +11,7 @@
  */
 
 import { GameWorld } from '@/core/world/GameWorld';
-import { MAX_SLOTS, TICKS_PER_DAY } from '@/core/constants';
+import { MAX_SLOTS, TICKS_PER_DAY, LABOR_ROLE_COUNT } from '@/core/constants';
 import { ALL_GOODS } from '@/data/goods';
 import { AIPersonality } from './AIPersonality';
 import { getRecipeForBuilding } from '@/core/production/ProductionMethods';
@@ -23,7 +23,7 @@ import {
   BuildingProductionMethod,
   BuildingSlotType,
 } from '@/core/production/methods';
-import { getTotalWorkforceDemand } from '@/core/labor/LaborSystem';
+import { getTotalWorkforceDemand, type WorkforceDemand } from '@/core/labor/LaborSystem';
 
 // ==================== 类型定义 ====================
 
@@ -101,6 +101,21 @@ const DEFAULT_CONFIG: OptimizerConfig = {
 
 // 切换冷却记录：buildingId -> lastSwitchTick
 const switchCooldowns: Map<number, number> = new Map();
+
+/**
+ * 基于市场工资估算 workforceDelta 的日薪酬成本（货币单位），用于方法评分。
+ */
+function estimateWorkforceDeltaCost(world: GameWorld, workforce: WorkforceDemand): number {
+  const roles = [workforce.basic, workforce.technical, workforce.management];
+  let total = 0;
+  for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+    const count = roles[role] || 0;
+    if (count <= 0) continue;
+    const marketWage = world.labor.marketWages[role] || 0;
+    total += count * marketWage;
+  }
+  return total;
+}
 
 // ==================== 市场分析 ====================
 
@@ -228,9 +243,11 @@ export function evaluateMethod(
   // 4. 能源成本：energyDelta 正值表示更耗能
   const energyCost = method.energyDelta;
 
-  // 5. 劳动力成本：workforceDelta 总量正值表示更耗工
-  const laborCost = getTotalWorkforceDemand(method.workforceDelta);
-  
+  // 5. 劳动力成本：基于市场工资加权计算，归一化到与其他分量可比的量级
+  const laborCostRaw = estimateWorkforceDeltaCost(world, method.workforceDelta);
+  const baseWage = Math.max(1, world.labor.marketWages[0] || 120);
+  const laborCost = laborCostRaw / baseWage; // 折算为"等效普通工人数"
+
   // 6. 综合评分
   score += outputBonus * 0.35;
   score += inputSaving * 0.25;

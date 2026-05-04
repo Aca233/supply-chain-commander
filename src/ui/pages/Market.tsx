@@ -106,27 +106,27 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
 }) => {
   const priceHistoryData = useMemo(() => {
     if (!world) return [];
-    
+
     const t = world.trades;
     const maxTrades = t.maxTrades;
-    
+
     interface TickData {
       prices: number[];
       volumes: number[];
       firstPrice: number;
       lastPrice: number;
     }
-    
+
     const tickDataMap = new Map<number, TickData>();
     const searchLimit = Math.min(t.count, 50000);
-    
+
     for (let i = 0; i < searchLimit; i++) {
       const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
       if (t.goodsIds[tradeIdx] === selectedGoodsId) {
         const tradeTick = t.ticks[tradeIdx];
         const tradePrice = t.prices[tradeIdx];
         const tradeQty = t.quantities[tradeIdx];
-        
+
         if (tradePrice > 0 && tradeQty > 0) {
           let data = tickDataMap.get(tradeTick);
           if (!data) {
@@ -139,7 +139,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
         }
       }
     }
-    
+
     if (tickDataMap.size === 0) {
       const basePrice = selectedGoods?.basePrice || world.goods.prices[selectedGoodsId];
       if (basePrice > 0) {
@@ -155,23 +155,23 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       }
       return [];
     }
-    
+
     const sortedTicks = Array.from(tickDataMap.keys()).sort((a, b) => a - b);
     const recentTicks = sortedTicks.slice(-200);
-    
+
     const data: PriceDataPoint[] = [];
-    
+
     for (const tickTime of recentTicks) {
       const tickData = tickDataMap.get(tickTime)!;
       const prices = tickData.prices;
       const volumes = tickData.volumes;
-      
+
       const open = tickData.firstPrice;
       const close = tickData.lastPrice;
       const high = Math.max(...prices);
       const low = Math.min(...prices);
       const volume = volumes.reduce((sum, v) => sum + v, 0);
-      
+
       let totalValue = 0;
       let totalQty = 0;
       for (let j = 0; j < prices.length; j++) {
@@ -190,10 +190,10 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
         volume,
       });
     }
-    
+
     return data;
   }, [world, tick, tradesCount, selectedGoodsId, selectedGoods]);
-  
+
   if (!world || priceHistoryData.length === 0) {
     return (
       <div className="flex items-center justify-center text-foreground-muted" style={{ height }}>
@@ -201,7 +201,7 @@ const MemoizedPriceChart = React.memo<MemoizedPriceChartProps>(({
       </div>
     );
   }
-  
+
   return (
     <PriceChart
       data={priceHistoryData}
@@ -238,7 +238,7 @@ const GoodsSelector = React.memo<GoodsSelectorProps>(({
       {goods.map(g => {
         const hasStock = (playerStockMap.get(g.id) || 0) > 0;
         const isSelected = selectedGoodsId === g.id;
-        
+
         return (
           <button
             key={g.id}
@@ -286,13 +286,13 @@ const GoodsCategoryTree = React.memo<GoodsCategoryTreeProps>(({
   classifyMode,
 }) => {
   const config = classifyMode === 'category' ? CATEGORY_CONFIG : INDUSTRY_CONFIG;
-  
+
   return (
     <TooltipProvider>
       {Object.entries(config).map(([category, categoryConfig]) => {
         const goods = filteredGoods[category] || [];
         if (goods.length === 0) return null;
-        
+
         return (
           <div key={category} className="mb-3">
             <button
@@ -308,14 +308,14 @@ const GoodsCategoryTree = React.memo<GoodsCategoryTreeProps>(({
                 <span className={`text-foreground-muted text-xs transition-transform duration-200 ${expandedCategories[category] ? 'rotate-0' : '-rotate-90'}`}>▼</span>
               </div>
             </button>
-            
+
             {expandedCategories[category] && (
               <div className="mt-1.5 space-y-1 pl-1">
                 {goods.map(g => {
                   const hasStock = (playerStockMap.get(g.id) || 0) > 0;
                   const hasOrders = goodsWithOrdersSet.has(g.id);
                   const isSelected = selectedGoodsId === g.id;
-                  
+
                   return (
                     <button
                       key={g.id}
@@ -401,7 +401,7 @@ const TradePanel = React.memo<TradePanelProps>(({
           📉 卖出
         </Button>
       </div>
-      
+
       {/* 数量输入 */}
       <Input
         label="数量"
@@ -411,7 +411,7 @@ const TradePanel = React.memo<TradePanelProps>(({
         size="sm"
         variant="filled"
       />
-      
+
       {/* 单价输入 */}
       <Input
         label="单价"
@@ -422,7 +422,7 @@ const TradePanel = React.memo<TradePanelProps>(({
         size="sm"
         variant="filled"
       />
-      
+
       {/* 总价 */}
       <div className={`flex justify-between p-3 rounded-xl border-2 ${
         tradeType === 'buy'
@@ -436,7 +436,7 @@ const TradePanel = React.memo<TradePanelProps>(({
           {formatCurrency(totalCost)}
         </span>
       </div>
-      
+
       {/* 余额/库存 */}
       <div className="text-xs text-foreground-muted flex justify-between p-2 rounded-lg bg-background-muted/50">
         <span>{tradeType === 'buy' ? '可用资金' : '可售库存'}</span>
@@ -444,7 +444,7 @@ const TradePanel = React.memo<TradePanelProps>(({
           {tradeType === 'buy' ? formatCurrency(playerCash) : playerStock.toLocaleString('zh-CN', { minimumFractionDigits: Number.isInteger(playerStock) ? 0 : 1, maximumFractionDigits: Number.isInteger(playerStock) ? 0 : 1 })}
         </span>
       </div>
-      
+
       {/* 提交按钮 */}
       <Button
         variant={tradeType === 'buy' ? 'success' : 'danger'}
@@ -461,7 +461,7 @@ TradePanel.displayName = 'TradePanel';
 
 export const Market: React.FC = () => {
   const { isMobile, isTablet, isNarrowDesktop } = useMobile();
-  
+
   const {
     getWorld,
     playerCash,
@@ -472,25 +472,25 @@ export const Market: React.FC = () => {
     setSelectedGoods: setStoreSelectedGoods,
     navigateToBuildBuilding,
   } = useGameStore();
-  
+
   const world = getWorld();
-  
+
   const [selectedGoodsId, setSelectedGoodsIdLocal] = useState<number>(ui.selectedGoodsId ?? 14);
   const [showGoodsSelector, setShowGoodsSelector] = useState(false);
   const [showTradePanel, setShowTradePanel] = useState(false);
-  
+
   useEffect(() => {
     if (ui.selectedGoodsId !== null && ui.selectedGoodsId !== selectedGoodsId) {
       setSelectedGoodsIdLocal(ui.selectedGoodsId);
     }
   }, [ui.selectedGoodsId, selectedGoodsId]);
-  
+
   const setSelectedGoodsId = (goodsId: number) => {
     setSelectedGoodsIdLocal(goodsId);
     setStoreSelectedGoods(goodsId);
     setShowGoodsSelector(false);
   };
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [classifyMode, setClassifyMode] = useState<ClassifyMode>('category');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
@@ -511,14 +511,14 @@ export const Market: React.FC = () => {
   const filteredGoods = useMemo(() => {
     const sourceData = classifyMode === 'category' ? GOODS_BY_CATEGORY : GOODS_BY_INDUSTRY;
     if (!searchQuery) return sourceData;
-    
+
     const query = searchQuery.toLowerCase();
     const result: Record<string, GoodsDefinition[]> = {};
-    
+
     for (const [key, goods] of Object.entries(sourceData)) {
       result[key] = goods.filter(g => g.name.toLowerCase().includes(query));
     }
-    
+
     return result;
   }, [searchQuery, classifyMode]);
 
@@ -550,36 +550,36 @@ export const Market: React.FC = () => {
   // 订单簿
   const getOrderBook = (goodsId: number) => {
     if (!world) return { buyOrders: [], sellOrders: [] };
-    
+
     const buyOrders: { price: number; quantity: number; companyName: string }[] = [];
     const sellOrders: { price: number; quantity: number; companyName: string }[] = [];
-    
+
     for (let i = 0; i < world.orders.maxOrders; i++) {
       if (world.orders.isActive[i] && world.orders.goodsIds[i] === goodsId) {
         const order = {
           price: world.orders.prices[i],
           quantity: world.orders.remainings[i],
-          companyName: world.orders.companyIds[i] === 0 ? '玩家公司' : 
+          companyName: world.orders.companyIds[i] === 0 ? '玩家公司' :
             world.companies.names[world.orders.companyIds[i]] || `公司#${world.orders.companyIds[i]}`,
         };
-        
+
         if (world.orders.types[i] === 0) buyOrders.push(order);
         else sellOrders.push(order);
       }
     }
-    
+
     buyOrders.sort((a, b) => b.price - a.price);
     sellOrders.sort((a, b) => a.price - b.price);
-    
+
     return { buyOrders: buyOrders.slice(0, 5), sellOrders: sellOrders.slice(0, 5) };
   };
 
   // 玩家订单
   const getPlayerOrders = (goodsId: number) => {
     if (!world) return [];
-    
+
     const orders: { index: number; type: 'buy' | 'sell'; price: number; quantity: number; goodsId: number }[] = [];
-    
+
     for (let i = 0; i < world.orders.maxOrders; i++) {
       if (world.orders.isActive[i] && world.orders.companyIds[i] === 0 && world.orders.goodsIds[i] === goodsId) {
         orders.push({
@@ -591,7 +591,7 @@ export const Market: React.FC = () => {
         });
       }
     }
-    
+
     return orders;
   };
 
@@ -599,13 +599,13 @@ export const Market: React.FC = () => {
   const handleSubmitOrder = () => {
     const price = parseFloat(tradePrice) || currentPrice;
     const quantity = parseFloat(tradeQuantity);
-    
+
     if (isNaN(quantity) || quantity <= 0 || isNaN(price) || price <= 0) return;
-    
+
     let success = false;
     if (tradeType === 'buy') success = placeBuyOrder(selectedGoodsId, quantity, price);
     else success = placeSellOrder(selectedGoodsId, quantity, price);
-    
+
     if (success) {
       setTradeQuantity('10');
       setTradePrice('');
@@ -621,12 +621,12 @@ export const Market: React.FC = () => {
   const tick = world?.tick ?? 0;
   const tradesCount = world?.trades.count ?? 0;
   const ordersActiveCount = world?.orders.activeCount ?? 0;
-  
+
   const currentPrice = useMemo(() => getCurrentPrice(selectedGoodsId), [selectedGoodsId, tick]);
   const lastTradePrice = useMemo(() => getLastTradePrice(selectedGoodsId), [selectedGoodsId, tradesCount]);
   const playerStock = useMemo(() => getPlayerStock(selectedGoodsId), [selectedGoodsId, tick]);
-  const orderBook = useMemo(() => getOrderBook(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
-  const playerOrders = useMemo(() => getPlayerOrders(selectedGoodsId), [selectedGoodsId, ordersActiveCount]);
+  const orderBook = useMemo(() => getOrderBook(selectedGoodsId), [selectedGoodsId, ordersActiveCount, tradesCount, tick]);
+  const playerOrders = useMemo(() => getPlayerOrders(selectedGoodsId), [selectedGoodsId, ordersActiveCount, tradesCount, tick]);
 
   // 供需数据计算
   const supplyDemandData = useMemo((): SupplyDemandData | null => {
@@ -643,10 +643,10 @@ export const Market: React.FC = () => {
   // K线数据计算
   const candlestickData = useMemo((): OHLCData[] => {
     if (!world) return [];
-    
+
     const t = world.trades;
     const maxTrades = t.maxTrades;
-    
+
     // 按天聚合交易数据
     const dayDataMap = new Map<number, {
       open: number;
@@ -657,19 +657,19 @@ export const Market: React.FC = () => {
       firstTick: number;
       lastTick: number;
     }>();
-    
+
     const searchLimit = Math.min(t.count, 50000);
-    
+
     for (let i = 0; i < searchLimit; i++) {
       const tradeIdx = (t.count - 1 - i + maxTrades) % maxTrades;
       if (t.goodsIds[tradeIdx] === selectedGoodsId) {
         const tradeTick = t.ticks[tradeIdx];
         const tradePrice = t.prices[tradeIdx];
         const tradeQty = t.quantities[tradeIdx];
-        
+
         if (tradePrice > 0 && tradeQty > 0) {
           const dayIndex = Math.floor(tradeTick / TICKS_PER_DAY);
-          
+
           let data = dayDataMap.get(dayIndex);
           if (!data) {
             data = {
@@ -683,7 +683,7 @@ export const Market: React.FC = () => {
             };
             dayDataMap.set(dayIndex, data);
           }
-          
+
           // 更新OHLC
           if (tradeTick < data.firstTick) {
             data.open = tradePrice;
@@ -699,13 +699,13 @@ export const Market: React.FC = () => {
         }
       }
     }
-    
+
     if (dayDataMap.size === 0) return [];
-    
+
     // 转换为数组并排序
     const sortedDays = Array.from(dayDataMap.keys()).sort((a, b) => a - b);
     const recentDays = sortedDays.slice(-60); // 最近60天
-    
+
     return recentDays.map(dayIndex => {
       const data = dayDataMap.get(dayIndex)!;
       const date = tickToDate(dayIndex * TICKS_PER_DAY);
@@ -732,7 +732,7 @@ export const Market: React.FC = () => {
     }
     return map;
   }, [tick]);
-  
+
   const goodsWithOrdersSet = useMemo(() => {
     const set = new Set<number>();
     if (!world) return set;
@@ -882,7 +882,7 @@ export const Market: React.FC = () => {
             '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
             '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
           ];
-          
+
           // 格式化数字（使用万、亿单位）
           const formatNumber = (num: number) => {
             if (Math.abs(num) >= 100000000) {
@@ -892,14 +892,14 @@ export const Market: React.FC = () => {
             }
             return Math.round(num).toLocaleString('zh-CN');
           };
-          
+
           // 【修复】使用累计销售统计数据，而不是遍历交易记录
           // 这样可以获取真正的历史累计销售量，不会因为环形缓冲区覆盖而消失
           if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
           const companyVolumes = new Map<number, number>();
           const t = world.trades;
           let totalVolume = 0;
-          
+
           // 遍历所有公司，从累计销售统计中获取该商品的销售量
           for (let companyId = 0; companyId < world.companies.count; companyId++) {
             const statsIdx = companyId * GOODS_COUNT + selectedGoodsId;
@@ -909,26 +909,26 @@ export const Market: React.FC = () => {
               totalVolume += cumulativeQty;
             }
           }
-          
+
           // 排序所有公司
           const allSortedCompanies = Array.from(companyVolumes.entries())
             .sort((a, b) => b[1] - a[1]);
-          
+
           // 取前5名
           const top5Companies = allSortedCompanies.slice(0, 5);
-          
+
           // 计算其他公司的销量
           const othersVolume = allSortedCompanies.slice(5).reduce((sum, [, v]) => sum + v, 0);
-          
+
           if (top5Companies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
-          
+
           // 构建饼图数据（包含颜色）
           const chartData = top5Companies.map(([companyId, volume], index) => ({
             name: companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`),
             value: volume,
             color: CHART_COLORS[index % CHART_COLORS.length],
           }));
-          
+
           // 添加"其他公司"到饼图（如果有的话）
           if (othersVolume > 0) {
             chartData.push({
@@ -937,7 +937,7 @@ export const Market: React.FC = () => {
               color: '#64748b',
             });
           }
-          
+
           return (
             <>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -948,7 +948,7 @@ export const Market: React.FC = () => {
                   总销量 {formatNumber(totalVolume)}
                 </span>
               </div>
-              
+
               <div className="flex flex-col gap-6 xl:flex-row">
                 {/* 左侧饼图 */}
                 <div className="w-48 flex-shrink-0">
@@ -1046,7 +1046,7 @@ export const Market: React.FC = () => {
             </TabsList>
           </Tabs>
         </div>
-        
+
         {/* 价格走势视图 */}
         {chartViewMode === 'price' && (
           <MemoizedPriceChart
@@ -1057,7 +1057,7 @@ export const Market: React.FC = () => {
             tradesCount={tradesCount}
           />
         )}
-        
+
         {/* K线图视图 */}
         {chartViewMode === 'candlestick' && (
           candlestickData.length > 0 ? (
@@ -1076,7 +1076,7 @@ export const Market: React.FC = () => {
             </div>
           )
         )}
-        
+
         {/* 供需分析视图 */}
         {chartViewMode === 'supplyDemand' && supplyDemandData && (
           <SupplyDemandChart
@@ -1218,7 +1218,7 @@ export const Market: React.FC = () => {
               交易
             </Button>
           </div>
-          
+
           {/* 快速价格信息 */}
           <div className="flex gap-2 text-xs">
             <div className="flex-1 p-2 rounded-lg bg-background-muted">
@@ -1327,11 +1327,11 @@ export const Market: React.FC = () => {
 
         {/* 商品选择弹窗 */}
         {showGoodsSelector && (
-          <div 
+          <div
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowGoodsSelector(false)}
           >
-            <div 
+            <div
               className="absolute bottom-0 left-0 right-0 max-h-[70vh] bg-background-elevated rounded-t-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1373,11 +1373,11 @@ export const Market: React.FC = () => {
 
         {/* 交易面板弹窗 */}
         {showTradePanel && (
-          <div 
+          <div
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
             onClick={() => setShowTradePanel(false)}
           >
-            <div 
+            <div
               className="absolute bottom-0 left-0 right-0 bg-background-elevated rounded-t-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1694,7 +1694,7 @@ export const Market: React.FC = () => {
                           onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
+                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price, 2)}</span>
                             <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                           </div>
                           <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -1717,7 +1717,7 @@ export const Market: React.FC = () => {
                           onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
+                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price, 2)}</span>
                             <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                           </div>
                           <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -1771,7 +1771,7 @@ export const Market: React.FC = () => {
             </TabsList>
           </Tabs>
         </div>
-        
+
         {/* 搜索框 */}
         <div className="p-3 border-b border-border-muted">
           <Input
@@ -1783,7 +1783,7 @@ export const Market: React.FC = () => {
             variant="filled"
           />
         </div>
-        
+
         {/* 分类树 */}
         <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
           <GoodsCategoryTree
@@ -1939,7 +1939,7 @@ export const Market: React.FC = () => {
                   '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
                   '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
                 ];
-                
+
                 // 格式化数字（使用万、亿单位）
                 const formatNumber = (num: number) => {
                   if (Math.abs(num) >= 100000000) {
@@ -1949,14 +1949,14 @@ export const Market: React.FC = () => {
                   }
                   return Math.round(num).toLocaleString('zh-CN');
                 };
-                
+
                 // 【修复】使用累计销售统计数据，而不是遍历交易记录
                 // 这样可以获取真正的历史累计销售量，不会因为环形缓冲区覆盖而消失
                 if (!world) return <div className="text-center text-foreground-muted py-8">暂无数据</div>;
                 const companyVolumes = new Map<number, number>();
                 const t = world.trades;
                 let totalVolume = 0;
-                
+
                 // 遍历所有公司，从累计销售统计中获取该商品的销售量
                 for (let companyId = 0; companyId < world.companies.count; companyId++) {
                   const statsIdx = companyId * GOODS_COUNT + selectedGoodsId;
@@ -1966,26 +1966,26 @@ export const Market: React.FC = () => {
                     totalVolume += cumulativeQty;
                   }
                 }
-                
+
                 // 排序所有公司
                 const allSortedCompanies = Array.from(companyVolumes.entries())
                   .sort((a, b) => b[1] - a[1]);
-                
+
                 // 取前5名
                 const top5Companies = allSortedCompanies.slice(0, 5);
-                
+
                 // 计算其他公司的销量
                 const othersVolume = allSortedCompanies.slice(5).reduce((sum, [, v]) => sum + v, 0);
-                
+
                 if (top5Companies.length === 0) return <div className="text-center text-foreground-muted py-8">暂无销售数据</div>;
-                
+
                 // 构建饼图数据（包含颜色）
                 const chartData = top5Companies.map(([companyId, volume], index) => ({
                   name: companyId === 0 ? '玩家公司' : (world.companies.names[companyId] || `公司#${companyId}`),
                   value: volume,
                   color: CHART_COLORS[index % CHART_COLORS.length],
                 }));
-                
+
                 // 添加"其他公司"到饼图（如果有的话）
                 if (othersVolume > 0) {
                   chartData.push({
@@ -1994,7 +1994,7 @@ export const Market: React.FC = () => {
                     color: '#64748b',
                   });
                 }
-                
+
                 return (
                   <>
                     <div className="flex items-center justify-between mb-4">
@@ -2005,7 +2005,7 @@ export const Market: React.FC = () => {
                         总销量 {formatNumber(totalVolume)}
                       </span>
                     </div>
-                
+
                     <div className="flex gap-6">
                       {/* 左侧饼图 */}
                       <div className="w-48 flex-shrink-0">
@@ -2103,7 +2103,7 @@ export const Market: React.FC = () => {
                   </TabsList>
                 </Tabs>
               </div>
-              
+
               {/* 价格走势视图 */}
               {chartViewMode === 'price' && (
                 <MemoizedPriceChart
@@ -2114,7 +2114,7 @@ export const Market: React.FC = () => {
                   tradesCount={tradesCount}
                 />
               )}
-              
+
               {/* K线图视图 */}
               {chartViewMode === 'candlestick' && (
                 candlestickData.length > 0 ? (
@@ -2133,7 +2133,7 @@ export const Market: React.FC = () => {
                   </div>
                 )
               )}
-              
+
               {/* 供需分析视图 */}
               {chartViewMode === 'supplyDemand' && supplyDemandData && (
                 <SupplyDemandChart
@@ -2259,7 +2259,7 @@ export const Market: React.FC = () => {
             <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">📋</span>
             市场挂单
           </CardTitle>
-          
+
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-3">
             {/* 我的挂单 */}
             {playerOrders.length > 0 && (
@@ -2295,7 +2295,7 @@ export const Market: React.FC = () => {
                 </div>
               </div>
             )}
-            
+
             {/* 卖方报价 */}
             <div className="p-2.5 rounded-xl bg-error/5 border border-error/20">
               <p className="text-xs text-error mb-2 font-semibold">卖方报价</p>
@@ -2308,7 +2308,7 @@ export const Market: React.FC = () => {
                       onClick={() => { setTradeType('buy'); setTradePrice(order.price.toString()); }}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
+                    <span className="text-error font-semibold flex-shrink-0">{formatCurrency(order.price, 2)}</span>
                         <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                       </div>
                       <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -2319,7 +2319,7 @@ export const Market: React.FC = () => {
                 <p className="text-xs text-foreground-muted text-center py-2">暂无卖单</p>
               )}
             </div>
-            
+
             {/* 买方报价 */}
             <div className="p-2.5 rounded-xl bg-success/5 border border-success/20">
               <p className="text-xs text-success mb-2 font-semibold">买方报价</p>
@@ -2332,7 +2332,7 @@ export const Market: React.FC = () => {
                       onClick={() => { setTradeType('sell'); setTradePrice(order.price.toString()); }}
                     >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price)}</span>
+                    <span className="text-success font-semibold flex-shrink-0">{formatCurrency(order.price, 2)}</span>
                         <span className="text-foreground-muted truncate text-[10px]">({order.companyName})</span>
                       </div>
                       <span className="flex-shrink-0 ml-2">{order.quantity.toFixed(0)}</span>
@@ -2352,7 +2352,7 @@ export const Market: React.FC = () => {
             <span className="w-6 h-6 rounded-lg bg-accent/20 flex items-center justify-center">🛒</span>
             自定义下单
           </CardTitle>
-          
+
           <TradePanel
             selectedGoodsId={selectedGoodsId}
             selectedGoods={selectedGoods}

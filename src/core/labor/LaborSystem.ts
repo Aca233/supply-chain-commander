@@ -391,6 +391,55 @@ export function processRoleAttrition(
   return quit;
 }
 
+// ====== 释放建筑劳动力：建筑停用/拆除时调用 ======
+
+/**
+ * 释放指定建筑的全部已雇佣劳动力，将其归还失业人口池。
+ * 必须在 isActive 设为 0 时同步调用，否则劳动力会从市场上"消失"。
+ */
+export function releaseBuildingWorkforce(world: GameWorld, buildingId: number): number {
+  if (buildingId < 0) return 0;
+  // 不调 hydrateLaborState——调用方负责保证数组存在
+  let totalReleased = 0;
+  const base = buildingId * LABOR_ROLE_COUNT;
+  for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+    const hired = world.buildings.workforceHired[base + role] || 0;
+    if (hired <= 0) continue;
+    world.buildings.workforceHired[base + role] = 0;
+    world.labor.employed[role] = Math.max(0, world.labor.employed[role] - hired);
+    world.labor.unemployed[role] += hired;
+    totalReleased += hired;
+  }
+  // 清除该建筑的应计薪酬（员工已释放，不再需要支付）
+  world.buildings.accruedPayroll[buildingId] = 0;
+  return totalReleased;
+}
+
+// ====== reconcileLaborCounts：定期修正 employed/unemployed 漂移 ======
+
+/**
+ * 根据 workforceHired 数组重算 employed/unemployed，修正增量式更新的浮点漂移。
+ * 建议每月调用一次。
+ */
+export function reconcileLaborCounts(world: GameWorld): void {
+  hydrateLaborState(world);
+  const actual = new Float32Array(LABOR_ROLE_COUNT);
+
+  const buildingCount = world.buildings.count;
+  for (let buildingId = 0; buildingId < buildingCount; buildingId++) {
+    const base = buildingId * LABOR_ROLE_COUNT;
+    for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+      const v = world.buildings.workforceHired[base + role] || 0;
+      if (v > 0) actual[role] += v;
+    }
+  }
+
+  for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
+    world.labor.employed[role] = actual[role];
+    world.labor.unemployed[role] = Math.max(0, world.labor.totalSupply[role] - actual[role]);
+  }
+}
+
 // ====== 主入口：processBuildingLaborMarket —— 合并为单次遍历 ======
 
 export function processBuildingLaborMarket(world: GameWorld): void {
@@ -517,10 +566,28 @@ export function addMonthlyLaborGrowth(world: GameWorld): void {
   hydrateLaborState(world);
 
   for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
-    const growth = world.labor.monthlyGrowth[role] || 0;
-    if (growth > 0) {
-      world.labor.totalSupply[role] += growth;
-      world.labor.unemployed[role] += growth;
+    const baseGrowth = world.labor.monthlyGrowth[role] || 0;
+    if (baseGrowth <= 0) continue;
+
+    // 根据失业率调整增长：高失业 → 增长放缓，低失业 → 正常增长
+    const totalSupply = Math.max(1, world.labor.totalSupply[role]);
+    const unemploymentRate = (world.labor.unemployed[role] || 0) / totalSupply;
+
+    // 失业率 > 15% 时增长减半，> 30% 时降为 20%，< 5% 时正常增长
+    let growthFactor: number;
+    if (unemploymentRate > 0.30) {
+      growthFactor = 0.2;
+    } else if (unemploymentRate > 0.15) {
+      // 线性插值：15%→1.0, 30%→0.2
+      growthFactor = 1.0 - (unemploymentRate - 0.15) / 0.15 * 0.8;
+    } else {
+      growthFactor = 1.0;
+    }
+
+    const actualGrowth = Math.max(0, Math.round(baseGrowth * growthFactor));
+    if (actualGrowth > 0) {
+      world.labor.totalSupply[role] += actualGrowth;
+      world.labor.unemployed[role] += actualGrowth;
     }
   }
 }
@@ -534,9 +601,12 @@ export function getActualDailyWage(world: GameWorld, buildingId: number, role: L
   return marketWage * multiplier;
 }
 
-// ====== accrueDailyPayroll：单次遍历，内联工资计算 ======
+// ====== 工资估算与累计 ======
 
-export function accrueDailyPayrollForBuilding(world: GameWorld, buildingId: number): number {
+export function calculateBuildingDailyPayrollCost(world: GameWorld, buildingId: number): number {
+  if (buildingId < 0 || buildingId >= world.buildings.count) return 0;
+  if (!world.labor?.marketWages || !world.buildings.workforceHired || !world.buildings.wageMultipliers) return 0;
+
   let total = 0;
   const base = buildingId * LABOR_ROLE_COUNT;
   for (let role = 0; role < LABOR_ROLE_COUNT; role++) {
@@ -546,6 +616,11 @@ export function accrueDailyPayrollForBuilding(world: GameWorld, buildingId: numb
     const mul = getWageMul(world, buildingId, role);
     total += hired * marketWage * mul;
   }
+  return total;
+}
+
+export function accrueDailyPayrollForBuilding(world: GameWorld, buildingId: number): number {
+  const total = calculateBuildingDailyPayrollCost(world, buildingId);
   if (total > 0) {
     world.buildings.accruedPayroll[buildingId] += total;
   }

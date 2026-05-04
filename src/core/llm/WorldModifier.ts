@@ -10,6 +10,7 @@ import { useGameStore } from '@/stores/gameStore';
 import { ALL_GOODS } from '@/data/goods';
 import { ALL_BUILDINGS } from '@/data/buildings';
 import { GOODS_COUNT, ACTUAL_GOODS_COUNT, MAX_SLOTS } from '@/core/constants';
+import { releaseBuildingWorkforce } from '@/core/labor/LaborSystem';
 import { getDefaultSlotMethods } from '@/core/production/ProductionMethods';
 import { GOODS_ALIASES, BUILDING_ALIASES } from './GodModePrompt';
 
@@ -212,11 +213,12 @@ export function bankruptCompany(world: GameWorld, companyId: number): Interventi
   }
   effects.push('📦 库存清空');
   
-  // 摧毁所有建筑
+  // 摧毁所有建筑并释放劳动力
   let destroyedCount = 0;
   for (let i = 0; i < world.buildings.count; i++) {
     if (world.buildings.owners[i] === numCompanyId) {
       world.buildings.isActive[i] = 0;
+      releaseBuildingWorkforce(world, i);
       destroyedCount++;
     }
   }
@@ -249,10 +251,11 @@ export function bankruptAllCompanies(world: GameWorld): InterventionResult {
       world.companies.inventories[companyId * GOODS_COUNT + i] = 0;
     }
     
-    // 摧毁所有建筑
+    // 摧毁所有建筑并释放劳动力
     for (let i = 0; i < world.buildings.count; i++) {
       if (world.buildings.owners[i] === companyId && world.buildings.isActive[i]) {
         world.buildings.isActive[i] = 0;
+        releaseBuildingWorkforce(world, i);
         totalBuildingsDestroyed++;
       }
     }
@@ -289,8 +292,9 @@ export function destroyBuilding(world: GameWorld, buildingId: number): Intervent
   const building = ALL_BUILDINGS.find(b => b.id === typeId);
   const owner = world.buildings.owners[buildingId];
   
-  // 标记为非激活（软删除）
+  // 标记为非激活（软删除）并释放劳动力
   world.buildings.isActive[buildingId] = 0;
+  releaseBuildingWorkforce(world, buildingId);
   
   const ownerName = owner === 0 ? '玩家' : `公司 #${owner}`;
   

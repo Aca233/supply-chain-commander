@@ -43,9 +43,12 @@ import {
   GiShoppingBag,
   GiShoppingCart,
   GiSmartphone,
+  GiSnowflake2,
   GiSofa,
   GiSolarPower,
   GiTreehouse,
+  GiCardboardBoxClosed,
+  GiCargoCrate,
   GiWashingMachine,
   GiWindow,
   GiWoodAxe,
@@ -108,6 +111,12 @@ const buildingKeyIconMap: Record<string, IconType> = {
   luxury_store: GiDiamondRing,
   energy_service_store: GiGasPump,
   department_store: GiShoppingBag,
+  // 仓储类
+  small_warehouse: GiCardboardBoxClosed,
+  large_warehouse: GiCargoCrate,
+  cold_storage: GiSnowflake2,
+  bulk_yard: GiCargoCrate,
+  automated_warehouse: GiCargoCrate,
 };
 
 const categoryFallbackIconMap: Record<BuildingTypeDefinition['category'], IconType> = {
@@ -117,6 +126,7 @@ const categoryFallbackIconMap: Record<BuildingTypeDefinition['category'], IconTy
   luxury: GiGemChain,
   service: GiPowerGenerator,
   retail: GiShoppingBag,
+  warehouse: GiCargoCrate,
 };
 
 /**
@@ -148,7 +158,7 @@ export function getBuildingIcon(buildingTypeId: number): IconType {
  * 根据建筑类别获取颜色类名
  */
 export function getBuildingCategoryColor(
-  category: 'extraction' | 'processing' | 'manufacturing' | 'luxury' | 'service' | 'retail',
+  category: BuildingTypeDefinition['category'],
 ): string {
   switch (category) {
     case 'extraction':
@@ -163,6 +173,8 @@ export function getBuildingCategoryColor(
       return 'text-purple-500';
     case 'retail':
       return 'text-orange-500';
+    case 'warehouse':
+      return 'text-teal-500';
     default:
       return 'text-gray-500';
   }
